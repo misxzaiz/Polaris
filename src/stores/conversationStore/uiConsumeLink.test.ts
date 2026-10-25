@@ -35,9 +35,10 @@ function createDeps(): StoreDeps {
 describe('cap.ui 经 bus_dispatch tool_call_start 消费', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // config.chatDisplay 当前值（cap.ui.chat patch 在此基础上合并）
+    // config.chatDisplay 当前值（cap.ui.chat patch 在此基础上合并）；
+    // uiControlEnabled: true —— 消费口门控（2026-10-25）开启后才能消费 cap.ui
     configGetStateMock.mockReturnValue({
-      config: { chatDisplay: { fontSize: 14, messageSpacing: 'comfortable' } },
+      config: { chatDisplay: { fontSize: 14, messageSpacing: 'comfortable' }, uiControlEnabled: true },
       updateConfigPatch: updateConfigPatchMock,
     })
   })
@@ -79,6 +80,25 @@ describe('cap.ui 经 bus_dispatch tool_call_start 消费', () => {
       } as AIEvent)
     }).not.toThrow()
     // cap.ui.theme 不走 configStore
+    expect(updateConfigPatchMock).not.toHaveBeenCalled()
+  })
+
+  it('uiControlEnabled 关闭时 cap.ui 不被消费（cap_dispatch 旁路修补）', () => {
+    configGetStateMock.mockReturnValueOnce({
+      config: { chatDisplay: { fontSize: 14 }, uiControlEnabled: false },
+      updateConfigPatch: updateConfigPatchMock,
+    })
+    const store = createConversationStore('session-1', createDeps())
+    store.getState().handleAIEvent({
+      type: 'tool_call_start',
+      sessionId: 'backend-session',
+      callId: 'item_ui_gate',
+      tool: 'mcp__polaris-dispatch__cap_dispatch',
+      args: {
+        target: 'cap.ui.chat',
+        payload: { action: 'patch', config: { fontSize: 99 } },
+      },
+    } as AIEvent)
     expect(updateConfigPatchMock).not.toHaveBeenCalled()
   })
 

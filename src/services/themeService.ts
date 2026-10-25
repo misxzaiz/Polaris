@@ -1,16 +1,23 @@
 /**
  * 主题持久化服务
  *
- * 管理主题的存储与读取。当前使用 localStorage 作为持久化存储，
- * API 设计为可后续切换到 DataRoot 文件系统（DataRoot/themes/）：
- * - 替换 STORAGE_KEY 为目标路径
- * - 将 readFromStorage/writeToStorage 改为 invoke 文件操作
+ * 双层存储（2026-10-25 Phase 3 跨端对账）：
+ * - localStorage：本端同步缓存（首屏防 FOUC 链路依赖同步读，不可异步化）
+ * - DataRoot（经 cap.kv 落 <DataRoot>/stores/kv.db）：跨端权威镜像
+ *   （此前主题仅存 localStorage，APK/桌面互不可见——AI 经 APK 创建的主题
+ *   在桌面端重启即回退 Dark）。合并语义：按 id 并集 + updatedAt 新者胜；
+ *   同步时机 = 启动对账 + 写入即推送（防抖），实时广播不做（低频可接受）。
+ *
+ * 所有用户主题在读取/写入边界经 mergeThemes 以 Dark 兜底归一，防止残缺主题
+ * 在渲染层/注入层裸解构（如 colors.primary.base）导致半切换或崩溃。
  */
 
 import { createLogger } from '@/utils/logger';
 import type { ThemeDefinition, ThemeId, ThemeExportFile } from '@/types/theme';
 import { CURRENT_FORMAT_VERSION, isBuiltInThemeId, BUILT_IN_THEME_IDS } from '@/types/theme';
-import { BUILT_IN_THEMES, getBuiltInThemeByShortName } from '@/data/builtInThemes';
+import { BUILT_IN_THEMES } from '@/data/builtInThemes';
+import { mergeThemes } from '@/services/themeMerger';
+import { invoke } from '@/services/transport';
 
 const log = createLogger('ThemeService');
 
@@ -88,11 +95,24 @@ export function getUserThemes(): ThemeDefinition[] {
     if (entry.builtIn) continue; // 内置主题不从 localStorage 读取
     const theme = readFromStorage<ThemeDefinition | null>(THEME_PREFIX + entry.id, null);
     if (theme) {
-      themes.push(theme);
+      themes.push(normalizeUserTheme(theme));
     }
   }
 
   return themes;
+}
+
+/** 归一化用户主题：以 Dark 兜底补全缺失维度（mergeThemes 幂等，可重复调用） */
+function normalizeUserTheme(theme: ThemeDefinition): ThemeDefinition {
+  const merged = mergeThemes(theme);
+  return {
+    ...merged,
+    id: theme.id,
+    name: theme.name,
+    builtIn: false,
+    createdAt: theme.createdAt,
+    updatedAt: theme.updatedAt,
+  };
 }
 
 /** 获取单个主题定义（内置 + 用户） */
@@ -101,8 +121,9 @@ export function getTheme(id: ThemeId): ThemeDefinition | undefined {
   const builtIn = getBuiltInTheme(id);
   if (builtIn) return builtIn;
 
-  // 再查用户
-  return readFromStorage<ThemeDefinition | null>(THEME_PREFIX + id, null) ?? undefined;
+  // 再查用户（读取点归一，防残缺主题裸解构）
+  const user = readFromStorage<ThemeDefinition | null>(THEME_PREFIX + id, null);
+  return user ? normalizeUserTheme(user) : undefined;
 }
 
 /** 保存主题（新建或更新） */
@@ -127,6 +148,7 @@ export function saveTheme(theme: ThemeDefinition): void {
   }
 
   writeToStorage(THEMES_INDEX_KEY, index);
+  schedulePushToRemote();
 }
 
 /** 删除用户主题 */
@@ -144,6 +166,7 @@ export function deleteTheme(id: ThemeId): boolean {
   index.themes = index.themes.filter((e) => e.id !== id);
   writeToStorage(THEMES_INDEX_KEY, index);
 
+  schedulePushToRemote();
   return true;
 }
 
@@ -197,100 +220,101 @@ export function downloadThemeFile(id: ThemeId): boolean {
   return true;
 }
 
-/** 导入主题文件 */
-export function importThemeFile(jsonStr: string): { success: boolean; error?: string; theme?: ThemeDefinition } {
-  try {
-    const data = JSON.parse(jsonStr) as ThemeExportFile;
+// ============ 跨端同步（DataRoot 权威 + localStorage 本端缓存） ============
 
-    // 验证格式
-    if (!data || data.type !== 'polaris-theme') {
-      return { success: false, error: '不是有效的主题文件（type !== "polaris-theme"）' };
-    }
+const KV_TARGET = 'cap.kv';
+const THEMES_KV_KEY = 'ui-themes:v1';
 
-    if (typeof data.formatVersion !== 'number' || data.formatVersion < 1) {
-      return { success: false, error: '不支持的格式版本' };
-    }
-
-    if (data.formatVersion > CURRENT_FORMAT_VERSION) {
-      return { success: false, error: `主题格式版本过高（${data.formatVersion}），请更新应用` };
-    }
-
-    if (!data.theme || !data.theme.name || !data.theme.colors) {
-      return { success: false, error: '主题数据不完整（缺少 name 或 colors）' };
-    }
-
-    // 生成新主题
-    const now = new Date().toISOString();
-    const newId = crypto.randomUUID();
-
-    // 处理名称冲突
-    let name = data.theme.name.trim();
-    if (name.length > 32) name = name.slice(0, 32);
-
-    const allThemes = getAllThemes();
-    const nameExists = allThemes.some((t) => t.name === name);
-    if (nameExists) {
-      name = `${name} (2)`;
-    }
-
-    const theme: ThemeDefinition = {
-      id: newId,
-      name,
-      description: data.theme.description,
-      author: data.theme.author,
-      version: 1,
-      builtIn: false,
-      createdAt: now,
-      updatedAt: now,
-      colors: data.theme.colors as any,
-      typography: data.theme.typography as any,
-      shape: data.theme.shape as any,
-      motion: data.theme.motion,
-      layout: data.theme.layout as any,
-      immersive: data.theme.immersive,
-      customCss: data.theme.customCss,
-    };
-
-    saveTheme(theme);
-    return { success: true, theme };
-  } catch (e) {
-    return { success: false, error: `文件解析失败：${e instanceof Error ? e.message : String(e)}` };
-  }
+interface RemoteThemeCollection {
+  version: number;
+  updatedAt: string;
+  themes: ThemeDefinition[];
 }
 
-// ============ 旧配置迁移 ============
+interface KvDispatchResponse {
+  ok: boolean;
+  result?: Record<string, unknown>;
+  error?: string;
+}
 
-/** 从旧 config.theme 字段迁移到 activeThemeId */
-export function migrateLegacyConfigTheme(legacyTheme?: string, legacySpidermanConfig?: Record<string, unknown>): ThemeId {
-  // 如果 legacyTheme 是 uuid 格式（已经是新格式），直接返回
-  if (legacyTheme && legacyTheme.includes('-')) {
-    return legacyTheme;
+async function dispatchKv(action: string, extra: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+  const res = await invoke<KvDispatchResponse>('router_dispatch', {
+    req: { target: KV_TARGET, payload: { action, ...extra } },
+  });
+  if (!res.ok) throw new Error(res.error || `cap.kv ${action} 失败`);
+  return res.result ?? {};
+}
+
+/** 全量写回本端缓存（同步对账用）：重建索引 + 清除已删除主题的残留键 */
+function writeLocalUserThemes(themes: ThemeDefinition[]): void {
+  const old = readFromStorage<ThemeIndex>(THEMES_INDEX_KEY, { version: 1, themes: [] });
+  const newIds = new Set(themes.map((t) => t.id));
+  for (const entry of old.themes) {
+    if (!newIds.has(entry.id)) removeFromStorage(THEME_PREFIX + entry.id);
   }
-
-  // 从短名称查找
-  if (legacyTheme) {
-    const builtIn = getBuiltInThemeByShortName(legacyTheme);
-    if (builtIn) return builtIn.id;
+  for (const theme of themes) {
+    writeToStorage(THEME_PREFIX + theme.id, theme);
   }
+  writeToStorage(THEMES_INDEX_KEY, {
+    version: 1,
+    themes: themes.map((t) => ({ id: t.id, name: t.name, builtIn: false })),
+  });
+}
 
-  // 如果旧 spidermanTheme 存在，尝试迁移到自定义主题
-  if (legacySpidermanConfig && Object.keys(legacySpidermanConfig).length > 0) {
-    // 创建基于 spiderman 的自定义主题
-    const spiderman = getBuiltInTheme(BUILT_IN_THEME_IDS.SPIDERMAN);
-    if (spiderman) {
-      const now = new Date().toISOString();
-      const customTheme: ThemeDefinition = {
-        ...spiderman,
-        id: crypto.randomUUID(),
-        name: 'Spider-Man (Custom)',
-        builtIn: false,
-        createdAt: now,
-        updatedAt: now,
-      };
-      saveTheme(customTheme);
-      return customTheme.id;
+/** 推送本端用户主题集合到 DataRoot（写入即推送，防抖合并短时多次写） */
+async function pushThemesToRemote(): Promise<void> {
+  const collection: RemoteThemeCollection = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    themes: getUserThemes(),
+  };
+  await dispatchKv('set', { key: THEMES_KV_KEY, value: collection });
+}
+
+let pushTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePushToRemote(): void {
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    pushTimer = null;
+    pushThemesToRemote().catch((e) => {
+      log.warn('主题集合推送 DataRoot 失败（下次写入/对账重试）', { error: String(e) });
+    });
+  }, 500);
+}
+
+/**
+ * 与 DataRoot 对账：按 id 并集、单主题 updatedAt 新者胜（LWW）。
+ * 本端独有主题会被推送到远端（迁移场景：localStorage 存量 → DataRoot）。
+ * @returns 本端列表是否发生变化（调用方据此 refreshThemes）
+ */
+export async function syncThemesWithRemote(): Promise<boolean> {
+  const raw = (await dispatchKv('get', { key: THEMES_KV_KEY })) as {
+    value?: RemoteThemeCollection | null;
+  };
+  const remoteThemes = (raw?.value?.themes ?? []).map(normalizeUserTheme);
+  const localThemes = getUserThemes();
+
+  const byId = new Map<string, ThemeDefinition>();
+  for (const theme of [...remoteThemes, ...localThemes]) {
+    const existing = byId.get(theme.id);
+    if (!existing || (theme.updatedAt ?? '') > (existing.updatedAt ?? '')) {
+      byId.set(theme.id, theme);
     }
   }
+  const merged = [...byId.values()];
 
-  return BUILT_IN_THEME_IDS.DARK;
+  const localById = new Map(localThemes.map((t) => [t.id, t]));
+  const localChanged = merged.some((t) => {
+    const l = localById.get(t.id);
+    return !l || l.updatedAt !== t.updatedAt;
+  });
+  const remoteById = new Map(remoteThemes.map((t) => [t.id, t]));
+  const remoteChanged = merged.some((t) => {
+    const r = remoteById.get(t.id);
+    return !r || r.updatedAt !== t.updatedAt;
+  });
+
+  if (localChanged) writeLocalUserThemes(merged);
+  if (remoteChanged) await pushThemesToRemote();
+  return localChanged;
 }

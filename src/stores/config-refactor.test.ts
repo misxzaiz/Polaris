@@ -27,11 +27,6 @@ vi.mock('@/utils/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
-// Mock themeEngine
-vi.mock('@/services/themeEngine', () => ({
-  saveLegacySpiderManConfig: vi.fn(),
-}))
-
 import { applyConfig } from '@/stores/configStore'
 import type { Config } from '@/types'
 
@@ -50,13 +45,6 @@ describe('applyConfig 统一副作用入口', () => {
     const config = { language: 'en-US' } as Config
     await applyConfig(config)
     expect(i18n.changeLanguage).toHaveBeenCalledWith('en-US')
-  })
-
-  it('spidermanTheme 字段触发 saveLegacySpiderManConfig', async () => {
-    const { saveLegacySpiderManConfig } = await import('@/services/themeEngine')
-    const config = { spidermanTheme: { bgOpacity: 0.5 } } as unknown as Config
-    await applyConfig(config)
-    expect(saveLegacySpiderManConfig).toHaveBeenCalledWith({ bgOpacity: 0.5 })
   })
 
   it('镜像为空时注入后端全局默认 activeModelProfileId', async () => {

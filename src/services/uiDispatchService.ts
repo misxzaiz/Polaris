@@ -25,6 +25,7 @@ import { useConfigStore } from '@/stores/configStore'
 import { BUILT_IN_THEME_IDS } from '@/types/theme'
 import type { ThemeDefinition } from '@/types/theme'
 import { invoke } from '@/services/transport'
+import { mergeThemes } from '@/services/themeMerger'
 
 const log = createLogger('UiDispatchService')
 
@@ -97,7 +98,6 @@ export function applyUiThemeAction(action: string, payload: Record<string, unkno
         const presetIds: Record<string, string> = {
           dark: BUILT_IN_THEME_IDS.DARK,
           light: BUILT_IN_THEME_IDS.LIGHT,
-          spiderman: BUILT_IN_THEME_IDS.SPIDERMAN,
         }
         const id = presetIds[preset]
         if (!id) return { ok: false, message: `未知内置主题 preset: ${preset}` }
@@ -160,19 +160,33 @@ export function applyUiThemeAction(action: string, payload: Record<string, unkno
           : { ok: false, message: '无激活主题' }
       }
       case 'import': {
-        const theme = payload.theme as ThemeDefinition
+        const theme = payload.theme as Partial<ThemeDefinition>
         if (!theme || typeof theme !== 'object') return { ok: false, message: '缺少 theme 对象' }
+        const name = typeof theme.name === 'string' && theme.name.trim() ? theme.name.trim() : '未命名主题'
         const now = new Date().toISOString()
+        // 归一：以 Dark 兜底补全缺失维度（防残缺主题在注入层裸解构抛错、DOM 半切换），
+        // AI 可只给部分字段，缺省自动补全
         const imported: ThemeDefinition = {
-          ...theme,
+          ...mergeThemes(theme),
           id: crypto.randomUUID(),
+          name,
           builtIn: false,
           createdAt: now,
           updatedAt: now,
         }
         useThemeStore.getState().saveTheme(imported)
         useThemeStore.getState().setThemeById(imported.id)
-        return { ok: true, message: `已导入主题 ${imported.name ?? '(未命名)'}` }
+        return { ok: true, message: `已导入主题 ${imported.name}` }
+      }
+      case 'delete': {
+        const id = String(payload.id ?? '')
+        if (!id) return { ok: false, message: '缺少 id' }
+        const store = useThemeStore.getState()
+        const theme = store.themes.find(t => t.id === id)
+        if (!theme) return { ok: false, message: `主题不存在: ${id}` }
+        if (theme.builtIn) return { ok: false, message: '内置主题不可删除' }
+        store.deleteTheme(id)
+        return { ok: true, message: `已删除主题 ${theme.name}` }
       }
       default:
         return { ok: false, message: `cap.ui.theme 未知动作: ${action}` }
@@ -220,6 +234,12 @@ export function applyUiChatAction(action: string, payload: Record<string, unknow
 
 /**
  * 解析 bus_dispatch 的 args，命中 cap.ui / cap.self 时应用。
+ *
+ * uiControlEnabled 门控（2026-10-25 治理收紧）：关闭（默认）时不消费——
+ * 前端挂载门（conversationStoreUtils）只摘 polaris-bus，挡不住 polaris-dispatch
+ * 的 cap_dispatch；且消费发生在 tool_call_start（不等工具结果），后端策略 deny
+ * 也拦不住本端 DOM 生效，故消费口必须复查开关。
+ *
  * @returns 是否命中（true = 已消费）
  */
 export function consumeCapUiDispatch(
@@ -230,20 +250,29 @@ export function consumeCapUiDispatch(
   if (!target || !['cap.ui.theme', 'cap.ui.chat', 'cap.ui.input', 'cap.self.mutate'].includes(target)) {
     return { consumed: false }
   }
+  if (!useConfigStore.getState().config?.uiControlEnabled) {
+    log.warn('cap.ui 消费被拒：uiControlEnabled 关闭（AI 界面控制未开启）', { target })
+    return { consumed: false }
+  }
   const payload = (args.payload ?? {}) as Record<string, unknown>
   const action = payload.action as string | undefined
   if (!action) return { consumed: true, message: `${target} 缺 action` }
-  let result
-  if (target === 'cap.self.mutate') {
-    result = applySelfMutateAction(action, payload)
-  } else {
-    result = target === 'cap.ui.theme'
-      ? applyUiThemeAction(action, payload)
-      : target === 'cap.ui.chat'
-        ? applyUiChatAction(action, payload)
-        : applyInputUiConfig(action, payload)
-  }
+  const result = applyCapUiTarget(target, action, payload)
   return { consumed: true, message: result.message }
+}
+
+/** 将 cap.ui / cap.self 动作路由到对应 store 应用层（consume 与 dispatch 共用） */
+function applyCapUiTarget(
+  target: string,
+  action: string,
+  payload: Record<string, unknown>,
+): { ok: boolean; message: string } {
+  if (target === 'cap.self.mutate') {
+    return applySelfMutateAction(action, payload)
+  }
+  if (target === 'cap.ui.theme') return applyUiThemeAction(action, payload)
+  if (target === 'cap.ui.chat') return applyUiChatAction(action, payload)
+  return applyInputUiConfig(action, payload)
 }
 
 /** router_dispatch 返回形态（与 commands/router.rs RouterDispatchResponse 对应） */
@@ -254,6 +283,20 @@ interface DispatchResponse {
 }
 
 /**
+ * dispatchCapUiAction 的 target 白名单：用户点击 AI 注入的 UI（横幅按钮/插槽部件）
+ * 时经此函数以 Bootstrap 源直达总线，必须限定为低危域——
+ * 前缀 cap.ui.*（界面域）+ 精确 cap.kv / cap.todo / cap.context
+ * （对齐后端 form_flow.rs FORM_TARGET_WHITELIST）。
+ * 2026-10-25 治理收紧前，任意 target（含 cap.bash）均可经横幅按钮执行。
+ */
+const DISPATCH_ALLOWED_PREFIXES = ['cap.ui.']
+const DISPATCH_ALLOWED_TARGETS = new Set(['cap.kv', 'cap.todo', 'cap.context'])
+
+function isDispatchTargetAllowed(target: string): boolean {
+  return DISPATCH_ALLOWED_TARGETS.has(target) || DISPATCH_ALLOWED_PREFIXES.some(p => target.startsWith(p))
+}
+
+/**
  * 经 RouterBus dispatch 调用任意 cap（前端 → 后端总线）。
  * 供动态横幅动作等场景使用：AI 注入横幅 → 用户点击 → 前端直接调目标 cap。
  */
@@ -261,11 +304,25 @@ export async function dispatchCapUiAction(
   target: string,
   payload: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  if (!isDispatchTargetAllowed(target)) {
+    log.warn('dispatchCapUiAction 拒绝非白名单 target（用户点击链只允许 UI/低危域）', { target })
+    throw new Error(`dispatch target 不在白名单: ${target}`)
+  }
   const res = await invoke<DispatchResponse>('router_dispatch', {
     req: { target, payload },
   })
   if (!res.ok) {
     throw new Error(res.error || `${target} 调用失败`)
+  }
+  // cap.ui 域双向化（2026-10-25 Phase 3）：这些 cap 在后端是无状态转发（状态真相
+  // 在前端 store），此前直调仅得 forwarded:true 而不生效。现 dispatch（权限 gate +
+  // 审计）通过后本地应用，并把应用结果并入返回值——用户点击链（横幅/插槽按钮）即真正生效。
+  if (target.startsWith('cap.ui.') || target === 'cap.self.mutate') {
+    const action = payload.action as string | undefined
+    if (action) {
+      const applied = applyCapUiTarget(target, action, payload)
+      return { ...(res.result || {}), applied }
+    }
   }
   return res.result || {}
 }

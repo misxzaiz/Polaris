@@ -956,7 +956,6 @@ impl OldConfig {
             voice_commands: None,
             web: Default::default(),
             dispatch: Default::default(),
-            spiderman_theme: None,
             chat_display: Default::default(),
             ui_control_enabled: false,
             workspaces: Vec::new(),

@@ -362,16 +362,3 @@ export function bootstrapTheme(): void {
     });
   }
 }
-
-/** 从 localStorage 读取旧版 spiderman-theme 配置（兼容） */
-export function readLegacySpiderManConfig(): Record<string, unknown> {
-  try {
-    const stored = window.localStorage.getItem('spiderman-theme');
-    return stored ? JSON.parse(stored) : {};
-  } catch { return {}; }
-}
-
-/** 保存旧版 spiderman-theme 配置到 localStorage（兼容） */
-export function saveLegacySpiderManConfig(config: Record<string, unknown>): void {
-  try { window.localStorage.setItem('spiderman-theme', JSON.stringify(config)); } catch { /* ignore */ }
-}

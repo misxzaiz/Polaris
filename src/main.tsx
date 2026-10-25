@@ -9,6 +9,7 @@ import { bootstrapTheme } from '@/services/themeEngine';
 import { remoteSessionFollower } from '@/services/remoteSessionFollower';
 import { invoke, listen } from '@/services/transport';
 import { createHostWorkspaceApi } from '@/plugin-system/hostWorkspaceApi';
+import { createHostThemeApi } from '@/plugin-system/themeHostApi';
 import { eventBus } from '@/services/eventBus';
 
 // 暴露宿主 React 给外部插件面板使用
@@ -71,6 +72,10 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
 // 所有工作区变更委托主应用 workspaceStore 执行：持久化、事件派发、
 // 全 UI 响应式刷新由 store 自带，主应用工作区绑定天然更新。
 ;(window as any).__POLARIS_WORKSPACE_API__ = createHostWorkspaceApi();
+// 主题宿主 API：插件面板（如未来的主题管理插件）经此委托 themeStore 读写主题，
+// 不旁路 localStorage / 直写 CSS 变量（结构化数据回传由本 API 承担，弥补
+// cap.ui.theme forward-only 无数据返回的缺口）。
+;(window as any).__POLARIS_THEME_API__ = createHostThemeApi();
 
 // 暴露当前工作区路径给外部插件面板（wheel：监听 workspace-changed 事件，
 // 初始取 localStorage 兜底。外部插件如 polaris-git 可据此自动初始化。）

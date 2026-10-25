@@ -1324,51 +1324,6 @@ fn default_dispatch_auto_inject() -> bool {
     true
 }
 
-/// Spider-Man 沉浸主题配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SpiderManThemeConfig {
-    /// 背景图片 URL（空字符串 = 使用预设）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub background_image: Option<String>,
-    /// 背景图片透明度 (0-1)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub background_opacity: Option<f64>,
-    /// 面板背景透明度 (0-1)，控制侧栏/聊天面板的透明程度
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub panel_opacity: Option<f64>,
-    /// 面板磨砂强度 (px)，0=关闭磨砂效果
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub panel_blur: Option<f64>,
-    /// 蛛网纹理强度 (0-1)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub web_texture_opacity: Option<f64>,
-    /// 背景缩放模式
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub background_size: Option<String>,
-    /// 背景水平偏移 (0-100)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub background_position_x: Option<f64>,
-    /// 背景垂直偏移 (0-100)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub background_position_y: Option<f64>,
-    /// 面具头像 URL
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub avatar_url: Option<String>,
-    /// 内容卡片透明度 (0-1)，控制消息气泡/卡片/输入框的内容容器半透明程度
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surface_opacity: Option<f64>,
-    /// 蓝色强调强度 (0-1)，0=无蓝色，1=最大蓝色
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub blue_accent: Option<f64>,
-    /// 聊天工具面板透明度 (0-1)，控制工具调用块/派发卡片等背景
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chat_tool_opacity: Option<f64>,
-    /// 悬停态背景透明度 (0-1)，控制按钮/列表项等静态背景区域
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hover_opacity: Option<f64>,
-}
-
 /// dispatch 权限策略规则（第五步 PolicyPermission 的 config 覆盖来源）
 ///
 /// - `capability`：能力 id，精确（`cap.config`）或前缀通配（`cap.config*`）
@@ -1432,7 +1387,7 @@ pub struct Config {
     #[serde(default)]
     pub language: Option<String>,
 
-    /// 界面主题（"dark" | "light" | "spiderman"）
+    /// 界面主题短名（"dark" | "light"；legacy 字段，新代码用 active_theme_id）
     #[serde(default)]
     pub theme: Option<String>,
 
@@ -1504,10 +1459,6 @@ pub struct Config {
     /// 派发任务配置（dispatch_task MCP 策略/结果注入/队员预设）
     #[serde(default)]
     pub dispatch: DispatchConfig,
-
-    /// Spider-Man 沉浸主题配置
-    #[serde(default)]
-    pub spiderman_theme: Option<SpiderManThemeConfig>,
 
     /// AI 对话窗口显示设置
     #[serde(default)]
@@ -1688,7 +1639,6 @@ impl Default for Config {
             voice_commands: None,
             web: WebConfig::default(),
             dispatch: DispatchConfig::default(),
-            spiderman_theme: None,
             chat_display: ChatDisplaySettings::default(),
             ui_control_enabled: false,
             workspaces: Vec::new(),

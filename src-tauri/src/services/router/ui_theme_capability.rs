@@ -13,11 +13,12 @@
 //!
 //! - `get`          `{}`                                  → 指示前端返回当前主题（`{ forwarded: true }`）
 //! - `patch`        `{ "palette": { "primary": "#ff0", "background.base": "#111", ... } }` → 语义色 patch
-//! - `applyPreset`  `{ "preset": "dark" | "light" | "spiderman" }`  → 切内置主题
+//! - `applyPreset`  `{ "preset": "dark" | "light" }`  → 切内置主题
 //! - `listThemes`   `{}`                                  → 内置 + 用户主题（前端聚合）
 //! - `setActive`    `{ "id": "<themeId>" }`               → 切到已存在主题
 //! - `export`       `{}`                                  → 当前完整 ThemeDefinition
 //! - `import`       `{ "theme": { ...ThemeDefinition } }` → 新建用户主题
+//! - `delete`       `{ "id": "<themeId>" }`               → 删除用户主题（前端拒绝内置）
 //!
 //! 语义色映射（palette 键 → 88 维度 token）是前端映射层的职责；后端只校验
 //! 结构合法（object / 值非空），不引入第二套主题模型。
@@ -59,11 +60,12 @@ impl Capability for UiThemeCapability {
             "actions": {
                 "get": { "params": {}, "returns": "前端应答当前主题", "note": "前端 store 为真相" },
                 "patch": { "params": { "palette": "object：语义色键→CSS 色值" }, "returns": "{ applied: true }" },
-                "applyPreset": { "params": { "preset": "dark|light|spiderman" }, "returns": "{ applied: string }" },
+                "applyPreset": { "params": { "preset": "dark|light" }, "returns": "{ applied: string }" },
                 "listThemes": { "params": {}, "returns": "内置+用户主题列表" },
                 "setActive": { "params": { "id": "主题 id" }, "returns": "{ applied: id }" },
                 "export": { "params": {}, "returns": "当前完整 ThemeDefinition" },
-                "import": { "params": { "theme": "完整 ThemeDefinition" }, "returns": "{ installed: id }" }
+                "import": { "params": { "theme": "完整或部分 ThemeDefinition（缺省以 Dark 补全）" }, "returns": "{ installed: id }" },
+                "delete": { "params": { "id": "用户主题 id" }, "returns": "{ deleted: id }" }
             },
             "note": "状态在前端 themeStore；本能力只校验+审计，效果经 tool_call_end 事件落前端"
         })
@@ -76,7 +78,7 @@ impl Capability for UiThemeCapability {
             .ok_or_else(|| "cap.ui.theme 需要 action 参数".to_string())?;
 
         // 写类动作落域审计（读类不落）——事务内 append_audit（同 kv 写路径）
-        let is_write = matches!(action, "patch" | "applyPreset" | "setActive" | "import");
+        let is_write = matches!(action, "patch" | "applyPreset" | "setActive" | "import" | "delete");
         if is_write {
             if let Ok(mut txn) = ctx.storage().and_then(|s| s.begin()) {
                 let _ = txn.append_audit(
@@ -117,8 +119,8 @@ impl Capability for UiThemeCapability {
                 let preset = params
                     .get("preset")
                     .and_then(|p| p.as_str())
-                    .filter(|s| matches!(*s, "dark" | "light" | "spiderman"))
-                    .ok_or_else(|| "applyPreset preset 必须是 dark/light/spiderman".to_string())?;
+                    .filter(|s| matches!(*s, "dark" | "light"))
+                    .ok_or_else(|| "applyPreset preset 必须是 dark/light".to_string())?;
                 Ok(serde_json::json!({ "ok": true, "forwarded": true, "capability": "cap.ui.theme", "action": "applyPreset", "preset": preset }))
             }
             "listThemes" => Ok(serde_json::json!({ "ok": true, "forwarded": true, "capability": "cap.ui.theme", "action": "listThemes" })),
@@ -131,6 +133,14 @@ impl Capability for UiThemeCapability {
                 Ok(serde_json::json!({ "ok": true, "forwarded": true, "capability": "cap.ui.theme", "action": "setActive", "id": id }))
             }
             "export" => Ok(serde_json::json!({ "ok": true, "forwarded": true, "capability": "cap.ui.theme", "action": "export" })),
+            "delete" => {
+                let id = params
+                    .get("id")
+                    .and_then(|i| i.as_str())
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| "delete 需要 id 参数".to_string())?;
+                Ok(serde_json::json!({ "ok": true, "forwarded": true, "capability": "cap.ui.theme", "action": "delete", "id": id }))
+            }
             "import" => {
                 let theme = params
                     .get("theme")
@@ -240,6 +250,17 @@ mod tests {
         let cap = UiThemeCapability;
         let r = cap.invoke(serde_json::json!({"action": "export"}), &ctx()).unwrap();
         assert_eq!(r["action"], "export");
+    }
+
+    #[test]
+    fn delete_validates_id() {
+        let cap = UiThemeCapability;
+        let r = cap.invoke(serde_json::json!({"action": "delete", "id": "theme-1"}), &ctx()).unwrap();
+        assert_eq!(r["action"], "delete");
+        assert_eq!(r["id"], "theme-1");
+        // 缺 id / 空 id 均拒绝
+        assert!(cap.invoke(serde_json::json!({"action": "delete"}), &ctx()).is_err());
+        assert!(cap.invoke(serde_json::json!({"action": "delete", "id": ""}), &ctx()).is_err());
     }
 
     #[test]

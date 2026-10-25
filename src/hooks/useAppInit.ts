@@ -12,6 +12,7 @@
 import { useEffect, useRef } from 'react';
 import { useConfigStore, initPerformanceHotSwitch } from '@/stores/configStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useThemeStore } from '@/stores/themeStore';
 import { useIntegrationStore } from '@/stores/integrationStore';
 import { useSnippetStore } from '@/stores/snippetStore';
 import { useSkillStore } from '@/stores/skillStore';
@@ -60,6 +61,13 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       await useWorkspaceStore.getState().syncFromServer();
     } catch (err) {
       log.warn('Workspace sync failed, using local cache', { error: String(err) });
+    }
+
+    // 主题集合跨端对账（Phase 3）：DataRoot(cap.kv) 为权威，localStorage 为本端缓存
+    try {
+      await useThemeStore.getState().syncFromRemote();
+    } catch (err) {
+      log.warn('Theme sync failed, using local cache', { error: String(err) });
     }
 
     // Web 模式兜底：如果同步后仍无工作区，用 workDir 自动创建

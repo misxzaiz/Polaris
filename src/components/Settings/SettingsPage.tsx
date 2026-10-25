@@ -85,7 +85,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
   const topLevelKeysByTab: Partial<Record<SettingsTabId, (keyof Config)[]>> = {
     general: ['language', 'baiduTranslate', 'uiControlEnabled'],
-    theme: ['theme', 'spidermanTheme'],
+    theme: ['theme'],
     speech: ['speech', 'tts', 'wakeWord', 'voiceNotification', 'voiceCommands'],
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],

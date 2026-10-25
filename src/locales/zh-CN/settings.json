@@ -287,47 +287,7 @@
     "hint": "深色 / 浅色主题切换（浅色为实验性）",
     "dark": "深色",
     "light": "浅色",
-    "spiderman": "蜘蛛侠",
     "experimental": "实验性"
-  },
-  "spiderman": {
-    "title": "蜘蛛侠主题",
-    "avatar": {
-      "title": "面具头像",
-      "hint": "选择你的蜘蛛侠面具头像"
-    },
-    "background": {
-      "title": "背景图片",
-      "hint": "选择或上传背景图片",
-      "upload": "上传自定义图片"
-    },
-    "effects": {
-      "title": "视觉效果",
-      "bgOpacity": "背景透明度",
-      "bgOpacityHint": "调节背景图片的可见度",
-      "panelOpacity": "面板透明度",
-      "panelOpacityHint": "调节侧栏和聊天面板的透明程度",
-      "panelBlur": "面板磨砂",
-      "panelBlurHint": "调节面板背景模糊程度，0=关闭",
-      "blueAccent": "蓝色强调",
-      "blueAccentHint": "调节界面中蓝色元素的强度，0=无蓝色，100=最大蓝色",
-      "webOpacity": "蛛网纹理",
-      "webOpacityHint": "调节蛛网纹理的强度",
-      "surfaceOpacity": "内容卡片透明度",
-      "surfaceOpacityHint": "调节消息气泡、卡片、输入框等半透明程度",
-      "chatToolOpacity": "工具面板透明度",
-      "chatToolOpacityHint": "调节聊天中工具调用面板、派发卡片等半透明程度",
-      "hoverOpacity": "悬停背景透明度",
-      "hoverOpacityHint": "调节按钮悬停、列表项等静态背景区域的半透明程度"
-    },
-    "position": {
-      "title": "位置与大小",
-      "scaleMode": "缩放模式",
-      "horizontal": "水平偏移",
-      "horizontalHint": "左右移动背景位置",
-      "vertical": "垂直偏移",
-      "verticalHint": "上下移动背景位置"
-    }
   },
   "baiduTranslate": {
     "title": "百度翻译",

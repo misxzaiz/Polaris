@@ -2,8 +2,7 @@
  * 主题状态管理（重写：多主题 CRUD Store）
  *
  * 设计要点：
- * - 兼容旧 `applyTheme(t)` / `setTheme(t)` 接口（旧代码仍可调用）
- * - 新接口：`applyThemeById(id)` / `setThemeById(id)`
+ * - 接口：`applyThemeById(id)` / `setThemeById(id)`
  * - 主题列表 = 内置主题 + 用户自定义主题
  * - 启动时从 localStorage 读取 activeThemeId
  * - main.tsx 已在 React render 之前同步写 data-theme 防 FOUC
@@ -12,7 +11,7 @@
 import { create } from 'zustand';
 import { createLogger } from '@/utils/logger';
 import { BUILT_IN_THEME_IDS } from '@/types/theme';
-import type { ThemeDefinition, ThemeId, ThemeExportFile } from '@/types/theme';
+import type { ThemeDefinition, ThemeId } from '@/types/theme';
 import {
   getAllThemes,
   getTheme,
@@ -21,17 +20,12 @@ import {
   getActiveThemeId,
   setActiveThemeId,
   downloadThemeFile,
-  importThemeFile,
-  exportTheme,
   getUserThemes,
-  migrateLegacyConfigTheme,
+  syncThemesWithRemote,
 } from '@/services/themeService';
 import { applyCustomCss, clearCustomCss } from '@/services/themeEngine';
 
 const log = createLogger('ThemeStore');
-
-/** 旧主题名兼容（用于过渡期） */
-type LegacyTheme = 'dark' | 'light' | 'spiderman';
 
 interface ThemeState {
   // ============ 当前状态 ============
@@ -46,13 +40,7 @@ interface ThemeState {
   /** 是否正在加载 */
   loading: boolean;
 
-  // ============ 旧版兼容方法 ============
-  /** 应用主题（仅写 DOM + localStorage + state，不触发服务端写） */
-  applyTheme: (theme: LegacyTheme) => void;
-  /** 用户主动切换：applyTheme + 服务端持久化 */
-  setTheme: (theme: LegacyTheme) => Promise<void>;
-
-  // ============ 新版方法 ============
+  // ============ 方法 ============
   /** 通过 ID 应用主题（仅写 DOM + localStorage + state） */
   applyThemeById: (id: ThemeId) => void;
   /** 通过 ID 切换主题（applyThemeById + 服务端持久化） */
@@ -65,20 +53,14 @@ interface ThemeState {
   saveTheme: (theme: ThemeDefinition) => void;
   /** 删除用户主题 */
   deleteTheme: (id: ThemeId) => boolean;
-  /** 复制主题（基于已有主题创建副本） */
-  duplicateTheme: (id: ThemeId) => ThemeDefinition | null;
 
   // ============ 导入导出 ============
-  /** 导出主题 */
-  exportTheme: (id: ThemeId) => ThemeExportFile | null;
   /** 下载主题文件 */
   downloadTheme: (id: ThemeId) => boolean;
-  /** 导入主题 */
-  importTheme: (jsonStr: string) => { success: boolean; error?: string; theme?: ThemeDefinition };
 
-  // ============ 迁移 ============
-  /** 从旧 config 字段迁移 */
-  migrateFromLegacy: (legacyTheme?: string, legacySpidermanConfig?: Record<string, unknown>) => ThemeId;
+  // ============ 跨端同步 ============
+  /** 与 DataRoot 对账（启动/打开设置时）：远端有更新则合并进列表 */
+  syncFromRemote: () => Promise<void>;
 }
 
 // ============ DOM 写入 ============
@@ -99,11 +81,7 @@ function writeDom(id: ThemeId, theme: ThemeDefinition | null): void {
   // 同步更新 favicon
   const link = document.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
   if (link) {
-    if (id === BUILT_IN_THEME_IDS.SPIDERMAN) {
-      link.href = '/spiderman-favicon.svg';
-    } else {
-      link.href = '/tauri.svg';
-    }
+    link.href = '/tauri.svg';
   }
 }
 
@@ -223,7 +201,7 @@ function flattenAndInject(theme: ThemeDefinition): void {
 const initialActiveId = getActiveThemeId();
 const initialTheme = getTheme(initialActiveId);
 
-// 如果初始主题是 spiderman，确保沉浸变量已同步
+// 如果初始主题是沉浸式主题，确保沉浸变量已同步
 if (initialTheme?.immersive?.enabled && typeof window !== 'undefined') {
   requestAnimationFrame(() => flattenAndInject(initialTheme));
 }
@@ -236,29 +214,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   userThemes: getUserThemes(),
   loading: false,
 
-  // ============ 旧版兼容方法 ============
-
-  applyTheme: (legacyTheme: LegacyTheme) => {
-    const idMap: Record<string, string> = {
-      dark: BUILT_IN_THEME_IDS.DARK,
-      light: BUILT_IN_THEME_IDS.LIGHT,
-      spiderman: BUILT_IN_THEME_IDS.SPIDERMAN,
-    };
-    const id = idMap[legacyTheme] ?? BUILT_IN_THEME_IDS.DARK;
-    get().applyThemeById(id);
-  },
-
-  setTheme: async (legacyTheme: LegacyTheme) => {
-    const idMap: Record<string, string> = {
-      dark: BUILT_IN_THEME_IDS.DARK,
-      light: BUILT_IN_THEME_IDS.LIGHT,
-      spiderman: BUILT_IN_THEME_IDS.SPIDERMAN,
-    };
-    const id = idMap[legacyTheme] ?? BUILT_IN_THEME_IDS.DARK;
-    await get().setThemeById(id);
-  },
-
-  // ============ 新版方法 ============
+  // ============ 方法 ============
 
   applyThemeById: (id: ThemeId) => {
     const state = get();
@@ -329,48 +285,22 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     return result;
   },
 
-  duplicateTheme: (id: ThemeId) => {
-    const original = getTheme(id);
-    if (!original) return null;
-
-    const now = new Date().toISOString();
-    const newTheme: ThemeDefinition = {
-      ...original,
-      id: crypto.randomUUID(),
-      name: `${original.name} (副本)`,
-      builtIn: false,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    saveTheme(newTheme);
-    get().refreshThemes();
-    return newTheme;
-  },
-
   // ============ 导入导出 ============
-
-  exportTheme: (id: ThemeId) => {
-    return exportTheme(id);
-  },
 
   downloadTheme: (id: ThemeId) => {
     return downloadThemeFile(id);
   },
 
-  importTheme: (jsonStr: string) => {
-    const result = importThemeFile(jsonStr);
-    if (result.success) {
-      get().refreshThemes();
+  // ============ 跨端同步 ============
+
+  syncFromRemote: async () => {
+    try {
+      const changed = await syncThemesWithRemote();
+      if (changed) get().refreshThemes();
+    } catch (e) {
+      log.warn('主题跨端对账失败（保持本地缓存）', {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
-    return result;
-  },
-
-  // ============ 迁移 ============
-
-  migrateFromLegacy: (legacyTheme?: string, legacySpidermanConfig?: Record<string, unknown>) => {
-    const id = migrateLegacyConfigTheme(legacyTheme, legacySpidermanConfig);
-    set({ activeThemeId: id, activeTheme: getTheme(id) ?? null });
-    return id;
   },
 }));

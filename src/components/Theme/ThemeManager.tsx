@@ -1,16 +1,16 @@
 /**
- * 主题管理器 — 卡片网格列表（方案B风格）
+ * 主题管理器 — 卡片网格列表
  *
- * 展示所有主题（内置 + 自定义），支持激活、复制、编辑、导入导出、删除
+ * 手动新建/编辑/复制/导入已移除（2026-10-25 主题瘦身）：主题的创建与调整
+ * 经 AI 对话完成（cap.ui.theme，见 ThemeTab 指南）；导出/删除保留作备份与
+ * 清理出口。挂载时与 DataRoot 对账（跨端主题合并）。
  */
 
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useThemeStore } from '@/stores/themeStore';
-import { BUILT_IN_THEME_IDS } from '@/types/theme';
-import type { ThemeDefinition, ThemeId } from '@/types/theme';
+import type { ThemeId } from '@/types/theme';
 import { isBuiltInThemeId } from '@/types/theme';
-import { ThemeEditor } from './ThemeEditor';
 
 export function ThemeManager() {
   const { t } = useTranslation('settings');
@@ -18,47 +18,14 @@ export function ThemeManager() {
     themes,
     activeThemeId,
     setThemeById,
-    saveTheme,
     deleteTheme,
-    duplicateTheme,
     downloadTheme,
-    importTheme,
   } = useThemeStore();
 
-  const [editingTheme, setEditingTheme] = React.useState<ThemeDefinition | null>(null);
-  const [importError, setImportError] = React.useState<string | null>(null);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-  const handleImport = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = importTheme(ev.target?.result as string);
-      if (result.success) {
-        setImportError(null);
-        alert(t('settings:theme.importSuccess', '主题导入成功'));
-      } else {
-        setImportError(result.error ?? '未知错误');
-      }
-    };
-    reader.readAsText(file);
-    // 重置 input 以便重复导入同一文件
-    e.target.value = '';
-  };
-
-  const handleDuplicate = (id: ThemeId) => {
-    const dup = duplicateTheme(id);
-    if (dup) {
-      // 自动进入编辑模式
-      setEditingTheme(dup);
-    }
-  };
+  // 打开设置时与 DataRoot 对账：拉取其他端（含 AI 经 APK 创建）的主题
+  React.useEffect(() => {
+    void useThemeStore.getState().syncFromRemote();
+  }, []);
 
   const handleDelete = (id: ThemeId) => {
     if (isBuiltInThemeId(id)) return;
@@ -75,32 +42,6 @@ export function ThemeManager() {
     void setThemeById(id);
   };
 
-  const handleEdit = (theme: ThemeDefinition) => {
-    setEditingTheme(theme);
-  };
-
-  const handleSave = (theme: ThemeDefinition) => {
-    if (theme.builtIn) {
-      // 内置主题：以固定 ID 存入自定义主题，第二次编辑时覆盖
-      const now = new Date().toISOString();
-      const customId = `custom:${theme.id}`;
-      const existing = themes.find((t) => t.id === customId);
-      const custom = {
-        ...theme,
-        id: customId,
-        name: existing ? theme.name : `${theme.name} (自定义)`,
-        builtIn: false,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-      };
-      saveTheme(custom);
-      setEditingTheme(null);
-    } else {
-      saveTheme(theme);
-      setEditingTheme(null);
-    }
-  };
-
   return (
     <div className="space-y-4">
       {/* 顶部操作栏 */}
@@ -113,55 +54,7 @@ export function ThemeManager() {
             {themes.length} {t('settings:theme.count', '个主题')} · {t('settings:theme.using', '使用中')}: {themes.find(t => t.id === activeThemeId)?.name ?? 'Dark'}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleImport}
-            className="px-3 py-1.5 text-xs rounded-lg border border-dashed border-border text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
-          >
-            {t('settings:theme.import', '导入')}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const now = new Date().toISOString();
-              const newTheme: ThemeDefinition = {
-                id: crypto.randomUUID(),
-                name: t('settings:theme.untitled', '未命名主题'),
-                version: 1,
-                builtIn: false,
-                createdAt: now,
-                updatedAt: now,
-                colors: themes.find(t => t.id === activeThemeId)?.colors ?? (themes.find(t => t.id === BUILT_IN_THEME_IDS.DARK)?.colors as any),
-                typography: themes.find(t => t.id === activeThemeId)?.typography ?? (themes.find(t => t.id === BUILT_IN_THEME_IDS.DARK)?.typography as any),
-                shape: themes.find(t => t.id === activeThemeId)?.shape ?? (themes.find(t => t.id === BUILT_IN_THEME_IDS.DARK)?.shape as any),
-                layout: themes.find(t => t.id === activeThemeId)?.layout ?? (themes.find(t => t.id === BUILT_IN_THEME_IDS.DARK)?.layout as any),
-              };
-              saveTheme(newTheme);
-              setEditingTheme(newTheme);
-            }}
-            className="px-3 py-1.5 text-xs rounded-lg bg-primary text-on-primary hover:bg-primary-600 transition-colors"
-          >
-            ＋ {t('settings:theme.new', '新建')}
-          </button>
-        </div>
       </div>
-
-      {/* 导入错误提示 */}
-      {importError && (
-        <div className="p-3 rounded-lg bg-danger/10 border border-danger/20 text-xs text-danger">
-          {t('settings:theme.importError', '导入失败')}: {importError}
-        </div>
-      )}
-
-      {/* 隐藏的文件输入 */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".polaris-theme,.json"
-        className="hidden"
-        onChange={handleFileChange}
-      />
 
       {/* 主题卡片网格 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -226,20 +119,6 @@ export function ThemeManager() {
                 <div className="flex items-center gap-1 pt-2 border-t border-border-subtle">
                   <button
                     type="button"
-                    onClick={() => handleEdit(theme)}
-                    className="px-2 py-1 text-[11px] rounded-md text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
-                  >
-                    编辑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDuplicate(theme.id)}
-                    className="px-2 py-1 text-[11px] rounded-md text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
-                  >
-                    复制
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => downloadTheme(theme.id)}
                     className="px-2 py-1 text-[11px] rounded-md text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
                   >
@@ -269,15 +148,6 @@ export function ThemeManager() {
           );
         })}
       </div>
-
-      {/* 主题编辑器模态框 */}
-      {editingTheme && (
-        <ThemeEditor
-          theme={editingTheme}
-          onSave={handleSave}
-          onClose={() => setEditingTheme(null)}
-        />
-      )}
     </div>
   );
 }

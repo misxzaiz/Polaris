@@ -10,7 +10,6 @@ import { createLogger } from '@/utils/logger';
 import { currentMode, listen } from '@/services/transport';
 import { storeTokenMd5, md5Hex } from '@/services/transport/auth';
 import { useThemeStore } from './themeStore';
-import { saveLegacySpiderManConfig } from '@/services/themeEngine';
 import { getBuiltInThemeByShortName } from '@/data/builtInThemes';
 import { fsWatchStop } from '@/services/tauri/fileService';
 import { schedulerStop, schedulerStart } from '@/services/tauri/schedulerService';
@@ -31,10 +30,6 @@ const log = createLogger('ConfigStore');
 export async function applyConfig(config: Config): Promise<void> {
   if (config.language) {
     i18n.changeLanguage(config.language);
-  }
-  // 同步 spidermanTheme 到 localStorage（兼容旧配置）
-  if (config.spidermanTheme) {
-    saveLegacySpiderManConfig(config.spidermanTheme as unknown as Record<string, unknown>);
   }
   // 优先使用 activeThemeId，否则迁移旧 theme 字段
   if (config.activeThemeId) {

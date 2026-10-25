@@ -13,8 +13,8 @@ export type EngineId = 'claude-code' | 'simple-ai' | (string & NonNullable<unkno
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
 
-/** 界面主题（@deprecated 使用 activeThemeId 替代） */
-export type Theme = 'dark' | 'light' | 'spiderman'
+/** 界面主题短名（@deprecated 使用 activeThemeId 替代；spiderman 已随内置主题移除） */
+export type Theme = 'dark' | 'light'
 
 /** 对话显示密度 */
 export type ChatDisplayDensity = 'compact' | 'comfortable' | 'spacious'
@@ -277,52 +277,6 @@ export interface DingTalkConfig {
   activeInstanceId?: string;
 }
 
-/** Spider-Man 主题配置 */
-export interface SpiderManThemeConfig {
-  /** 背景图片 URL（空字符串 = 使用预设） */
-  backgroundImage?: string;
-  /** 背景图片透明度 (0-1) */
-  backgroundOpacity?: number;
-  /** 面板背景透明度 (0-1)，控制侧栏/聊天面板的透明程度 */
-  panelOpacity?: number;
-  /** 面板磨砂强度 (px)，0=关闭磨砂效果 */
-  panelBlur?: number;
-  /** 内容卡片透明度 (0-1)，控制消息气泡/卡片/输入框的内容容器半透明程度 */
-  surfaceOpacity?: number;
-  /** 聊天工具面板透明度 (0-1)，控制工具调用块/派发卡片等背景 */
-  chatToolOpacity?: number;
-  /** 悬停态背景透明度 (0-1)，控制按钮/列表项等静态背景区域 */
-  hoverOpacity?: number;
-  /** 蛛网纹理强度 (0-1) */
-  webTextureOpacity?: number;
-  /** 背景缩放模式 */
-  backgroundSize?: string;
-  /** 背景水平偏移 (0-100) */
-  backgroundPositionX?: number;
-  /** 背景垂直偏移 (0-100) */
-  backgroundPositionY?: number;
-  /** 面具头像 URL */
-  avatarUrl?: string;
-  /** 蓝色强调强度 (0-1)，0=无蓝色，1=最大蓝色 */
-  blueAccent?: number;
-}
-
-/** Spider-Man 主题默认值 */
-export const DEFAULT_SPIDERMAN_THEME: SpiderManThemeConfig = {
-  backgroundImage: 'https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920',
-  backgroundOpacity: 1.0,
-  panelOpacity: 0,
-  panelBlur: 0,
-  surfaceOpacity: 0.27,
-  chatToolOpacity: 0.55,
-  hoverOpacity: 0.5,
-  webTextureOpacity: 0,
-  backgroundSize: 'cover',
-  backgroundPositionX: 50,
-  backgroundPositionY: 50,
-  blueAccent: 0.5,
-};
-
 /** Web 服务配置 */
 export interface WebConfig {
   /** 是否启用 Web 服务 */
@@ -405,8 +359,6 @@ export interface Config {
   feishu?: FeishuConfig;
   /** DingTalk 集成配置 */
   dingtalk?: DingTalkConfig;
-  /** Spider-Man 沉浸主题配置 */
-  spidermanTheme?: SpiderManThemeConfig;
   /** 语音输入配置 */
   speech?: SpeechConfig;
   /** 语音输出配置 (TTS) */

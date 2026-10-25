@@ -239,7 +239,6 @@ export type ThemeDefinitionExport = Omit<ThemeDefinition, 'id' | 'builtIn' | 'cr
 export const BUILT_IN_THEME_IDS = {
   DARK: '00000000-0000-0000-0000-000000000001',
   LIGHT: '00000000-0000-0000-0000-000000000002',
-  SPIDERMAN: '00000000-0000-0000-0000-000000000003',
 } as const;
 
 /** 检查是否为内置主题 ID */

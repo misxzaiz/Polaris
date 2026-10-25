@@ -1,4 +1,5 @@
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Component, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
+import type { ErrorInfo } from 'react'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { pluginPanelRegistry } from '@/plugin-system/panelRegistry'
 import type { PluginPanelComponent } from '@/plugin-system/types'
@@ -33,6 +34,39 @@ function LoadingFallback() {
       <div className="text-xs text-text-muted">加载中...</div>
     </div>
   )
+}
+
+/**
+ * 渲染期错误边界：插件面板与宿主同 window 运行，面板组件 render 抛错若无
+ * 边界拦截会冒泡到 App 根边界把整个应用打崩到全局错误页。此处按面板隔离，
+ * 崩溃只降级为单面板错误视图（重试 = 重挂载组件）。
+ */
+class PanelErrorBoundary extends Component<
+  { panelType: string; children: ReactNode; onError: (message: string) => void },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    this.props.onError(`${error.message}${info.componentStack ? ` @${info.componentStack.split('\n')[1]?.trim() ?? ''}` : ''}`)
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <ErrorFallback
+          panelType={this.props.panelType}
+          error={this.state.error.message}
+          onRetry={() => this.setState({ error: null })}
+        />
+      )
+    }
+    return this.props.children
+  }
 }
 
 export function PluginPanelHost({ panelType, onSendToChat }: PluginPanelHostProps) {
@@ -72,9 +106,11 @@ export function PluginPanelHost({ panelType, onSendToChat }: PluginPanelHostProp
   // （styles.ts scopeCss 前缀 [data-plugin-scope="<pluginId>"]）
   return (
     <div data-plugin-scope={pluginId} className="contents">
-      <Suspense fallback={<LoadingFallback />}>
-        <Component pluginId={pluginId} onSendToChat={onSendToChat} />
-      </Suspense>
+      <PanelErrorBoundary panelType={panelType} onError={(msg) => setError(msg)}>
+        <Suspense fallback={<LoadingFallback />}>
+          <Component pluginId={pluginId} onSendToChat={onSendToChat} />
+        </Suspense>
+      </PanelErrorBoundary>
     </div>
   )
 }

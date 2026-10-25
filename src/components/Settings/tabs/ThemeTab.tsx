@@ -47,52 +47,39 @@ export function ThemeTab() {
 function ThemeGuide() {
   const [copied, setCopied] = React.useState(false);
 
-  const guideContent = `# Polaris 主题生成指南
+  const guideContent = `# Polaris 主题生成与安装指南（AI 直调版）
 
-请根据以下规范生成一份 .polaris-theme 主题文件，输出纯 JSON（不要用代码块包裹）。
+你是 Polaris 的主题设计师。请按以下规范生成主题，并**直接调用 cap.ui.theme 工具安装应用**，
+不要输出让用户手动保存/导入的文件。若当前会话没有 cap.ui.theme 工具（bus_dispatch /
+cap_dispatch 均未暴露），先提示用户在 设置→通用 开启「AI 界面控制」后重试。
 
-## 主题信息
+## 你可用的主题动作（经 bus_dispatch(target="cap.ui.theme") 或等价 cap_dispatch）
+
+- listThemes：列出内置与用户主题
+- get：当前激活主题 id
+- import：{ "theme": <下方 theme 对象> } → 安装并激活新主题（缺省字段自动以 Dark 补全）
+- patch：{ "palette": { "primary.base": "59 130 246", ... } } → 基于当前主题微调配色
+- applyPreset：{ "preset": "dark" | "light" } → 切换内置主题
+- setActive：{ "id": "<主题id>" } → 切换到已有主题
+- export：导出当前完整主题定义
+- delete：{ "id": "<主题id>" } → 删除用户主题（内置不可删）
+
+## 用户需求模板
 
 - 名称：[主题名]
 - 描述：[风格描述]
 - 作者：[作者名]
+- 整体风格：暗色 / 浅色；主色调 / 背景色倾向 / 文字对比度
+- 可选：壁纸（Unsplash）、圆角风格、字体、自定义 CSS
 
-## 配色要求
+## theme 对象结构（import 的 payload；颜色为空格分隔 RGB 三元组，如 "59 130 246"）
 
-- 整体风格：暗色 / 浅色
-- 主色调：[颜色]
-- 背景色倾向：冷 / 暖 / 中性
-- 文字对比度：高 / 柔和
-
-## 可选要求
-
-- 壁纸：合适的 Unsplash 背景图
-- 圆角风格：锐利 / 标准 / 圆润
-- 字体：有特殊要求吗？
-- 自定义 CSS：需要额外效果吗？
-
-## 格式规范
-
-### 1. 颜色格式
-
-所有颜色值使用 RGB 三元组字符串，三个数字以空格分隔，不带括号：
-
-- 正确："59 130 246"
-- 错误：rgb(59,130,246) 或 #3B82F6
-
-### 2. 完整字段结构
 
 {
-  "formatVersion": 1,
-  "type": "polaris-theme",
-  "exportedAt": "2026-08-04T12:00:00.000Z",
-  "minAppVersion": "1.0.0",
-  "theme": {
-    "name": "主题名称",
-    "description": "主题描述",
-    "author": "作者名",
-    "version": 1,
-    "extends": null,
+  "name": "主题名称",
+  "description": "主题描述",
+  "author": "作者名",
+  "version": 1,
 
     "colors": {
       "primary": {
@@ -220,8 +207,7 @@ function ThemeGuide() {
       }
     },
 
-    "customCss": "/* 可选的 L6 自定义 CSS */"
-  }
+  "customCss": "/* 可选的 L6 自定义 CSS */"
 }
 
 ## 设计原则
@@ -260,7 +246,7 @@ function ThemeGuide() {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-text-tertiary">复制以下内容，粘贴给 AI 即可生成主题。</span>
+        <span className="text-xs text-text-tertiary">复制以下提示词发给 AI，AI 会直接生成并应用主题（需先在 设置→通用 开启「AI 界面控制」）。</span>
         <button
           type="button"
           onClick={handleCopy}

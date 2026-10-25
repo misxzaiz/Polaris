@@ -9,8 +9,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ---- mock stores（避免 localStorage 污染与 store 依赖） ----
+// themes: active-1(内置) / user-1(用户)
 const saveThemeMock = vi.fn()
 const setThemeByIdMock = vi.fn()
+const deleteThemeMock = vi.fn()
 const updateConfigPatchMock = vi.fn()
 
 vi.mock('@/stores/themeStore', () => ({
@@ -24,6 +26,7 @@ vi.mock('@/stores/themeStore', () => ({
       ],
       saveTheme: saveThemeMock,
       setThemeById: setThemeByIdMock,
+      deleteTheme: deleteThemeMock,
     }),
   },
 }))
@@ -31,7 +34,8 @@ vi.mock('@/stores/themeStore', () => ({
 vi.mock('@/stores/configStore', () => ({
   useConfigStore: {
     getState: () => ({
-      config: { chatDisplay: { fontSize: 14, messageSpacing: 'comfortable' } },
+      // uiControlEnabled: true —— 消费口门控开启（门控行为由专门用例覆盖）
+      config: { chatDisplay: { fontSize: 14, messageSpacing: 'comfortable' }, uiControlEnabled: true },
       updateConfigPatch: updateConfigPatchMock,
     }),
   },
@@ -67,6 +71,7 @@ describe('applyUiThemeAction', () => {
   beforeEach(() => {
     saveThemeMock.mockClear()
     setThemeByIdMock.mockClear()
+    deleteThemeMock.mockClear()
   })
 
   it('patch: 语义色映射为 colors 深层路径，克隆新主题并激活', () => {
@@ -96,7 +101,7 @@ describe('applyUiThemeAction', () => {
     expect(saveThemeMock).not.toHaveBeenCalled()
   })
 
-  it('applyPreset: dark/light/spiderman 映射内置 id 并激活', () => {
+  it('applyPreset: dark/light 映射内置 id 并激活', () => {
     const res = applyUiThemeAction('applyPreset', { preset: 'dark' })
     expect(res.ok).toBe(true)
     expect(setThemeByIdMock).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001')
@@ -156,6 +161,47 @@ describe('applyUiThemeAction', () => {
     expect(res.ok).toBe(false)
     expect(saveThemeMock).not.toHaveBeenCalled()
   })
+
+  it('import: 残缺 theme 经 mergeThemes 归一后保存（缺省字段补全）', () => {
+    const res = applyUiThemeAction('import', {
+      // 只给部分字段：colors 仅 primary.base，typography/shape 缺失
+      theme: { name: '极简', colors: { primary: { base: '#0f0' } } },
+    })
+    expect(res.ok).toBe(true)
+    const saved = saveThemeMock.mock.calls[0][0]
+    // 缺省维度被 Dark 兜底补全（归一后是完整主题，注入层可安全裸解构）
+    expect(saved.colors.text.primary).toBeTruthy()
+    expect(saved.typography.fontSans).toBeTruthy()
+    expect(saved.shape.radiusSm).toBeTruthy()
+    // 已给字段保留
+    expect(saved.colors.primary.base).toBe('#0f0')
+    expect(saved.builtIn).toBe(false)
+    expect(setThemeByIdMock).toHaveBeenCalledWith(saved.id)
+  })
+
+  it('import: 无名主题回退为未命名主题', () => {
+    const res = applyUiThemeAction('import', { theme: { colors: {} } })
+    expect(res.ok).toBe(true)
+    expect(saveThemeMock.mock.calls[0][0].name).toBe('未命名主题')
+  })
+
+  it('delete: 用户主题删除成功', () => {
+    const res = applyUiThemeAction('delete', { id: 'user-1' })
+    expect(res.ok).toBe(true)
+    expect(deleteThemeMock).toHaveBeenCalledWith('user-1')
+  })
+
+  it('delete: 内置主题拒绝', () => {
+    const res = applyUiThemeAction('delete', { id: 'active-1' })
+    expect(res.ok).toBe(false)
+    expect(deleteThemeMock).not.toHaveBeenCalled()
+  })
+
+  it('delete: 不存在或缺少 id 拒绝', () => {
+    expect(applyUiThemeAction('delete', { id: 'nope' }).ok).toBe(false)
+    expect(applyUiThemeAction('delete', {}).ok).toBe(false)
+    expect(deleteThemeMock).not.toHaveBeenCalled()
+  })
 })
 
 describe('applyUiChatAction', () => {
@@ -179,6 +225,7 @@ describe('consumeCapUiDispatch', () => {
   beforeEach(() => {
     saveThemeMock.mockClear()
     setThemeByIdMock.mockClear()
+    deleteThemeMock.mockClear()
     updateConfigPatchMock.mockClear()
   })
 
@@ -210,6 +257,25 @@ describe('consumeCapUiDispatch', () => {
     const res = consumeCapUiDispatch({ target: 'cap.ui.theme', payload: {} })
     expect(res.consumed).toBe(true)
     expect(res.message).toContain('缺 action')
+  })
+
+  it('uiControlEnabled 关闭时不消费（AI 界面控制未开启）', async () => {
+    const configStore = (await import('@/stores/configStore')).useConfigStore
+    const original = configStore.getState
+    ;(configStore as { getState: () => unknown }).getState = () => ({
+      config: { uiControlEnabled: false },
+      updateConfigPatch: updateConfigPatchMock,
+    })
+    try {
+      const res = consumeCapUiDispatch({
+        target: 'cap.ui.theme',
+        payload: { action: 'applyPreset', preset: 'dark' },
+      })
+      expect(res.consumed).toBe(false)
+      expect(setThemeByIdMock).not.toHaveBeenCalled()
+    } finally {
+      ;(configStore as { getState: () => unknown }).getState = original
+    }
   })
 
   it('args 为空不消费', () => {

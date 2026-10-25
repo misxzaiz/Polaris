@@ -1,5 +1,5 @@
 /**
- * 三个内置主题的完整 ThemeDefinition 常量
+ * 两个内置主题的完整 ThemeDefinition 常量
  *
  * 内置主题与用户自定义主题在数据结构上完全一致，
  * 仅 builtIn: true 标志位不同。
@@ -162,115 +162,11 @@ export const LIGHT_THEME: ThemeDefinition = {
   layout: { ...DEFAULT_LAYOUT },
 };
 
-// ============ Spider-Man 主题 ============
-
-export const SPIDERMAN_THEME: ThemeDefinition = {
-  id: BUILT_IN_THEME_IDS.SPIDERMAN,
-  name: 'Spider-Man',
-  description: '沉浸式主题 · 红色主色调 · 动态壁纸 · 面板透明磨砂',
-  version: 1,
-  builtIn: true,
-  createdAt: NOW,
-  updatedAt: NOW,
-
-  colors: {
-    primary: {
-      base: '220 38 38',
-      hover: '185 28 28',
-      '50': '254 226 226',
-      '100': '254 202 202',
-      '200': '252 165 165',
-      '300': '248 113 113',
-      '400': '239 68 68',
-      '500': '220 38 38',
-      '600': '185 28 28',
-      '700': '153 27 27',
-    },
-    background: {
-      base: '0 0 0',
-      elevated: '8 8 10',
-      surface: '14 14 18',
-      hover: '20 20 24',
-      active: '26 26 30',
-      tertiary: '16 18 22',
-      secondary: '10 12 16',
-    },
-    border: { base: '220 38 38' },
-    text: {
-      primary: '248 248 248',
-      secondary: '180 180 184',
-      tertiary: '142 142 147',
-      muted: '109 109 112',
-    },
-    status: {
-      warning: '251 191 36',
-      success: '52 211 153',
-      danger: '248 113 113',
-      info: '59 130 246',
-      done: '16 185 129',
-      failed: '239 68 68',
-      neutral: '156 163 175',
-    },
-    priority: {
-      low: '156 163 175',
-      normal: '59 130 246',
-      high: '251 146 60',
-      urgent: '248 113 113',
-    },
-    accent: {
-      ai: '59 130 246',
-      prototype: '34 211 238',
-      workspace: '59 130 246',
-    },
-    misc: {
-      overlay: '0 0 0',
-      onPrimary: '255 255 255',
-      canvas: '255 255 255',
-      tagBg: '255 255 255',
-      shadow: '0 0 0',
-    },
-  },
-
-  typography: { ...DEFAULT_TYPOGRAPHY },
-  shape: { ...DEFAULT_SHAPE },
-  motion: { ...DEFAULT_MOTION },
-
-  layout: { ...DEFAULT_LAYOUT },
-
-  // 沉浸效果
-  immersive: {
-    enabled: true,
-    wallpaper: {
-      type: 'image',
-      image: '/spiderman/09fca96a312390d96dcad588fd3ef02a.jpg',
-      opacity: 0.58,
-      positionX: 49,
-      positionY: 49,
-      size: 'cover',
-    },
-    layerOpacity: {
-      panel: 0.62,
-      surface: 0.39,
-      child: 0.43,
-    },
-    effects: {
-      panelBlur: 1,
-      webTexture: 0.35,
-      blueAccent: 0.5,
-      hoverOpacity: 0.41,
-    },
-    avatar: {
-      url: '/spiderman/09fca96a312390d96dcad588fd3ef02a.jpg',
-    },
-  },
-};
-
 // ============ 内置主题列表 ============
 
 export const BUILT_IN_THEMES: ThemeDefinition[] = [
   DARK_THEME,
   LIGHT_THEME,
-  SPIDERMAN_THEME,
 ];
 
 /** 根据 ID 查找内置主题 */
@@ -283,7 +179,6 @@ export function getBuiltInThemeByShortName(name: string): ThemeDefinition | unde
   const map: Record<string, string> = {
     dark: BUILT_IN_THEME_IDS.DARK,
     light: BUILT_IN_THEME_IDS.LIGHT,
-    spiderman: BUILT_IN_THEME_IDS.SPIDERMAN,
   };
   const id = map[name];
   return id ? getBuiltInTheme(id) : undefined;

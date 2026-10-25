@@ -13,7 +13,6 @@ import { SessionSummaryCard } from './SessionSummaryCard';
 import { Bot, RefreshCw, Copy, Check } from 'lucide-react';
 import { getEngineDisplayName } from '@/utils/engineDisplay';
 import { MarkdownImageSurface } from '../common/MarkdownImageSurface';
-import { useConfigStore } from '@/stores/configStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { useToastStore } from '@/stores/toastStore';
 import { useLongPress } from './useLongPress';
@@ -39,9 +38,7 @@ export const AssistantBubble = memo(function AssistantBubble({
   const hasBlocks = message.blocks && message.blocks.length > 0;
   // 读取当前主题的沉浸头像 URL
   const immersiveAvatarUrl = useThemeStore(s => s.activeTheme?.immersive?.enabled ? s.activeTheme.immersive.avatar?.url : null);
-  // 兼容旧 config.spidermanTheme.avatarUrl
-  const legacyAvatarUrl = useConfigStore(s => s.config?.theme === 'spiderman' ? s.config.spidermanTheme?.avatarUrl : null);
-  const avatarUrl = immersiveAvatarUrl ?? legacyAvatarUrl;
+  const avatarUrl = immersiveAvatarUrl;
 
   // 提取消息文本（用于复制）
   const messageText = useMemo(() => extractAssistantText(message), [message]);
