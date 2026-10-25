@@ -13,6 +13,13 @@
 import { parseNexusSlashCommand, parseAgentSlashCommand, rewriteDispatchPromptWithAgent, NEXUS_SCENARIOS } from '@/services/agentSlashCommand'
 import { parseDispatchSlashCommand, dispatchFromUser } from '@/services/dispatchTaskService'
 import { parseAssaultSlashCommand } from '@/services/cliSlashCommands'
+import {
+  buildCapDetailBlock,
+  buildCapDigestBlock,
+  matchCaps,
+  parseCapSlashCommand,
+} from '@/services/capSlashCommand'
+import { useCapCatalogStore } from '@/stores/capCatalogStore'
 import { invoke as transportInvoke } from '@/services/transport'
 import { useToastStore } from '@/stores/toastStore'
 import { useAgentStore } from '@/stores/agentStore'
@@ -34,6 +41,49 @@ export type SlashCommandResult =
  */
 export function tryHandleSlashCommand(text: string, ctx: SlashCommandContext): SlashCommandResult {
   const trimmed = text.trim()
+
+  // /cap [查询] [正文] → 注入 cap 能力协议速查（数据实时来自 cap.help，经 capCatalogStore 会话级缓存）
+  const capCmd = parseCapSlashCommand(trimmed)
+  if (capCmd) {
+    const catalog = useCapCatalogStore.getState()
+    if (!catalog.loaded) {
+      // 未就绪：触发加载并引导重试（斜杠建议弹出时已预载，正常路径此处已命中缓存）
+      void catalog.ensure()
+      useToastStore.getState().info('/cap', i18n.t('chat:capCmd.notReady', {
+        defaultValue: 'cap 目录加载中或后端未响应，请稍候重试',
+      }))
+      return { handled: true }
+    }
+    const caps = useCapCatalogStore.getState().caps
+    if (caps.length === 0) {
+      useToastStore.getState().info('/cap', i18n.t('chat:capCmd.emptyCatalog', {
+        defaultValue: '总线上没有任何已注册能力（cap.help index 返回为空）',
+      }))
+      return { handled: true }
+    }
+    if (!capCmd.rest) {
+      useToastStore.getState().info('/cap', i18n.t('chat:capCmd.usage', {
+        defaultValue: '用法：/cap 全量速查 ｜ /cap <cap id 或中文短名> [你想让 AI 做的事]',
+      }))
+      return { handled: true }
+    }
+    const matches = capCmd.firstToken ? matchCaps(caps, capCmd.firstToken) : []
+    if (matches.length === 1 && matches[0]) {
+      // 唯一命中：注入该能力完整协议，正文跟随其后
+      const detail = buildCapDetailBlock(matches[0])
+      return { handled: true, sendText: capCmd.remainder ? `${detail}\n\n${capCmd.remainder}` : detail }
+    }
+    if (matches.length > 1) {
+      useToastStore.getState().info('/cap', i18n.t('chat:capCmd.ambiguous', {
+        defaultValue: '匹配到多个：{{list}}——请用建议列表点选或更精确的查询',
+        list: matches.slice(0, 5).map((c) => `${c.id}（${c.name}）`).join('、'),
+        interpolation: { escapeValue: false },
+      }))
+      return { handled: true }
+    }
+    // 首个 token 不命中（或无 token）：整体视为正文，注入全量速查
+    return { handled: true, sendText: `${buildCapDigestBlock(caps)}\n\n${capCmd.rest}` }
+  }
 
   // /nexus <scenario> <goal> → 组队派发（拓扑波次）
   const nexusCmd = parseNexusSlashCommand(trimmed)

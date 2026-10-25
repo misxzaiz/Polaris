@@ -41,8 +41,15 @@ export interface AgentArgSuggestion {
 }
 
 export interface SuggestionItem {
-  type: 'workspace' | 'file' | 'snippet' | 'skill' | 'mcp' | 'conversation' | 'cli-command' | 'agent' | 'agent-mention';
-  data: Workspace | FileMatch | PromptSnippet | SkillItemType | ConversationSuggestion | McpServerItem | CliCommandSuggestion | AgentArgSuggestion | AgentArgSuggestion;
+  type: 'workspace' | 'file' | 'snippet' | 'skill' | 'mcp' | 'conversation' | 'cli-command' | 'agent' | 'agent-mention' | 'cap';
+  data: Workspace | FileMatch | PromptSnippet | SkillItemType | ConversationSuggestion | McpServerItem | CliCommandSuggestion | AgentArgSuggestion | AgentArgSuggestion | CapSuggestion;
+}
+
+/** /cap 能力条目（cap 协议速查命令的建议；id 为空串表示 /cap 命令本身） */
+export interface CapSuggestion {
+  id: string;
+  name: string;
+  summary: string;
 }
 
 /** Skill 条目（用于 / 命令建议） */
@@ -99,6 +106,7 @@ export function UnifiedSuggestion({
   const agentMentionItems = items.filter(i => i.type === 'agent-mention');
   const skillItems = items.filter(i => i.type === 'skill');
   const mcpItems = items.filter(i => i.type === 'mcp');
+  const capItems = items.filter(i => i.type === 'cap');
   const conversationItems = items.filter(i => i.type === 'conversation');
 
   return (
@@ -400,6 +408,39 @@ export function UnifiedSuggestion({
                 <span className="font-mono text-sm text-blue-500 shrink-0">/{mcp.id}</span>
                 {mcp.name && (
                   <span className="text-xs text-text-tertiary truncate">{mcp.name}</span>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {/* cap 能力分组（/cap 协议速查） */}
+      {capItems.length > 0 && (
+        <>
+          <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border bg-background-elevated/50 sticky top-0">
+            cap 能力
+          </div>
+          {capItems.map((item) => {
+            const globalIdx = items.findIndex(i => i === item);
+            const cap = item.data as CapSuggestion;
+
+            return (
+              <div
+                key={cap.id || '/cap'}
+                data-index={globalIdx}
+                className={`px-3 py-2 cursor-pointer flex items-center gap-2 text-sm ${
+                  globalIdx === selectedIndex
+                    ? 'bg-primary/20 text-text-primary'
+                    : 'text-text-secondary hover:bg-background-hover'
+                }`}
+                onClick={() => onSelect(item)}
+                onMouseEnter={() => onHover(globalIdx)}
+              >
+                <span className="font-mono text-sm text-blue-500 shrink-0">{cap.id || '/cap'}</span>
+                <span className="text-xs text-text-tertiary shrink-0">{cap.name}</span>
+                {cap.summary && (
+                  <span className="text-xs text-text-tertiary truncate">{cap.summary}</span>
                 )}
               </div>
             );

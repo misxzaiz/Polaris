@@ -27,7 +27,7 @@ import {
   type PromptOptimizeConfig,
 } from '@/services/promptOptimizeService'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
-import { UnifiedSuggestion, type SuggestionItem, type ConversationSuggestion } from './FileSuggestion'
+import { UnifiedSuggestion, type SuggestionItem, type ConversationSuggestion, type CapSuggestion } from './FileSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
 import { ContextBlockPreview } from './ContextBlockPreview'
 import { AutoResizingTextarea } from './AutoResizingTextarea'
@@ -67,6 +67,8 @@ import {
   type CliCommandSuggestion,
 } from '@/services/cliSlashCommands'
 import { tryHandleSlashCommand } from './chatCommandRouter'
+import { matchCaps } from '@/services/capSlashCommand'
+import { useCapCatalogStore } from '@/stores/capCatalogStore'
 import {
   appendPromptHistoryEntry,
   arePromptHistoryEntriesEqual,
@@ -807,6 +809,31 @@ export function ChatInput({
       return
     }
 
+    // === -0.5 /cap 参数补全（消息首，cap id / 中文短名过滤） ===
+    const capArgMatch = textBeforeCursor.match(/^\/cap\s+(\S*)$/)
+    if (capArgMatch) {
+      // 懒加载目录（会话级缓存）；未就绪时本次不弹建议，下一次按键即出现
+      void useCapCatalogStore.getState().ensure()
+      const caps = useCapCatalogStore.getState().caps
+      const capItems: SuggestionItem[] = matchCaps(caps, capArgMatch[1])
+        .slice(0, 12)
+        .map(c => ({
+          type: 'cap' as const,
+          data: { id: c.id, name: `（${c.name}）`, summary: c.summary } as CapSuggestion,
+        }))
+      if (capItems.length > 0) {
+        setSuggestionItems(capItems)
+        setSelectedIndex(0)
+        setShowSuggestions(true)
+        const position = calculateSuggestionPosition()
+        setSuggestionPosition({ top: position.top, left: position.left })
+        return
+      }
+      setShowSuggestions(false)
+      setSuggestionItems([])
+      return
+    }
+
     // === 0. / 命令触发检测（任意位置，必须在所有 @ 检测之前） ===
     // 规则：光标前最后一个片段以 / 开头，且 / 前是词边界（行首、空格、或标点符号）
     // 排除 @/path 中的 /（@ 后面的 / 不触发）
@@ -815,6 +842,10 @@ export function ChatInput({
       const query = slashMatch[2].toLowerCase()
       const snippets = useSnippetStore.getState().snippets
       const skills = useSkillStore.getState().skills
+      // /cap 命令数据源预载（键入 /c.. 即开始，发送时缓存通常已就绪）
+      if ('cap'.startsWith(query) || query.startsWith('cap')) {
+        void useCapCatalogStore.getState().ensure()
+      }
 
       // CLI 命令建议：仅 Claude 引擎、且 / 是消息首字符时提供
       // （与 CLI 语义对齐：只有整条消息以 / 开头才会被解析为命令）
@@ -853,6 +884,17 @@ export function ChatInput({
             || m.id.toLowerCase().replace(/^polaris[-_.]/, '').includes(query)
           ))
           .map(m => ({ type: 'mcp' as const, data: m })),
+        // /cap 命令入口（仅消息首；参数补全在 /cap <空格> 后由独立分支接管）
+        ...(isMessageStart && 'cap'.startsWith(query)
+          ? [{
+              type: 'cap' as const,
+              data: {
+                id: '',
+                name: '（命令）',
+                summary: '注入 cap 能力协议速查——空格后可按 id / 中文短名过滤',
+              } as CapSuggestion,
+            }]
+          : []),
       ]
 
       if (matched.length > 0) {
@@ -1145,6 +1187,12 @@ export function ChatInput({
     } else if (item.type === 'mcp') {
       const mcp = item.data as McpServerItem
       applySlashReplacement(`mcp-${mcp.id} `)
+      return
+    } else if (item.type === 'cap') {
+      // /cap 能力条目：整 token 替换为 `/cap <id> `（命令项 id 为空 → 仅 `/cap `），
+      // 空格后由 /cap 参数补全分支继续接管（中文短名过滤）
+      const cap = item.data as CapSuggestion
+      applySlashReplacement(cap.id ? `/cap ${cap.id} ` : '/cap ')
       return
     } else if (item.type === 'conversation') {
       // @对话 引用：加载源消息 → packForReference 落盘 → 把 @对话 替换为 @path（复用现有 @path 注入链）
