@@ -91,14 +91,17 @@ if (-not (Test-Path $KeystoreDir)) {
 
 if (-not (Test-Path $CredsFile)) {
     # 生成模板（占位符，需用户手动填写）
-    @'
+    $text = @'
 # Polaris Mobile APK 签名凭据（本文件在 temp/ 下，已被 .gitignore 覆盖，不会被提交）
 # 填写后重跑 build-apk.ps1；keystore 不存在时脚本会自动用这些凭据生成。
 
 POLARIS_KEYSTORE_PASSWORD=your_storepass_here
 POLARIS_KEY_PASSWORD=your_keypass_here
 POLARIS_KEY_ALIAS=polaris
-'@ | Set-Content -Path $CredsFile -Encoding UTF8
+'@
+    # 无 BOM 写入（PowerShell 5.x Set-Content -Encoding UTF8 会注入 BOM，破坏文件）
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($CredsFile, $text, $utf8NoBom)
     Write-Host ""
     Write-Host "❌ 未找到凭据文件，已生成模板：" -ForegroundColor Red
     Write-Host "   $CredsFile" -ForegroundColor Cyan
@@ -160,16 +163,19 @@ if ($Version) {
     }
     Write-Host "==> 同步移动端版本号 -> $Version"
     $parts = $Version -split '\.'
-    $vc = "10{0,2}{1,2}{2,2}" -f $parts[0], $parts[1], $parts[2]
+    # versionCode = 主×1e6 + 次×1e3 + 修（如 10.9.0 → 10009000），与旧版 10008001 格式对齐
+    $vc = ([int]$parts[0] * 1000000) + ([int]$parts[1] * 1000) + [int]$parts[2]
+    $vc = "$vc"
     $confJson = Join-Path $TauriDir "tauri.conf.json"
     $json = Get-Content $confJson -Raw
     $json = $json -replace '"version":\s*"\d+\.\d+\.\d+"', "`"version`": `"$Version`""
-    Set-Content -Path $confJson -Value $json -Encoding UTF8
+    # 无 BOM 写回（Set-Content -Encoding UTF8 会注入 BOM，serde JSON 解析会失败）
+    [System.IO.File]::WriteAllText($confJson, $json, (New-Object System.Text.UTF8Encoding($false)))
     $propsFile = Join-Path $AndroidDir "app\tauri.properties"
     @'
 tauri.android.versionName=__V__
 tauri.android.versionCode=__VC__
-'@ -replace '__V__', $Version -replace '__VC__', $vc | Set-Content $propsFile -Encoding UTF8
+'@ -replace '__V__', $Version -replace '__VC__', $vc | Set-Content $propsFile -Encoding ASCII
     Write-Host "   versionName=$Version  versionCode=$vc"
 }
 
