@@ -676,6 +676,15 @@ impl StreamingCapability for AiChatCapability {
             serde_json::from_value(v).map_err(|e| format!("请求参数非法: {}", e))?
         };
 
+        // 失败终态事件的信封要素（options/session_id 随下方 move 进线程，先取出）：
+        // contextId 决定前端路由目标（session-<前端UUID>），sessionId 供事件内容。
+        let err_ctx = options
+            .context_id
+            .clone()
+            .filter(|c| !c.is_empty())
+            .unwrap_or_else(|| "main".to_string());
+        let err_sid = session_id.clone().unwrap_or_default();
+
         // 业务核 async 调用 → 工作线程 block_on 驱动；事件经回调 → 泵通道
         std::thread::spawn(move || -> Result<(), String> {
             let result: Result<(), String> = match action.as_str() {
@@ -716,6 +725,9 @@ impl StreamingCapability for AiChatCapability {
                 "continue" => {
                     let sid = session_id.unwrap_or_default();
                     // 阶段 2 排他锁（流式路径同 invoke）：同一会话仅允许一个 active 操作。
+                    // 拒绝时以 match 值（而非闭包 return）携带错误——闭包尾部的
+                    // 失败终态分发（error/session_end/stream.error）依赖 result 值，
+                    // return 会绕过它导致前端收不到任何收尾事件。
                     if let Some(reason) =
                         crate::commands::session_state_commands::session_try_start_inner(
                             &sid,
@@ -723,32 +735,58 @@ impl StreamingCapability for AiChatCapability {
                         )
                         .map_err(|e| e.to_message())?
                     {
-                        return Err(reason);
+                        Err(reason)
+                    } else {
+                        let continue_result = handle
+                            .block_on(async {
+                                core::continue_chat_inner(sid.clone(), message, options, state.as_ref(), callbacks, &app_paths)
+                                    .await
+                            })
+                            .map(|_| ());
+                        match continue_result {
+                            Ok(()) => Ok(()),
+                            // 失败补偿：释放占位，避免卡 running
+                            Err(e) => {
+                                core::append_session_event(
+                                    &sid,
+                                    crate::services::session_state::SessionEventType::SessionEnd,
+                                    Some("error".to_string()),
+                                    Some(e.to_message()),
+                                );
+                                Err(e.to_message())
+                            }
+                        }
                     }
-                    let continue_result = handle
-                        .block_on(async {
-                            core::continue_chat_inner(sid.clone(), message, options, state.as_ref(), callbacks, &app_paths)
-                                .await
-                        })
-                        .map(|_| ());
-                    if let Err(e) = continue_result {
-                        // 失败补偿：释放占位，避免卡 running
-                        core::append_session_event(
-                            &sid,
-                            crate::services::session_state::SessionEventType::SessionEnd,
-                            Some("error".to_string()),
-                            Some(e.to_message()),
-                        );
-                        return Err(e.to_message());
-                    }
-                    Ok(())
                 }
                 other => Err(format!("cap.ai.chat 不支持流式动作: {}", other)),
             };
             if let Err(error) = result {
+                // 失败终态双通道（spec B3）：
+                // 1) 可路由事件对——error + session_end(reason=error)，与引擎错误
+                //    路径同构、走 {contextId, payload} 信封，前端 eventRouter 能
+                //    路由、eventHandler 能收尾 isStreaming。旧实现只发 stream.error
+                //    （无 sessionId、前端零消费者），continue 被排他门拒绝等场景
+                //    下前端 isStreaming 永久 true（永远转圈无报错）。
+                // 2) stream.error 原始观测通道保留，补 sessionId 字段。
+                //    action=start 尚无会话时 sessionId 为空，前端按 contextId 路由
+                //    仍可收尾本端流式态。
+                let _ = tx.try_send(make_event(
+                    "chat-event",
+                    serde_json::json!({
+                        "contextId": err_ctx,
+                        "payload": { "type": "error", "sessionId": err_sid, "error": error }
+                    }),
+                ));
+                let _ = tx.try_send(make_event(
+                    "chat-event",
+                    serde_json::json!({
+                        "contextId": err_ctx,
+                        "payload": { "type": "session_end", "sessionId": err_sid, "reason": "error" }
+                    }),
+                ));
                 let _ = tx.try_send(make_event(
                     "stream.error",
-                    serde_json::json!({ "action": action, "error": error }),
+                    serde_json::json!({ "action": action, "sessionId": err_sid, "error": error }),
                 ));
             }
             // tx 在此 drop → RouterBus 泵任务广播 dispatch.end(stream)
