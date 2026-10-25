@@ -5,11 +5,9 @@
 import { memo, useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AssistantChatMessage, TextBlock, ThinkingBlock } from '@/types';
-import type { ProcessBlockCollapseMode } from '@/types';
 import { formatContent, extractAssistantText } from '../chatUtils/helpers';
 import { renderBlocksWithGrouping } from '../tool-calls/blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
-import { SessionSummaryCard } from './SessionSummaryCard';
 import { Bot, RefreshCw, Copy, Check } from 'lucide-react';
 import { getEngineDisplayName } from '@/utils/engineDisplay';
 import { MarkdownImageSurface } from '../common/MarkdownImageSurface';
@@ -20,7 +18,6 @@ import { useLongPress } from './useLongPress';
 export const AssistantBubble = memo(function AssistantBubble({
   message,
   messageIndex,
-  collapseMode,
   onScrollToMessage,
   onScrollToTop,
   onScrollToBottom,
@@ -28,7 +25,6 @@ export const AssistantBubble = memo(function AssistantBubble({
 }: {
   message: AssistantChatMessage;
   messageIndex?: number;
-  collapseMode?: ProcessBlockCollapseMode;
   onScrollToMessage?: (index: number) => void;
   onScrollToTop?: () => void;
   onScrollToBottom?: () => void;
@@ -148,10 +144,10 @@ export const AssistantBubble = memo(function AssistantBubble({
             )}
           </div>
 
-          {/* 渲染内容块（支持工具和思考块折叠聚合） */}
+          {/* 渲染内容块（过程块相邻成组折叠，仅非空文本/面板类块打断分组） */}
           {hasBlocks ? (
             <div>
-              {renderBlocksWithGrouping(message.blocks, message.isStreaming, collapseMode)}
+              {renderBlocksWithGrouping(message.blocks, message.isStreaming)}
             </div>
           ) : message.content ? (
             // 兼容旧格式（content 字符串）
@@ -174,10 +170,6 @@ export const AssistantBubble = memo(function AssistantBubble({
 
           {/* 流式光标 —— 已移到 ProgressiveStreamingMarkdown 里"最后一段"的字符末尾。
               气泡层不再显示，避免与字符末尾 caret 重复。 */}
-
-          {/* 会话补充卡片：与正文同宽同左缘（在 chat-assistant-content 内部）。
-              流式输出期间不展示，回复结束后（isStreaming=false）再出现。 */}
-          {!message.isStreaming && <SessionSummaryCard blocks={message.blocks} />}
         </div>
       </div>
 
@@ -207,7 +199,6 @@ export const AssistantBubble = memo(function AssistantBubble({
   if (prevProps.message.id !== nextProps.message.id) return false;
   if (prevProps.message.isStreaming !== nextProps.message.isStreaming) return false;
   if (prevProps.messageIndex !== nextProps.messageIndex) return false;
-  if (prevProps.collapseMode !== nextProps.collapseMode) return false;
 
   // blocks 数量不同，需要更新
   if (prevBlocks.length !== nextBlocks.length) return false;

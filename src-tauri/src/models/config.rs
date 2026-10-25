@@ -892,19 +892,8 @@ pub enum ChatDisplayFontFamily {
     Mono,
 }
 
-/// 过程块折叠模式
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum ProcessBlockCollapseMode {
-    Auto,
-    Legacy,
-}
-
-impl Default for ProcessBlockCollapseMode {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
+// 过程块折叠模式已移除（2026-10-25）：折叠行为统一，无 auto/legacy 之分，
+// 见 plans/tool-block-collapse-behavior-fix.md；旧配置残留字段由 serde 静默忽略。
 
 impl Default for ChatDisplayFontFamily {
     fn default() -> Self {
@@ -940,9 +929,6 @@ pub struct ChatDisplaySettings {
     /// 对话字体族
     #[serde(default)]
     pub font_family: ChatDisplayFontFamily,
-    /// 过程块折叠模式
-    #[serde(default)]
-    pub process_block_collapse: ProcessBlockCollapseMode,
 }
 
 fn default_chat_font_size() -> u8 { 14 }
@@ -962,7 +948,6 @@ impl Default for ChatDisplaySettings {
             code_font_size: default_chat_code_font_size(),
             input_font_size: None,
             font_family: ChatDisplayFontFamily::default(),
-            process_block_collapse: ProcessBlockCollapseMode::default(),
         }
     }
 }

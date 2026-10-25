@@ -207,9 +207,6 @@
     "outputResult": "Output",
     "duration": "Duration: {{duration}}",
     "moreTasks": "...{{count}} more tasks",
-    "moreTools": "{{count}} more tool calls...",
-    "moreThinking": "{{count}} more thinking blocks...",
-    "moreMixed": "{{count}} more items...",
     "startTime": "Start: {{time}}",
     "endTime": "End: {{time}}",
     "fileDiff": "File Diff",
@@ -246,30 +243,8 @@
   "summary": {
     "collapsedLabel": "Process",
     "chipThinking": "{{count}} thinking",
-    "chipText": "{{count}} intermediate",
     "chipTool": "{{count}} tools",
-    "chipPlan": "{{count}} plans",
-    "chipPermission": "{{count}} permissions",
-    "chipAgent": "{{count}} agents",
-    "chipQuestion": "{{count}} questions",
-    "chipCompact": "{{count}} compactions",
-    "chipFile": "{{count}} file changes",
-    "fileChangesTitle": "Changed Files",
-    "fileChangesCount": "{{count}} files",
-    "fileCreated": "Created",
-    "fileModified": "Modified",
-    "fileDeleted": "Deleted",
-    "toolbarTitle": "Process",
-    "toolbarBlockCount": "{{count}} blocks",
-    "sectionThinking": "Analysis",
-    "sectionTools": "Tool Calls",
-    "sectionPlan": "Execution Plan",
-    "sectionFiles": "Changed Files",
-    "sectionPreview": "Previews"
-  },
-  "summaryCard": {
-    "tabPreview": "Preview",
-    "chipPreview": "{{count}} previews"
+    "toolbarBlockCount": "{{count}} blocks"
   },
   "thinking": {
     "title": "Thinking",

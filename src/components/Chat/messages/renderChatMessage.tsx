@@ -4,7 +4,6 @@
 
 import React from 'react';
 import type { ChatMessage, SystemChatMessage } from '@/types';
-import type { ProcessBlockCollapseMode } from '@/types';
 import { UserBubble } from '../chatBubbles/UserBubble';
 import { AssistantBubble } from '../chatBubbles/AssistantBubble';
 import { SystemBubble } from '../chatBubbles/SystemBubble';
@@ -28,7 +27,6 @@ export function renderChatMessage(
   messageIndex: number | undefined,
   scrollActions: MessageScrollActions | undefined,
   messageActions?: MessageActions,
-  collapseMode?: ProcessBlockCollapseMode,
 ): React.ReactNode {
   switch (message.type) {
     case 'user':
@@ -49,7 +47,6 @@ export function renderChatMessage(
           key={message.id}
           message={message}
           messageIndex={messageIndex}
-          collapseMode={collapseMode}
           onScrollToMessage={scrollActions?.scrollToMessage}
           onScrollToTop={scrollActions?.scrollToTop}
           onScrollToBottom={scrollActions?.scrollToBottom}

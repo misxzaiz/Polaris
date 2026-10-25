@@ -4,14 +4,6 @@
 
 import { Check, XCircle, Loader2, AlertTriangle, Circle, Square } from 'lucide-react';
 
-/** 工具调用折叠配置 */
-export const TOOL_COLLAPSE_CONFIG = {
-  /** 折叠前最多显示的可折叠块数 */
-  maxVisibleBlocks: 4,
-  /** 触发折叠的最小块数（超过此值才折叠） */
-  collapseThreshold: 5,
-} as const;
-
 /** Virtuoso 视口扩展常量（避免每次渲染创建新对象） */
 export const VIEWPORT_EXTENSION = { top: 100, bottom: 150 };
 

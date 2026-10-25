@@ -7,7 +7,7 @@
 import { forwardRef, memo, useMemo, useRef, useCallback, useEffect, useState } from 'react';
 import type { ComponentProps, MutableRefObject } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { useConfigStore } from '@/stores/configStore';
+
 import { useToastStore } from '@/stores/toastStore';
 import { useSessionState } from '@/stores/conversationStore/useActiveSession';
 import { renderChatMessage } from './renderChatMessage';
@@ -45,7 +45,6 @@ interface SessionMessagesViewProps {
 export const SessionMessagesView = memo(function SessionMessagesView({ sessionId, onEditMessage }: SessionMessagesViewProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
-  const collapseMode = useConfigStore((s) => s.config?.chatDisplay?.processBlockCollapse ?? 'auto');
 
   // 直接订阅特定 session store 的状态
   const messages = useSessionState(
@@ -273,7 +272,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
           style={{ height: '100%' }}
           data={displayMessages}
           itemContent={(index, item) => {
-            return renderChatMessage(item, index, scrollActions, messageActions, collapseMode);
+            return renderChatMessage(item, index, scrollActions, messageActions);
           }}
           components={{
             // 空态用 EmptyPlaceholder 承接，避免 isEmpty 三元分支导致 Virtuoso 整树卸载重建

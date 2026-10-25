@@ -199,7 +199,7 @@ export function SessionPreviewModal({ item, onRestore, onFork, onClose }: Sessio
                 style={{ height: '100%' }}
                 data={messages}
                 itemContent={(index, msg) => (
-                  <div className="px-1">{renderChatMessage(msg, index, NOOP_SCROLL_ACTIONS, undefined, 'auto')}</div>
+                  <div className="px-1">{renderChatMessage(msg, index, NOOP_SCROLL_ACTIONS, undefined)}</div>
                 )}
                 atBottomStateChange={setAtBottom}
                 atBottomThreshold={120}

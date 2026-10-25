@@ -1,87 +1,56 @@
-# 问题文档：AI 对话过程块（工具/思考）折叠行为调整
+# 方案：AI 对话过程块折叠行为统一（移除 collapseMode，仅保留改进版 legacy）
 
-> 状态：待实施（由其他 AI 实施）
-> 关联用户反馈：对话结束后工具调用被折叠成汇总条，用户希望默认不折叠（legacy 行为），且折叠规则按以下需求调整。
-
----
-
-## 一、背景与现状
-
-Polaris 中 AI 回复的消息按内容块（`ContentBlock`）渲染，其中过程块（thinking / tool_call / plan_mode / agent_run / permission_request / question / context_compact / tool_group）会被折叠。
-
-当前折叠模式由配置 `chatDisplay.processBlockCollapse` 控制，两个取值：
-
-- **`auto`（当前默认）**：消息结束后（非流式）所有过程块折叠进 `SessionSummaryCard` 补充卡片，正文只显示文本结果块。
-- **`legacy`（旧版）**：按 `identifyCollapsibleBlockGroups` 识别相邻可折叠块，块数 > `collapseThreshold(5)` 时才折叠成 `CollapsibleBlockGroupRenderer`（默认展开 4 个，其余折叠），否则逐个平铺渲染。
-
-用户当前配置已被改为 `legacy`，但有以下期望：
-
-1. **默认就是 legacy 模式**（改代码默认值，而非只改用户配置）。
-2. **不管数量几个都折叠**（去掉"超过 5 个才折叠"的阈值限制）。
-3. **相邻的才折叠**：连续的 thinking/tool_call 块折叠成一组；中间若有真实文本，则文本正常显示、不被吞掉。
-4. **自动生成的中间面板**（如 plugin_card 等交互卡/预览卡）放到折叠块的**上方**，不被折叠。
-
-用户原话（2026-10-25）："目前好像是香菱的那个工具在最后会折叠……但是我希望就是不管数量几个都折叠。然后是相邻的折叠，如果是那个有文本的话就还是正常显示文本。另外的话就是要注意那些，比如说自动生成的中间的一些面板，那个的话就放到折叠的上面。"
-
-> 注："香菱"是用户对某个工具/MCP server 的称呼，代码中无此字符串，实施时以实际渲染表现定位即可（用户默认引擎为 `simple-ai`）。
+> 状态：已实施（2026-10-25 定稿并落地，验证：typecheck / vitest / cargo check 双门通过）
+> 前置讨论：原型已确认（三态对照：流式全展开 / 结束后新形态 / 结束后旧形态）。
+> 本文档取代原「需求 1-4」版本：用户追加决策——**移除 `processBlockCollapse` 设置项本身**，auto/legacy 二分不复存在，全体用户统一为下述唯一行为。
 
 ---
 
-## 二、需求明细
+## 一、最终行为（唯一形态）
 
-### 需求 1：默认 legacy 模式
+一条 assistant 消息由 `ContentBlock[]` 渲染，规则：
 
-把 `processBlockCollapse` 的**代码默认值**改为 `'legacy'`。涉及默认值/归一化逻辑，不涉及用户已有配置迁移（已有配置优先）。
+1. **分组**：连续的 `thinking` / `tool_call` 块归为一个折叠组。
+   - **仅非空 `text` 块打断分组**（空文本/"..." 不打断，现状保留）。
+   - **面板类块（plugin_card / question / form / permission_request / artifact_preview 等）不打断分组**——它们不进组、也不把组切开；面板前后被「穿透」的过程块合并为一组，面板自身按原序渲染在组渲染器外侧（自然浮到其前面折叠条下方）。避免面板穿插产生多条折叠条的碎片形态。
+2. **任何 ≥1 块的组都渲染为折叠组**（去掉原 `collapseThreshold: 5` 门槛，无「小组平铺」形态）。
+3. **流式期间**：组渲染器透明——过程块直接平铺（无汇总条包装，避免"组壳套卡片"双层视觉）；面板即时原位出现。
+4. **流式结束**（`isStreaming` false）：组自动折叠为**一条汇总条**（零可见块，不再保留前 4 个卡片头）。汇总条 = 图标 + 「运行过程」 + 计数 pills（思考 紫 / 工具 蓝）+ 总块数 + chevron。点击展开 = **回到平铺**（无容器壳，与流式期间同构；块卡自带间距），尾部一个无边框的轻量「收起」文字按钮；汇总条头部点击或尾部按钮均可收起。
+5. **中间文本**：非空 text 块始终按原序平铺显示（不被吞）。
+6. `SessionSummaryCard` 补充卡片**整体移除**：其三段（运行过程/变更文件/预览）在新形态下均与正文重复——过程在折叠条内、面板与预览原位直出、文件变更在组内 Edit/Write 工具卡（含 diff）中。
+7. `artifact_preview.inlineToBody` 字段与写入链路保留（`eventHandler.ts` HTML 卡片检测），行为无差异（所有 artifact_preview 均正文直出）。
 
-### 需求 2：不管数量几个都折叠
+## 二、改动清单
 
-在 legacy 渲染路径中，去掉 `TOOL_COLLAPSE_CONFIG.collapseThreshold(5)` 的阈值门槛：**任何长度 ≥ 1 的相邻可折叠块组**都应折叠为组渲染器（`CollapsibleBlockGroupRenderer`），而不是小规模时逐个平铺。
+### 前端
+| 文件 | 改动 |
+|---|---|
+| `src/types/config.ts` | 删 `ProcessBlockCollapseMode` 类型、`ChatDisplaySettings.processBlockCollapse` 字段、`DEFAULT_CHAT_DISPLAY_SETTINGS.processBlockCollapse`、normalize 归一化行 |
+| `src/components/Chat/messages/SessionMessagesView.tsx` | 删 collapseMode 读取与传参 |
+| `src/components/Chat/messages/renderChatMessage.tsx` | 删 collapseMode 参数 |
+| `src/components/Chat/chatBubbles/AssistantBubble.tsx` | 删 collapseMode prop、memo 比较行；删 SessionSummaryCard 渲染与 import |
+| `src/components/Chat/tool-calls/blockGrouping.tsx` | 重写：`identifyCollapsibleBlockGroups` 打断条件收窄为仅非空 text；`CollapsibleBlockGroupRenderer` 全折叠 + 新汇总条；`renderBlocksWithGrouping` 删 collapseMode/auto 分支、阈值改 ≥1；删 `AutoModeRenderer`、`categorizeBlock`、`extractProcessBlocks`、`extractFileChanges`、`ProcessBlockGroupedList` 及其辅助（ProcessSection/ProcessBlockItem/FallbackBlockItem/deriveSectionSummary/getBlockGroup*/getGroupIcon） |
+| `src/components/Chat/chatUtils/constants.ts` | 删 `TOOL_COLLAPSE_CONFIG` |
+| `src/components/Chat/chatBubbles/SessionSummaryCard.tsx` | **删除文件** |
+| `src/components/Chat/chatBubbles/AssistantBubble.test.tsx` | 删 3 处 `collapseMode="legacy"` 传参与过时注释 |
+| `src/locales/{zh-CN,en-US}/chat.json` | `summary` 段仅保留 `collapsedLabel/chipThinking/chipTool/toolbarBlockCount`（新汇总条复用），删其余；删 `summaryCard` 段；删 `tool.moreTools/moreThinking/moreMixed` |
+| 新增 `src/components/Chat/tool-calls/blockGrouping.test.tsx` | 分组规则（文本打断/面板不打断/空文本不打断）+ 全折叠行为（非流式零可见块）+ 流式展开 |
 
-### 需求 3：相邻才折叠、有文本则正常显示
+### 后端（Rust）
+| 文件 | 改动 |
+|---|---|
+| `src-tauri/src/models/config.rs` | 删 `ProcessBlockCollapseMode` enum + Default、`ChatDisplaySettings.process_block_collapse` 字段与 default 构造 |
+| `src-tauri/src/services/router/ui_chat_capability.rs` | `cap.ui.chat` patch 白名单删 `processBlockCollapse`，删对应取值校验 |
 
-折叠分组边界按"相邻 + 无真实文本打断"判定：
+### 兼容性
+- 旧配置文件中残留的 `processBlockCollapse` 字段：`ChatDisplaySettings` 无 `deny_unknown_fields`，serde 静默忽略，无需迁移。
+- `cap.ui.chat` patch 再传该字段将被「未知字段」拒绝（防漂移语义正确）。
 
-- 连续的 thinking / tool_call 块归为一组折叠。
-- 空文本块（内容为空或只有 `...`）**不打断**分组（现状如此，保留）。
-- **非空文本块打断分组**，且文本块本身正常平铺显示（不被折叠、不被吞掉）。
-- 现状 `identifyCollapsibleBlockGroups` 已有此判定，但需结合需求 2 验证：分组正确性 + 文本块不被误折叠。
+## 三、验收标准
 
-### 需求 4：自动生成的中间面板放到折叠块上方
-
-消息中自动生成的中间面板类块（典型：`plugin_card`，可能含 `artifact_preview` / `question` / `permission_request` 等交互卡）：
-
-- **不参与折叠**，始终正常渲染。
-- **渲染顺序在折叠块上方**（用户可即时看到/交互），折叠内容在其下方。
-- 注意 `categorizeBlock` 当前把 `plugin_card` 的 `interaction + pending` 态归为 `process`（会进折叠）；需调整分类，让这类交互面板保持独立展示在折叠区上方。
-
----
-
-## 三、涉及文件（实施方参考，需自行确认）
-
-| 文件 | 相关位置 | 说明 |
-|---|---|---|
-| `src/types/config.ts` | L26 `ProcessBlockCollapseMode`、L50-59 `DEFAULT_CHAT_DISPLAY_SETTINGS` | 前端默认值 `processBlockCollapse: 'auto'` → `'legacy'` |
-| `src/components/Chat/tool-calls/blockGrouping.tsx` | L8-13 常量引用、L448-487 `identifyCollapsibleBlockGroups`、L552+ `renderBlocksWithGrouping`、L593 阈值判断 | 折叠分组识别与渲染入口 |
-| `src/components/Chat/chatUtils/constants.ts` | L8-13 `TOOL_COLLAPSE_CONFIG`（`collapseThreshold: 5`） | 阈值常量 |
-| `src/components/Chat/chatBubbles/AssistantBubble.tsx` | L154-167 渲染、L183 `SessionSummaryCard` | 消息气泡组装 |
-| `src/components/Chat/chatBubbles/SessionSummaryCard.tsx` | 全文 | auto 模式的补充卡片（legacy 下是否仍需/调整） |
-| `src/components/Chat/tool-calls/blockGrouping.tsx` L35-58 `categorizeBlock` | plugin_card 分类 | 需求 4 调整点 |
-| `src-tauri/src/models/config.rs` | L898-903 `ProcessBlockCollapseMode`、L965 `default()` | 后端默认值 |
-| `src-tauri/src/services/router/ui_chat_capability.rs` | L34/L63-68 字段白名单与校验 | cap.ui.chat 协议字段（枚举 `auto/legacy` 不变，无需改，但确认默认值同步） |
-
-**注意（AGENTS.md 约定）**：
-
-- 改协议 = 前后端双向同步：前端类型 + 后端 Rust 类型 + 校验，关键枚举不漂移。
-- 改动后需验证：`pnpm exec tsc --noEmit` + `cargo check`（若动 Rust 默认值）。
-- `docs/review-claude-code-process-block-collapse.md` 是本功能的历史设计文档，实施前建议通读。
-
----
-
-## 四、验收标准
-
-1. 全新配置（无用户覆盖）时，`processBlockCollapse` 默认生效为 `legacy` 行为。
-2. 即使只有 1 个工具调用/思考块，消息结束后也折叠展示（点击可展开）。
-3. 中间夹有真实文本时：文本正常显示，只有被文本分隔开的相邻块各自折叠。
-4. plugin_card / 交互面板等自动生成的中间面板：正常渲染在折叠内容上方，不被折叠。
-5. 流式输出期间保持展开（现状：流式不折叠，结束才折叠，此项不回归）。
-6. 现有测试不回归；如行为变更，更新 `src/components/Chat/tool-calls/` 与 `blockGrouping` 相关测试。
+1. 任意配置下（无设置项），结束后正文 = 折叠条（一条/文本段）+ 原序文本 + 原序面板 + 最终文本。
+2. 单个工具调用也折叠为一条汇总条；汇总条可展开/收起。
+3. 面板穿插工具之间时：折叠条数量仅由非空文本分段决定，与面板数量无关；面板不被折叠吞掉。
+4. 流式期间过程块平铺直出（无汇总条包装）、面板即时可见；结束后自动收拢为汇总条（无前 4 个残留）。
+5. 中间文本不被折叠。
+6. `pnpm typecheck` / `pnpm test:run` / `cargo check` / `cargo check --no-default-features --bin polaris-web --bin polaris-mcp` 通过。

@@ -31,7 +31,6 @@ impl UiChatCapability {
         const KNOWN: &[&str] = &[
             "fontSize", "lineHeight", "paragraphSpacing", "messageSpacing",
             "contentWidth", "codeFontSize", "inputFontSize", "fontFamily",
-            "processBlockCollapse",
         ];
         for k in obj.keys() {
             if !KNOWN.contains(&k.as_str()) {
@@ -58,12 +57,6 @@ impl UiChatCapability {
         if let Some(fs) = obj.get("codeFontSize") {
             if !fs.is_number() || fs.as_f64().is_none_or(|f| f <= 0.0 || f > 64.0) {
                 return Err("codeFontSize 必须是 (0, 64] 的数值".to_string());
-            }
-        }
-        if let Some(pc) = obj.get("processBlockCollapse") {
-            let pc = pc.as_str().ok_or_else(|| "processBlockCollapse 必须是字符串".to_string())?;
-            if !matches!(pc, "auto" | "legacy") {
-                return Err(format!("processBlockCollapse 必须是 auto/legacy，收到 {}", pc));
             }
         }
         Ok(())
