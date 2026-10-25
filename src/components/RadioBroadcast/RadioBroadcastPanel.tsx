@@ -51,7 +51,7 @@ import {
   probeVoice,
 } from '@/services/voiceBroadcast/voiceService'
 import type { LibraryItem, CustomVoice, PresetVoiceInfo } from '@/services/voiceBroadcast/voiceService'
-import { MIMO_VOICES } from '@/services/voiceBroadcast/constants'
+import { MIMO_VOICES, normalizeVoiceId } from '@/services/voiceBroadcast/constants'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { useConfigStore } from '@/stores/configStore'
 import { SessionConfigSelector } from '@/components/Chat/session/SessionConfigSelector'
@@ -153,6 +153,8 @@ export function RadioBroadcastPanel() {
     try {
       const raw = localStorage.getItem('polaris.radioLastSession')
       const parsed = raw ? (JSON.parse(raw) as LastSession) : null
+      // 旧快照可能存显示名「MiMo-默认」（API 不认，会 400），读入时统一纠正
+      if (parsed?.voice) parsed.voice = normalizeVoiceId(parsed.voice)
       if (parsed?.direction?.text) setLastSession(parsed)
     } catch { /* 静默 */ }
   }, [isIdle])

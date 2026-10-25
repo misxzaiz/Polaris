@@ -15,6 +15,7 @@
 #   [3] 拷贝 .so → gen/android/app/src/main/jniLibs/arm64-v8a/
 #   [4] gradle :app:assembleArm64Release (release 签名)
 #   [5] 验证: 签名指纹 / versionName / APK 内 .so 与 jniLibs hash 一致
+#   [6] 复制 APK → <仓库根>\release-local\polaris-mobile-<version>.apk
 #
 # ==== 签名凭据（敏感信息，不要提交到版本库）====
 # 脚本从以下路径自动读取，任一缺失会在启动时打印缺失项并生成模板：
@@ -268,5 +269,20 @@ if ($soApkHash -eq $soJniHash) {
     Write-Host "   ⚠ .so hash 不一致! APK=$soApkHash  jniLibs=$soJniHash" -ForegroundColor Yellow
 }
 
+# ---- [6] 复制到 release-local ----
+# 版本号优先取 -Version 参数；未传时回读移动端 tauri.conf.json（无参调用也要能归档）
+$apkVersion = $Version
+if (-not $apkVersion) {
+    # $confJson 只在 -Version 分支中定义，这里独立推导，保证无参调用可用
+    $confText = Get-Content (Join-Path $TauriDir "tauri.conf.json") -Raw
+    if ($confText -match '"version":\s*"(\d+\.\d+\.\d+)"') { $apkVersion = $Matches[1] }
+}
+$releaseLocal = Join-Path $RepoRoot "release-local"
+if (-not (Test-Path $releaseLocal)) { New-Item -ItemType Directory -Path $releaseLocal -Force | Out-Null }
+$apkDest = Join-Path $releaseLocal ("polaris-mobile-{0}.apk" -f $apkVersion)
+Copy-Item $ApkPath -Destination $apkDest -Force
+Write-Host "   已复制: $apkDest"
+
 Write-Host ""
 Write-Host "✅ 打包完成: $ApkPath" -ForegroundColor Green
+Write-Host "✅ 归档完成: $apkDest" -ForegroundColor Green

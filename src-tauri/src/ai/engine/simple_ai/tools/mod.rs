@@ -190,10 +190,33 @@ impl ToolRegistry {
     }
 
     /// 全部工具的 OpenAI function schema（内置 + MCP）。
+    ///
+    /// 按工具名去重（保留首次出现）：内置工具优先，后续同名的 MCP 工具跳过。
+    /// 背景：MCP server 内部若重复定义同名工具（如 2026-10-25 的 browser_history_state
+    /// 双定义），tools 数组会出现重名，被 DeepSeek 等 OpenAI 兼容端点以
+    /// "Tool names must be unique" 400 拒绝——这里做最后一层防御，避免整个会话被打爆。
     pub(super) fn specs(&self) -> Vec<Value> {
-        let mut specs: Vec<Value> = self.tools.iter().map(|t| t.spec()).collect();
-        if let Some(pool) = &self.mcp_pool {
-            specs.extend(pool.tool_specs().iter().cloned());
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut specs: Vec<Value> = Vec::new();
+        for spec in self.tools.iter().map(|t| t.spec()).chain(
+            self.mcp_pool
+                .as_ref()
+                .map(|p| p.tool_specs().iter().cloned())
+                .into_iter()
+                .flatten(),
+        ) {
+            let name = spec["function"]["name"].as_str().unwrap_or("").to_string();
+            if name.is_empty() {
+                continue;
+            }
+            if !seen.insert(name.clone()) {
+                tracing::warn!(
+                    "[SimpleAI] 工具重名已去重（保留首次定义）: {name}，\
+                     请检查对应 MCP server 是否存在重复的工具定义"
+                );
+                continue;
+            }
+            specs.push(spec);
         }
         specs
     }

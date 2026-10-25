@@ -332,13 +332,6 @@ fn handle_tools_list() -> Value {
             }, "additionalProperties": false }
         },
         {
-            "name": "browser_history_state",
-            "description": "Check whether the browser tab can go back or forward in history.",
-            "inputSchema": { "type": "object", "properties": {
-                "label": label_property
-            }, "additionalProperties": false }
-        },
-        {
             "name": "browser_find",
             "description": "Find text in the current page. Returns match count and navigates to the first match.",
             "inputSchema": { "type": "object", "required": ["query"], "properties": {

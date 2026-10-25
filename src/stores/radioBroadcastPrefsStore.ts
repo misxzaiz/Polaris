@@ -9,6 +9,7 @@
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { normalizeVoiceId } from '@/services/voiceBroadcast/constants'
 import type { DirectionKind, VoiceId } from '@/services/voiceBroadcast/types'
 import type { SessionRuntimeConfig } from '@/types/sessionConfig'
 
@@ -61,6 +62,13 @@ export const useRadioBroadcastPrefsStore = create<RadioBroadcastPrefs>()(
     }),
     {
       name: 'radio-broadcast-prefs',
+      version: 1,
+      migrate: (persisted) => {
+        // v0 → v1：旧版静态音色表把显示名「MiMo-默认」当 id 持久化，透传 API 会 400
+        const p = persisted as Partial<RadioBroadcastPrefs> | undefined
+        if (p && typeof p.voice === 'string') p.voice = normalizeVoiceId(p.voice)
+        return p as RadioBroadcastPrefs
+      },
       partialize: (state) => {
         // 只持久化配置，不持久化 action
         const { setPrefs: _setPrefs, ...rest } = state
