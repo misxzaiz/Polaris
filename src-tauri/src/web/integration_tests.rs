@@ -102,6 +102,11 @@ let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/
         plugin_service_manager: Arc::new(
             crate::services::plugin_service_manager::PluginServiceManager::new(),
         ),
+        permission_prompt: Arc::new(
+            crate::services::router::permission_prompt::PermissionPromptRegistry::new(
+                Arc::new(crate::services::router::EventAdapter::new(8)),
+            ),
+        ),
         executor_registry: crate::services::executor::create_builtin_registry(),
 router: {
             use crate::contracts::Router as _;

@@ -293,7 +293,7 @@ mod tests {
     /// 构造一个测试 bus（含 cap.echo 作为唯一内置）
     fn make_bus() -> Arc<RouterBus> {
         let adapter = Arc::new(EventAdapter::new(64));
-        let permission = Box::new(PolicyPermission::default());
+        let permission = Arc::new(PolicyPermission::default());
         let bus = Arc::new(RouterBus::new(adapter, permission, None, None));
         let _ = bus.register_handle(Box::new(EchoCapability));
         bus

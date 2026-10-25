@@ -96,7 +96,7 @@ mod tests {
 
     fn make_router() -> std::sync::Arc<RouterBus> {
         let adapter = Arc::new(EventAdapter::new(64));
-        let permission = Box::new(PolicyPermission::new());
+        let permission = Arc::new(PolicyPermission::new());
         let router = Arc::new(RouterBus::new(adapter, permission, None, None));
         let _ = router.register_handle(Box::new(KvCapability));
         let _ = router.register_streaming(Arc::new(StreamEchoCapability));
