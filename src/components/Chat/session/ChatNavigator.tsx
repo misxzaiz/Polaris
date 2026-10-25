@@ -37,8 +37,8 @@ interface ChatNavigatorProps {
 /** 延迟隐藏时间（毫秒） */
 const HIDE_DELAY = 150;
 
-/** 悬停展开延迟（毫秒） */
-const SHOW_DELAY = 0;
+/** 悬停展开延迟（毫秒）：悬停意图确认，快速掠过右缘不弹面板 */
+const SHOW_DELAY = 250;
 
 export function ChatNavigator({
   rounds,
@@ -119,32 +119,37 @@ export function ChatNavigator({
     return () => clearTimers();
   }, [clearTimers]);
 
-  // 面板定位：相对当前聊天消息区域定位，避免在弹窗场景跑到窗口边缘
-  const panelStyle = useMemo(() => {
+  // 面板定位（wrapper 层）：定位与动画分离——animate-dialog-in 的 keyframes
+  // 会覆盖元素 inline transform（CSS 动画优先级高于 inline style），若单元素
+  // 同时承担 translateY(-50%) 居中定位与入场动画，动画期间面板整体偏低半个
+  // 高度、动画结束回落 inline transform 时瞬间上跳（悬停闪动主因，见
+  // plans/chat-navigator-hover-flicker-fix.md）。外层 wrapper 只定位不动画，
+  // 悬停事件也挂 wrapper，命中区在动画期间保持稳定。
+  const panelWrapperStyle = useMemo(() => {
     if (isCompact) {
       return {
         right: '8px',
         left: '8px',
-        top: 'auto',
         bottom: '60px',
-        maxHeight: '50vh',
       };
     }
     if (variant === 'timeline') {
+      // right:10px 与触发条 hover 区（right 2–10px）零间隙相接，
+      // 消除圆点 → 面板之间无 hover 归属的死区（150ms 隐藏倒计时半途关面板）
       return {
-        right: '16px',
+        right: '10px',
         top: '50%',
         transform: 'translateY(-50%)',
-        maxHeight: '70vh',
       };
     }
     return {
       right: '24px',
       top: '50%',
       transform: 'translateY(-50%)',
-      maxHeight: '70vh',
     };
   }, [isCompact, variant]);
+
+  const panelMaxHeight = isCompact ? '50vh' : '70vh';
 
   // 当面板显示或当前项变化时，滚动到当前项
   useEffect(() => {
@@ -283,101 +288,105 @@ export function ChatNavigator({
         </div>
       )}
 
-      {/* 悬浮面板 */}
+      {/* 悬浮面板：外层 wrapper 定位 + 悬停命中，内层跑入场动画（见 panelWrapperStyle 注释） */}
       {isPanelVisible && (
         <div
           ref={panelRef}
-          className={clsx(
-            isCompact
-              ? 'w-auto bg-background-elevated'
-              : 'w-56 bg-background-elevated',
-            'border border-border/80 rounded-lg shadow-lg shadow-black/20',
-            'overflow-hidden animate-dialog-in',
-            'pointer-events-auto flex flex-col',
-            'absolute z-dropdown'
-          )}
-          style={panelStyle}
+          className="absolute z-dropdown pointer-events-auto"
+          style={panelWrapperStyle}
           onMouseEnter={handlePanelMouseEnter}
           onMouseLeave={handlePanelMouseLeave}
         >
-          {/* 标题 */}
-          <div className="flex items-center justify-between px-2.5 py-1 shrink-0">
-            <span className="text-[10px] text-text-tertiary tracking-wide">
-              {t('navigator.title')}
-            </span>
-            <span className="text-[10px] text-text-muted">
-              {rounds.length}
-            </span>
-          </div>
+          <div
+            className={clsx(
+              isCompact
+                ? 'w-auto bg-background-elevated'
+                : 'w-56 bg-background-elevated',
+              'border border-border/80 rounded-lg shadow-lg shadow-black/20',
+              'overflow-hidden animate-dialog-in',
+              'flex flex-col'
+            )}
+            style={{ maxHeight: panelMaxHeight }}
+          >
+            {/* 标题 */}
+            <div className="flex items-center justify-between px-2.5 py-1 shrink-0">
+              <span className="text-[10px] text-text-tertiary tracking-wide">
+                {t('navigator.title')}
+              </span>
+              <span className="text-[10px] text-text-muted">
+                {rounds.length}
+              </span>
+            </div>
 
-          {/* 对话轮次列表（顶部扩展槽：跨端会话区块由调用方注入） */}
-          <div className="overflow-y-auto chat-navigator-list flex-1 min-h-0">
-            {headerSlot}
-            {rounds.map((round, idx) => (
-              <div
-                key={round.roundIndex}
-                ref={idx === currentRoundIndex ? currentItemRef : null}
-                className={clsx(
-                  'px-2.5 py-1.5 cursor-pointer transition-colors relative',
-                  'hover:bg-background-hover',
-                  idx === currentRoundIndex && 'bg-primary/5'
-                )}
-                onClick={() => handleRoundClick(idx)}
-              >
-                {/* 当前轮次指示线 */}
-                {idx === currentRoundIndex && (
-                  <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-primary rounded-full" />
-                )}
+            {/* 对话轮次列表（顶部扩展槽：跨端会话区块由调用方注入） */}
+            <div className="overflow-y-auto chat-navigator-list flex-1 min-h-0">
+              {headerSlot}
+              {rounds.map((round, idx) => (
+                <div
+                  key={round.roundIndex}
+                  ref={idx === currentRoundIndex ? currentItemRef : null}
+                  className={clsx(
+                    'px-2.5 py-1.5 cursor-pointer transition-colors relative',
+                    'hover:bg-background-hover',
+                    idx === currentRoundIndex && 'bg-primary/5'
+                  )}
+                  onClick={() => handleRoundClick(idx)}
+                >
+                  {/* 当前轮次指示线 */}
+                  {idx === currentRoundIndex && (
+                    <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-primary rounded-full" />
+                  )}
 
-                {/* 第一行：序号 + 用户摘要 + 时间 */}
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className={clsx(
-                    'text-[10px] font-semibold w-3.5 text-right shrink-0',
-                    idx === currentRoundIndex ? 'text-primary' : 'text-text-muted'
-                  )}>
-                    {round.roundIndex + 1}
-                  </span>
-                  <span className={clsx(
-                    'text-xs truncate flex-1',
-                    idx === currentRoundIndex ? 'text-text-primary' : 'text-text-secondary'
-                  )}>
-                    {round.userSummary}
-                  </span>
-                  <span className="text-[9px] text-text-muted shrink-0">
-                    {round.timestamp}
-                  </span>
+                  {/* 第一行：序号 + 用户摘要 + 时间 */}
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className={clsx(
+                      'text-[10px] font-semibold w-3.5 text-right shrink-0',
+                      idx === currentRoundIndex ? 'text-primary' : 'text-text-muted'
+                    )}>
+                      {round.roundIndex + 1}
+                    </span>
+                    <span className={clsx(
+                      'text-xs truncate flex-1',
+                      idx === currentRoundIndex ? 'text-text-primary' : 'text-text-secondary'
+                    )}>
+                      {round.userSummary}
+                    </span>
+                    <span className="text-[9px] text-text-muted shrink-0">
+                      {round.timestamp}
+                    </span>
+                  </div>
+
+                  {/* 第二行：助手回复 */}
+                  {round.assistantMessage ? (
+                    <div className="flex items-center gap-1.5 pl-5">
+                      {round.hasTools && (
+                        <span className="text-[9px] text-warning shrink-0">🔧</span>
+                      )}
+                      <span className="text-[10px] text-text-tertiary truncate">
+                        {round.assistantSummary || t('navigator.replying')}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 pl-5">
+                      <span className="text-[10px] text-text-muted italic">
+                        {t('navigator.waitingReply')}
+                      </span>
+                    </div>
+                  )}
                 </div>
+              ))}
+            </div>
 
-                {/* 第二行：助手回复 */}
-                {round.assistantMessage ? (
-                  <div className="flex items-center gap-1.5 pl-5">
-                    {round.hasTools && (
-                      <span className="text-[9px] text-warning shrink-0">🔧</span>
-                    )}
-                    <span className="text-[10px] text-text-tertiary truncate">
-                      {round.assistantSummary || t('navigator.replying')}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 pl-5">
-                    <span className="text-[10px] text-text-muted italic">
-                      {t('navigator.waitingReply')}
-                    </span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* 底部按钮 */}
-          <div className="flex justify-center px-2 py-1.5 shrink-0 border-t border-border-subtle/50">
-            <button
-              className="w-[50px] h-7 rounded-md flex items-center justify-center text-text-muted hover:text-text-secondary hover:bg-background-hover transition-colors"
-              onClick={handleScrollToBottom}
-              title={t('navigator.scrollToBottom')}
-            >
-              <ArrowDown className="w-4 h-4" />
-            </button>
+            {/* 底部按钮 */}
+            <div className="flex justify-center px-2 py-1.5 shrink-0 border-t border-border-subtle/50">
+              <button
+                className="w-[50px] h-7 rounded-md flex items-center justify-center text-text-muted hover:text-text-secondary hover:bg-background-hover transition-colors"
+                onClick={handleScrollToBottom}
+                title={t('navigator.scrollToBottom')}
+              >
+                <ArrowDown className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       )}
