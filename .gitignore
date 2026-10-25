@@ -31,6 +31,12 @@ polaris-web/
 # Scratch / debugging notes (local-only)
 temp/
 
+# AI 会话工件（ZCode 本地计划/状态，非工程内容）
+.zcode/
+
+# 移动端打包产物（APK 内解包校验/手工暂存的 .so，可由 build-apk.ps1 重新生成）
+/lib/
+
 # Python
 __pycache__/
 *.pyc
