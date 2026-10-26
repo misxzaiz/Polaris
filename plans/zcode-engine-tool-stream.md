@@ -164,6 +164,11 @@ PiRpc `message_update` 的 `assistantMessageEvent.type` 现有契约：`text_del
 
 ### 9.3 已知边界与遗留
 
+- **权限模式（2026-10-27）**：桥接会话默认 `yolo`（完全访问）。guarded（自主模式）按风险分级
+  询问，但桥/zcode-core 没有 `permissionRequested` 应答方——高风险工具会永远「等待确认」挂死
+  turn；故无人值守场景收敛到桥 `ZBRIDGE_DEFAULT_MODE`（默认 yolo，env 可收紧回 guarded），
+  engine.js 不传 mode。遗留：Polaris 按会话可配置 + zcode-core 自动拒绝高风险询问。
+
 - **真实模型在场的 UI 全链路复验未做**：2026-10-26 深夜模型网关（localhost:9850 →
   deepseek-v4-flash）上游持续 429 限流，ZCode 轮内 9+ 次重试无产出、prompt 悬挂
   （第二轮 send 报 `-32010 A prompt is already running`，engine 正确把错误透出为正文+agent_end）。
