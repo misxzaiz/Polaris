@@ -216,8 +216,66 @@ pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str, engine_id: &str
                             }
                         }
                     }
-                    // text_start / text_end / thinking_start/end / toolcall_*/done /
-                    // error 等子事件：边界或终态，增量已由 delta 透出，此处不重复
+                    "toolcall_start" => {
+                        // 工具调用开始（zcode-bridge engine 桥）
+                        let tool = ame
+                            .get("tool")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("tool")
+                            .to_string();
+                        let args: HashMap<String, serde_json::Value> = ame
+                            .get("input")
+                            .and_then(|v| v.as_object())
+                            .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                            .unwrap_or_default();
+                        let mut ev =
+                            AIEvent::tool_call_start(current_sid, tool, args);
+                        if let Some(cid) = ame
+                            .get("tool_call_id").and_then(|v| v.as_str())
+                        {
+                            ev = AIEvent::ToolCallStart(
+                                match ev {
+                                    AIEvent::ToolCallStart(e) => e.with_call_id(cid.to_string()),
+                                    _ => unreachable!(),
+                                },
+                            );
+                        }
+                        out.events.push(ev);
+                    }
+                    "toolcall_end" => {
+                        // 工具调用结束（zcode-bridge engine 桥）
+                        let tool = ame
+                            .get("tool")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("tool")
+                            .to_string();
+                        let success = ame
+                            .get("success")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true);
+                        let mut ev = AIEvent::tool_call_end(current_sid, tool, success);
+                        if let Some(cid) = ame
+                            .get("tool_call_id").and_then(|v| v.as_str())
+                        {
+                            ev = AIEvent::ToolCallEnd(
+                                match ev {
+                                    AIEvent::ToolCallEnd(e) => e.with_call_id(cid.to_string()),
+                                    _ => unreachable!(),
+                                },
+                            );
+                        }
+                        if let Some(out_v) = ame.get("output") {
+                            ev = AIEvent::ToolCallEnd(
+                                match ev {
+                                    AIEvent::ToolCallEnd(e) => e.with_result(out_v.clone()),
+                                    _ => unreachable!(),
+                                },
+                            );
+                        }
+                        out.events.push(ev);
+                    }
+                    // text_start / text_end / thinking_start/end / error 等子事件：
+                    // 边界或终态，增量已由 delta 透出，此处不重复
                     _ => {}
                 }
             }
@@ -622,6 +680,35 @@ mod tests {
                 assert_eq!(e.tool, "bash");
                 assert!(e.success);
                 assert!(e.result.is_some());
+            }
+            other => panic!("应为 ToolCallEnd，实际: {}", other.event_type()),
+        }
+    }
+
+    #[test]
+    fn test_zcode_toolcall_start_end_via_message_update() {
+        // zcode-bridge engine 桥在 message_update.assistantMessageEvent 里发工具帧
+        let start_line = parse(r#"{"type":"message_update","message":{},"assistantMessageEvent":{"type":"toolcall_start","tool_call_id":"call_x","tool":"bash","input":{"command":"git diff"}}}"#);
+        let r1 = pi_line_to_ai_events(&start_line, "sid", "pi");
+        assert_eq!(r1.events.len(), 1);
+        match &r1.events[0] {
+            AIEvent::ToolCallStart(e) => {
+                assert_eq!(e.tool, "bash");
+                assert_eq!(e.call_id.as_deref(), Some("call_x"));
+                assert_eq!(e.args.get("command").and_then(|v| v.as_str()), Some("git diff"));
+            }
+            other => panic!("应为 ToolCallStart，实际: {}", other.event_type()),
+        }
+
+        let end_line = parse(r#"{"type":"message_update","message":{},"assistantMessageEvent":{"type":"toolcall_end","tool_call_id":"call_x","tool":"bash","output":"diff --git...","success":true}}"#);
+        let r2 = pi_line_to_ai_events(&end_line, "sid", "pi");
+        assert_eq!(r2.events.len(), 1);
+        match &r2.events[0] {
+            AIEvent::ToolCallEnd(e) => {
+                assert_eq!(e.tool, "bash");
+                assert_eq!(e.call_id.as_deref(), Some("call_x"));
+                assert!(e.success);
+                assert_eq!(e.result.as_ref().and_then(|v| v.as_str()), Some("diff --git..."));
             }
             other => panic!("应为 ToolCallEnd，实际: {}", other.event_type()),
         }
