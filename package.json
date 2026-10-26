@@ -1,7 +1,7 @@
 {
   "name": "polaris",
   "private": true,
-  "version": "10.9.5",
+  "version": "10.9.6",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "typecheck:watch": "tsc --noEmit --watch",

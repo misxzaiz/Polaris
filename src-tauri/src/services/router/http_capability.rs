@@ -219,10 +219,17 @@ impl HttpCapability {
         body_type: &str,
         timeout_ms: u64,
     ) -> Result<Value, String> {
-        // 单请求客户端：短连接 + 单用途，避免连接池跨目标串味；跟随重定向
+        // 单请求客户端：短连接 + 单用途，避免连接池跨目标串味；跟随重定向。
+        // 禁用系统代理（2026-10-26 修复）：reqwest 默认读取系统代理并把
+        // 127.0.0.1 也交给代理——本机配 Clash(127.0.0.1:7897) 时，面板经
+        // cap.http 访问插件本机服务(如 zcode-bridge:9862)被代理拐走返回 404
+        // （curl 直连 200）。cap.http 定位是"本地面板访问本机服务"，目标多为
+        // 回环/内网，直连本就应绕过代理；外网目标也由用户在 URL 里显式指定，
+        // 代理走不走用户可自行控制。no_proxy 只影响系统代理，不影响显式 URL。
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_millis(timeout_ms))
             .redirect(reqwest::redirect::Policy::limited(10))
+            .no_proxy()
             .build()
             .map_err(|e| format!("cap.http 客户端构建失败: {e}"))?;
 

@@ -339,10 +339,11 @@ impl PolicyPermission {
     }
 
     /// 命中规则（无匹配 → None；特异性高者优先，同特异性后者覆盖前者）。
-    /// `authenticated_remote`：false 时跳过 require_auth 规则。
+    /// `keys`：候选能力标识列表（带 action 时 = [`capId:action`, `capId`]），
+    /// 任一命中即计入。`authenticated_remote`：false 时跳过 require_auth 规则。
     fn best_match(
         &self,
-        capability: &str,
+        keys: &[String],
         source: SourceClass,
         authenticated_remote: bool,
     ) -> Option<CompiledRule> {
@@ -352,7 +353,7 @@ impl PolicyPermission {
             if rule.require_auth && !authenticated_remote {
                 continue;
             }
-            if rule.matches(capability, source) {
+            if keys.iter().any(|k| rule.matches(k, source)) {
                 let spec = rule.specificity();
                 match &best {
                     Some((best_spec, _)) if *best_spec > spec => {}
@@ -374,15 +375,17 @@ impl Permission for PolicyPermission {
     fn check(&self, req: &PermissionRequest) -> Result<PermissionVerdict, String> {
         let class = SourceClass::of(&req.source);
         let authenticated_remote = self.is_authenticated_remote(&req.source);
-        // P1-g：动作级匹配——先试 `capId:action`（更具体），无命中回退 bare id，
-        // 用户既有 bare-id 规则不受影响。
-        if let Some(a) = &req.action {
-            let suffixed = format!("{}:{}", req.capability.0, a);
-            if let Some(rule) = self.best_match(&suffixed, class, authenticated_remote) {
-                return Ok(rule.verdict.to_contract());
-            }
-        }
-        match self.best_match(&req.capability.0, class, authenticated_remote) {
+        // 候选能力标识：带 action 调用同时匹配 `capId:action` 与裸 `capId`，
+        // 在同一规则表内按特异性统一仲裁；规则表顺序仍是同特异性覆盖次序。
+        // 修复（2026-10-26）：旧实现「动作级命中即返回」会让内置 `cap.http*`
+        // 等通配 deny 短路掉 config 的裸 id 精确 allow——ZCode 面板（移动端）
+        // 经 cap.http request 被「权限拒绝」的根因。P1-h/P1-g 的动作级精确规则
+        // 依赖特异性 2 > 通配 1 取胜，并表后语义不变（见 best_match 注释）。
+        let keys: Vec<String> = match &req.action {
+            Some(a) => vec![format!("{}:{}", req.capability.0, a), req.capability.0.clone()],
+            None => vec![req.capability.0.clone()],
+        };
+        match self.best_match(&keys, class, authenticated_remote) {
             Some(rule) => Ok(rule.verdict.to_contract()),
             None => Ok(PermissionVerdict::Allow),
         }
@@ -638,6 +641,35 @@ mod tests {
         assert_eq!(
             p.check(&req_action("cap.pluginDiscovery", "discover", Source::Bootstrap)).unwrap(),
             PermissionVerdict::Allow
+        );
+    }
+
+    #[test]
+    fn config_bare_allow_beats_builtin_wildcard_deny_for_action_calls() {
+        // 回归（2026-10-26）：ZCode 面板（移动端）经 cap.http request 被
+        // 「权限拒绝」的根因。旧实现动作级匹配命中即返回：config 的裸 id
+        // 精确 allow（`cap.http`，全等）对 `cap.http:request` 不命中，而内置
+        // 通配 deny `cap.http*` 命中 → 短路 deny。现在动作级与裸 id 并表仲裁，
+        // config 精确 allow（特异性 2）应胜出。
+        let p = policy_from(serde_json::json!({
+            "rules": [
+                { "capability": "cap.http", "source": "remote", "verdict": "allow" }
+            ]
+        }));
+        let remote = Source::Remote { token: "t".into() };
+        assert_eq!(
+            p.check(&req_action("cap.http", "request", remote.clone())).unwrap(),
+            PermissionVerdict::Allow,
+            "config 裸 id allow 应覆盖内置通配 deny（带 action 调用）"
+        );
+        // 未被放行的相邻能力仍受内置 deny 影响
+        assert_eq!(
+            p.check(&req_action("cap.fs", "read", remote.clone())).unwrap(),
+            PermissionVerdict::Deny
+        );
+        assert_eq!(
+            p.check(&req_action("cap.bash", "run", remote)).unwrap(),
+            PermissionVerdict::Deny
         );
     }
 
