@@ -1,7 +1,7 @@
 # PRD 预览用户体验优化 —— 方案规划
 
 > 背景：opencode Code Mode 卡片链路修复后的两轮实测暴露两个用户侧痛点（2026-10-17）。
-> 视角：从用户实际体验出发定义行为承诺，再落到实现。状态：**线 1 已实现**（2026-10-17 —— `PrdPreviewCard.tsx` 新增 `HydratingPreview`：投影 data 经 `getFileContent(sourcePath)` 静默补齐 html 直出 iframe，失败退通知兜底，不回写存储；测试 `PrdPreviewCard.test.tsx` 5 用例）。线 2（全屏等比）未实现。
+> 视角：从用户实际体验出发定义行为承诺，再落到实现。状态：**线 1 已实现**（2026-10-17 —— `PrdPreviewCard.tsx` 新增 `HydratingPreview`：投影 data 经 `getFileContent(sourcePath)` 静默补齐 html 直出 iframe，失败退通知兜底，不回写存储；测试 `PrdPreviewCard.test.tsx` 5 用例）。**线 2（全屏等比）已按 `plans/prd-preview-card-ui-overhaul.md` 落地**（2026-10-26：全屏改为应用内覆盖层 + 等比/铺满切换 + localStorage 记忆；等比档按进全屏前实测的内嵌盒宽高比 `aspect-ratio` letterbox，验收项「比例≈内嵌实测值」达成）。
 
 ## 一、用户痛点（实测还原）
 

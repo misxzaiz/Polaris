@@ -22,6 +22,7 @@ import { useFileEditorStore } from '@/stores/fileEditorStore'
 import type { PluginChatCardProps } from '@/plugin-system/types'
 import type { ArtifactPreviewBlock } from '@/types'
 import { ArtifactPreviewRenderer } from '@/components/Chat/chatBlocks/ArtifactPreviewRenderer'
+import { buildArtifactBlockFromData, useArtifactVersions } from '@/components/Chat/chatBlocks/artifactVersions'
 import { getFileContent } from '@/services/tauri/fileService'
 
 interface PreviewArtifactData {
@@ -38,33 +39,13 @@ interface PreviewArtifactData {
   description?: string
 }
 
-function isPreviewArtifact(data: unknown): data is PreviewArtifactData {
-  return (
-    typeof data === 'object' &&
-    data !== null &&
-    typeof (data as PreviewArtifactData).html === 'string' &&
-    typeof (data as PreviewArtifactData).previewId === 'string'
-  )
-}
-
 export const PrdPreviewCard = memo(function PrdPreviewCard(props: PluginChatCardProps) {
-  const artifactBlock = useMemo<ArtifactPreviewBlock | null>(() => {
-    if (!isPreviewArtifact(props.data)) return null
-    const d = props.data
-    return {
-      type: 'artifact_preview',
-      previewId: d.previewId!,
-      title: d.title?.trim() ? d.title : 'PRD Prototype',
-      contentType: 'html',
-      html: d.html!,
-      sourcePath: d.sourcePath,
-      createdAt: d.createdAt,
-      version: typeof d.version === 'number' ? d.version : undefined,
-      versionLabel: d.versionLabel,
-      requirementId: d.requirementId,
-      description: d.description,
-    }
-  }, [props.data])
+  const artifactBlock = useMemo<ArtifactPreviewBlock | null>(
+    () => buildArtifactBlockFromData(props.data),
+    [props.data]
+  )
+  // 会话级版本组（SessionMessagesView Provider 下发）：≥2 版时渲染器出版本 pills
+  const versions = useArtifactVersions(artifactBlock?.requirementId)
 
   if (!artifactBlock) {
     // data 不含完整 html：判定为退化形态（模型 return 了投影 / data 缺字段）。
@@ -91,7 +72,7 @@ export const PrdPreviewCard = memo(function PrdPreviewCard(props: PluginChatCard
     )
   }
 
-  return <ArtifactPreviewRenderer block={artifactBlock} />
+  return <ArtifactPreviewRenderer block={artifactBlock} versions={versions ?? undefined} />
 })
 
 /**
@@ -120,6 +101,8 @@ function HydratingPreview({
 }) {
   const [state, setState] = useState<'checking' | 'ready' | 'notice'>('checking')
   const [block, setBlock] = useState<ArtifactPreviewBlock | null>(null)
+  // 投影升级成功后同样接入会话级版本组（≥2 版时渲染器出版本 pills）
+  const versions = useArtifactVersions(requirementId)
 
   useEffect(() => {
     let cancelled = false
@@ -178,7 +161,7 @@ function HydratingPreview({
   }
 
   if (state === 'ready' && block) {
-    return <ArtifactPreviewRenderer block={block} />
+    return <ArtifactPreviewRenderer block={block} versions={versions ?? undefined} />
   }
 
   return (

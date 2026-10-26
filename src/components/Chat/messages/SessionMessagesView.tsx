@@ -21,6 +21,7 @@ import {
 import { ThinkingOrb } from '../common/ThinkingOrb';
 import { ChatNavigator } from '../session/ChatNavigator';
 import { DynamicIsland } from '../dynamic-island';
+import { ArtifactVersionsProvider, buildArtifactVersionsMap } from '../chatBlocks/artifactVersions';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from '../chatUtils/constants';
 import { useMessageAutoScroll, BOTTOM_ANCHOR_EPSILON_PX } from './useMessageAutoScroll';
 import { ScrollToBottomButton } from '../common/ScrollToBottomButton';
@@ -148,6 +149,10 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
     return groupConversationRounds(displayMessages);
   }, [displayMessages]);
 
+  // 会话级 artifact 版本组（requirementId → 升序版本列表）：版本 pills 与历史版
+  // 折叠的数据源。只读渲染层归集，不改 store/JSONL；会话级作用域随本组件天然隔离。
+  const artifactVersions = useMemo(() => buildArtifactVersionsMap(displayMessages), [displayMessages]);
+
   // 可见范围变化时更新当前轮次
   const handleRangeChange = useCallback((range: { startIndex: number; endIndex: number }) => {
     const target = findCurrentRoundIndexForRange(conversationRounds, range.startIndex, range.endIndex);
@@ -263,7 +268,8 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
 
   return (
     <ChatScrollContext.Provider value={{ suspendFollow }}>
-      <div className="h-full w-full relative">
+      <ArtifactVersionsProvider value={artifactVersions}>
+        <div className="h-full w-full relative">
         {/* 灵动岛：顶部居中浮动进度指示器，per-session（多窗口各自独立） */}
         <DynamicIsland sessionId={sessionId} />
 
@@ -318,7 +324,8 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
           />
         )}
 
-      </div>
+        </div>
+      </ArtifactVersionsProvider>
     </ChatScrollContext.Provider>
   );
 });
