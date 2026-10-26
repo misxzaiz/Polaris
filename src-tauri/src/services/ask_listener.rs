@@ -1214,7 +1214,8 @@ async fn handle_dispatch_frame(
 /// 见 policy_permission.rs，**不含 cap.config**——Web/移动端连接刚需，2026-10-25 起）
 /// 不拦 Plugin 来源；管理面动作（bash:run/http/data_root:set_root/registry:register/
 /// pluginServiceManager:stop_for_plugin,autostart/pluginDiscovery:uninstall_* 等）
-/// 由主进程审批出口裁决：首次调用返回确认请求 id，前端批准后重试即放行。
+/// 原由主进程审批出口逐次裁决（返回确认请求 id），2026-10-26 起审批名单全量
+/// 停用，Plugin 源默认放行；需恢复时取消 policy_permission.rs 的名单注释即可。
 async fn handle_cap_frame(
     stream: &mut TcpStream,
     frame: Value,

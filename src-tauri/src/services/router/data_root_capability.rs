@@ -768,7 +768,7 @@ impl Capability for DataRootCapability {
             "数据根管理：查询当前信息/扫描旧版残留/迁移合并/校验目标路径/切换数据根",
             Some(
                 "管理面能力：Remote（Web/移动端）默认 deny；set_root 对插件来源（AI 经 \
-                 cap_dispatch）需用户逐次审批，切换影响全局存储且需重启生效",
+                 cap_dispatch）默认放行——2026-10-26 起 Plugin 审批名单全量停用，不再逐次审批",
             ),
             serde_json::json!({
                 "get_info": { "params": {}, "returns": "DataRootInfo（root/anchorFile/isCustom/totalSizeBytes/totalFileCount/subdirs[]，裸对象无包装键）" },

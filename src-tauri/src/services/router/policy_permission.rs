@@ -278,41 +278,43 @@ impl PolicyPermission {
         // P1-g（审计：AI 操控插件无门控）：Plugin 源（AI 会话）的高危动作需用户
         // 审批。动作编码进 resource（`capId:action`，dispatch 从 payload.action 注入），
         // 与内置 deny 同表匹配。批准经 PermissionPromptSink（一次性、10 分钟 TTL）。
-        for prompt_cap in [
-            "cap.pluginServiceManager:stop_for_plugin",
-            "cap.pluginServiceManager:autostart",
-            "cap.pluginDiscovery:uninstall_local",
-            "cap.pluginDiscovery:uninstall_with_cleanup",
-            "cap.pluginDiscovery:force_uninstall",
-        ] {
-            rules.push(CompiledRule {
-                capability: prompt_cap.to_string(),
-                wildcard: false,
-                source: SourceClass::Plugin,
-                verdict: RuleVerdict::Prompt,
-                require_auth: false,
-            });
-        }
+        // 2026-10-26：全量停用 Plugin 源审批名单（AI 默认放行，不再弹审批）。
+        // 保留名单仅注释，逻辑与规则构成不动，需要时取消注释即恢复。
+        // for prompt_cap in [
+        //     "cap.pluginServiceManager:stop_for_plugin",
+        //     "cap.pluginServiceManager:autostart",
+        //     "cap.pluginDiscovery:uninstall_local",
+        //     "cap.pluginDiscovery:uninstall_with_cleanup",
+        //     "cap.pluginDiscovery:force_uninstall",
+        // ] {
+        //     rules.push(CompiledRule {
+        //         capability: prompt_cap.to_string(),
+        //         wildcard: false,
+        //         source: SourceClass::Plugin,
+        //         verdict: RuleVerdict::Prompt,
+        //         require_auth: false,
+        //     });
+        // }
         // 2026-10-25 高危 cap 扩面（router-governance-hardening）：AI 会话触达的
         // 宿主级破坏面默认需用户逐次审批（基建 PermissionPromptHost 已存在）。
         // - cap.bash:run：宿主级 shell 执行（任务存活期超越会话）
-        // - cap.http*：通用转发，SSRF 目标校验已放开，任意目标可发
         // - cap.data_root:set_root：数据根迁移/切换（含 overwrite 破坏性选项）
         // - cap.registry:register：动态能力注册（可插入常驻转发/插件 RPC 通道）
-        for prompt_cap in [
-            ("cap.bash:run", false),
-            ("cap.http", true),
-            ("cap.data_root:set_root", false),
-            ("cap.registry:register", false),
-        ] {
-            rules.push(CompiledRule {
-                capability: prompt_cap.0.to_string(),
-                wildcard: prompt_cap.1,
-                source: SourceClass::Plugin,
-                verdict: RuleVerdict::Prompt,
-                require_auth: false,
-            });
-        }
+        // 2026-10-26：全量停用 Plugin 源审批名单（AI 默认放行，不再弹审批）。
+        // 保留名单仅注释，逻辑与规则构成不动，需要时取消注释即恢复。
+        // for prompt_cap in [
+        //     ("cap.bash:run", false),
+        //     ("cap.data_root:set_root", false),
+        //     ("cap.registry:register", false),
+        // ] {
+        //     rules.push(CompiledRule {
+        //         capability: prompt_cap.0.to_string(),
+        //         wildcard: prompt_cap.1,
+        //         source: SourceClass::Plugin,
+        //         verdict: RuleVerdict::Prompt,
+        //         require_auth: false,
+        //     });
+        // }
         // ui_control_enabled=false（默认）：AI 会话禁控 UI 域（cap.ui* / cap.self.mutate*）。
         // 追加在 prompt 规则之后 → 同特异性后者覆盖，deny 优先；config 精确 allow
         // （特异性 2 > 通配 1）仍可放开。Bootstrap（本机用户直点 UI）不受影响。
@@ -521,10 +523,11 @@ mod tests {
                 { "capability": "cap.valid", "source": "remote", "verdict": "deny" }
             ]
         }));
-        // 1 条合法 config 规则 + 23 条内置（6 通配 remote deny + cap.plugin deny
+        // 1 条合法 config 规则 + 14 条内置（6 通配 remote deny + cap.plugin deny
         // + pluginServiceManager require_auth allow + 6 条 pluginDiscovery 只读
-        // require_auth allow（P1-h）+ 5+4 条 Plugin prompt；ui_control=true 无条件 deny）
-        assert_eq!(p.rule_count(), 24, "三条非法规则应被跳过，内置默认并入");
+        // require_auth allow（P1-h）；Plugin 审批名单已全量停用（2026-10-26）——
+        // 原 5+4 条 prompt 仅注释保留；ui_control=true 无条件 deny）
+        assert_eq!(p.rule_count(), 15, "三条非法规则应被跳过，内置默认并入");
         assert_eq!(
             p.check(&req("cap.valid", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny
@@ -737,7 +740,10 @@ mod tests {
     }
 
     #[test]
-    fn high_risk_plugin_actions_prompt() {
+    fn high_risk_plugin_actions_default_allow() {
+        // 2026-10-26：Plugin 源审批名单全量停用（名单仅注释保留）。
+        // AI 会话（Plugin 源）对这些高危能力默认放行，不再逐次弹审批；
+        // 需要时取消注释恢复 Prompt 语义。
         let p = PolicyPermission::from_config(None, true);
         let plugin = Source::Plugin { caller: crate::contracts::PluginId("cap.ai".into()) };
         for cap in [
@@ -746,20 +752,36 @@ mod tests {
             "cap.http:fetch",
             "cap.data_root:set_root",
             "cap.registry:register",
+            "cap.pluginServiceManager:stop_for_plugin",
+            "cap.pluginServiceManager:autostart",
+            "cap.pluginDiscovery:uninstall_local",
+            "cap.pluginDiscovery:uninstall_with_cleanup",
+            "cap.pluginDiscovery:force_uninstall",
         ] {
             assert_eq!(
                 p.check(&req(cap, plugin.clone())).unwrap(),
-                PermissionVerdict::Prompt,
-                "{cap} 对 Plugin 源应需审批"
+                PermissionVerdict::Allow,
+                "{cap} 对 Plugin 源应默认放行（审批名单已停用）"
             );
         }
-        // Bootstrap（本机面板）不受影响；bash 其他动作（status/kill）不弹审批
+        // 带 action 的动作请求同样默认放行
+        assert_eq!(
+            p.check(&req_action("cap.http", "request", plugin.clone())).unwrap(),
+            PermissionVerdict::Allow,
+            "cap.http:request 局部动作默认放行"
+        );
+        assert_eq!(
+            p.check(&req_action("cap.data_root", "set_root", plugin)).unwrap(),
+            PermissionVerdict::Allow,
+            "cap.data_root:set_root 动作请求默认放行"
+        );
+        // Bootstrap（本机面板）不受影响；bash 其他动作（status/kill）也不弹审批
         assert_eq!(
             p.check(&req("cap.bash:run", Source::Bootstrap)).unwrap(),
             PermissionVerdict::Allow
         );
         assert_eq!(
-            p.check(&req("cap.bash:kill", plugin.clone())).unwrap(),
+            p.check(&req("cap.bash:kill", Source::Plugin { caller: crate::contracts::PluginId("cap.ai".into()) })).unwrap(),
             PermissionVerdict::Allow
         );
     }

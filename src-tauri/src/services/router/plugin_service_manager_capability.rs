@@ -86,7 +86,7 @@ impl PluginServiceManagerCapability {
             CAP_ID,
             "插件服务",
             "插件后台服务管理：启动/停止/重启/状态查询/按插件停止/按状态自启",
-            Some("管理面能力：已鉴权 Remote 放行（require_auth，未鉴权 deny）；Plugin 来源的 stop_for_plugin/autostart 需用户审批；start/stop/restart 拉起或终止进程，需谨慎"),
+            Some("管理面能力：已鉴权 Remote 放行（require_auth，未鉴权 deny）；Plugin 来源的 stop_for_plugin/autostart 默认放行（2026-10-26 起审批名单停用）；start/stop/restart 拉起或终止进程，需谨慎"),
             serde_json::json!({
                 "start": { "params": {
                     "pluginId": "string（必填）",

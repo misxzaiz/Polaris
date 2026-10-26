@@ -24,3 +24,28 @@
 
 - cap.bash 内置 SimpleAI 工具（不经总线）的审批 —— 另行立项。
 - cap.http SSRF 目标校验恢复 —— 独立决策（当前放开可能是有意为之的 agent 能力面）。
+
+---
+
+## 2026-10-26 变更：Plugin 源审批名单全量停用
+
+**决策**：移除「高危 cap 对 AI 逐次审批」的默认行为。本文档 §方案.4 新增的 Plugin 源
+Prompt 规则（`cap.bash:run` / `cap.http*` / `cap.data_root:set_root` /
+`cap.registry:register`）与既有的 5 个插件管理动作审批
+（`stop_for_plugin` / `autostart` / `uninstall_local` /
+`uninstall_with_cleanup` / `force_uninstall`）**全部停用**。
+
+**落地方式（保持逻辑不动）**：`policy_permission.rs` `from_config` 内两处 Plugin 源
+prompt 名单整段注释保留，规则构成回退到「无 Plugin 审批面」→ 未命中 → 默认 Allow。
+需要恢复审批时取消注释即可，无需改其他代码。
+
+**仍生效的防线**（不在本次改动范围）：
+- Remote 源（Web/移动端）的内置通配 deny（cap.data_root / cap.http / cap.bash /
+  cap.fs / cap.ui / cap.self.mutate）不变；
+- `ui_control_enabled=false`（默认）时 Plugin 源对 cap.ui* / cap.self.mutate 的策略
+  deny 不变；
+- 能力内部动作级风险控制（cap.data_root set_root 的 overwrite 确认等）不变。
+
+**原因**：调用方均为本机可信进程（主面板 / 本地 AI），无匿名远程面；逐次审批在
+agent 高频工具调用下形成摩擦，且审批基建（PermissionPromptHost）仍保留，未来可按
+具体能力按需重新收紧。

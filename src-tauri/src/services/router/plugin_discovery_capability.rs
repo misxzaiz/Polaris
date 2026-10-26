@@ -122,7 +122,7 @@ impl PluginDiscoveryCapability {
             CAP_ID,
             "插件发现",
             "插件发现/安装/卸载/更新/适配器贡献统一管理面（安装/卸载/更新会改动本地插件目录）",
-            Some("管理面能力：cap.plugin* 对 Remote 通配 deny，已鉴权 Remote 仅放行只读动作 discover/list/install_locations/validate_manifest/adapters_list/check_update（写动作仍 deny）；Plugin 来源的 uninstall_local/uninstall_with_cleanup/force_uninstall 需用户审批"),
+            Some("管理面能力：cap.plugin* 对 Remote 通配 deny，已鉴权 Remote 仅放行只读动作 discover/list/install_locations/validate_manifest/adapters_list/check_update（写动作仍 deny）；Plugin 来源的 uninstall_local/uninstall_with_cleanup/force_uninstall 默认放行（2026-10-26 起审批名单停用）"),
             serde_json::json!({
                 "list": { "params": { "available": "bool?" }, "returns": "PluginListResult（installed/available 列表）" },
                 "discover": { "params": { "workspacePath": "string?" }, "returns": "PluginDiscoveryResult（发现已安装插件；有适配器贡献时合并 one-shot MCP 翻译结果）" },

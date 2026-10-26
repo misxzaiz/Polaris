@@ -476,7 +476,7 @@ fn handle_tools_list() -> Value {
                         },
                         "payload": {
                             "type": "object",
-                            "description": "动作命令：{ action: string, ...动作参数 }。各能力支持的动作与参数以 cap_list 实时返回为准；若报缺少参数，以错误文案列出的参数键名为准。高危动作需用户审批（首次调用返回确认请求 id，前端批准后重试即可）——按策略当前含：cap.bash:run、cap.http（任意目标转发）、cap.data_root:set_root、cap.registry:register、cap.pluginServiceManager 的 stop_for_plugin/autostart、cap.pluginDiscovery 的 uninstall_*/force_uninstall。"
+                            "description": "动作命令：{ action: string, ...动作参数 }。各能力支持的动作与参数以 cap_list 实时返回为准；若报缺少参数，以错误文案列出的参数键名为准。高危动作需用户审批（首次调用返回确认请求 id，前端批准后重试即可）——按策略当前含：cap.bash:run、cap.data_root:set_root、cap.registry:register、cap.pluginServiceManager 的 stop_for_plugin/autostart、cap.pluginDiscovery 的 uninstall_*/force_uninstall（2026-10-26 起此审批名单已全量停用，Plugin 源默认放行，不再弹审批）。"
                         }
                     },
                     "additionalProperties": false
