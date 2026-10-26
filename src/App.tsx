@@ -9,7 +9,7 @@ const log = createLogger('App');
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelTabStrip, CenterStage, RightPanel } from './components/Layout';
 import { NarrowTabOverlay } from './components/Editor';
-import { ChatInput, ChatStatusBar, CompactHandoffProgress, ErrorBanner, CompactHandoffButton, MultiWindowMenu, NewSessionButton, DispatchCenterButton } from './components/Chat';
+import { ChatInput, ChatStatusBar, CompactHandoffProgress, ErrorBanner, CompactHandoffButton, MultiWindowMenu, NewSessionButton } from './components/Chat';
 import type { EditMode } from './components/Chat';
 // 条件渲染的重组件统一懒加载，避免首帧解析 400+ 模块的 Chat barrel 传递依赖
 const SessionHistoryPanelLazy = lazy(() => import('./components/Chat/session/SessionHistoryPanel').then(m => ({ default: m.SessionHistoryPanel })));
@@ -388,7 +388,6 @@ function App() {
                       <MultiWindowMenu />
                       <NewSessionButton />
                       <CompactHandoffButton />
-                      <DispatchCenterButton />
                     </ChatStatusBar>
                   }
                 />

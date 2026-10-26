@@ -9,7 +9,7 @@
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, Bot, Cpu, Zap, Shield, Plug, Layout } from 'lucide-react'
+import { ChevronDown, Bot, Cpu, Zap, Shield, Plug } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   PRESET_AGENTS,
@@ -556,31 +556,6 @@ export function SessionConfigSelector({
       {typesToShow.map(type => (
         <React.Fragment key={type}>{renderSelector(type, variant)}</React.Fragment>
       ))}
-      {/* HTML 卡片渲染开关（独立 toggle，不混进五类下拉）。
-          开启：AI 输出完整自包含 HTML → 自动变可交互卡片。 */}
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => !disabled && onChange({ htmlCardRender: !config.htmlCardRender })}
-        className={clsx(
-          'flex items-center gap-1 rounded text-xs transition-colors',
-          variant === 'panel' ? 'w-full px-2 py-1' : 'px-1.5 py-0.5',
-          disabled
-            ? 'text-text-muted cursor-not-allowed'
-            : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
-          config.htmlCardRender && 'bg-primary/10 text-primary'
-        )}
-        title={config.htmlCardRender
-          ? t('sessionConfig.htmlCardOn')
-          : t('sessionConfig.htmlCardOff')}
-        aria-pressed={!!config.htmlCardRender}
-      >
-        <span className="shrink-0"><Layout size={12} /></span>
-        {variant === 'panel' && (
-          <span className="shrink-0 text-text-muted">{t('sessionConfig.htmlCard')}</span>
-        )}
-        {config.htmlCardRender && <span className="shrink-0">●</span>}
-      </button>
       {/* 自定义输入浮层 */}
       {customInput && (
         <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/30">

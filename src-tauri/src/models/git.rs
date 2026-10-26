@@ -23,6 +23,9 @@ pub enum GitFileStatus {
     Unmerged,
 }
 
+// git2 耦合点按 `git` feature 门控(git2 为 optional 依赖):本文件其余内容是纯
+// DTO(commands::file_io 等 git 域外调用方依赖 GitError,须无 git feature 可编译)
+#[cfg(feature = "git")]
 impl From<git2::Status> for GitFileStatus {
     fn from(status: git2::Status) -> Self {
         if status.is_index_new()
@@ -444,6 +447,7 @@ pub struct GitError {
 #[derive(Debug, Error)]
 pub enum GitServiceError {
     #[error("Git error: {0}")]
+    #[cfg(feature = "git")]
     GitError(#[from] git2::Error),
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
@@ -855,6 +859,7 @@ pub type GitResult<T> = Result<T, GitError>;
 impl From<GitServiceError> for GitError {
     fn from(err: GitServiceError) -> Self {
         let (code, message, details) = match err {
+            #[cfg(feature = "git")]
             GitServiceError::GitError(e) => (
                 "GIT_ERROR".to_string(),
                 e.message().to_string(),

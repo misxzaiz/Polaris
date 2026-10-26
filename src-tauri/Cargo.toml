@@ -1,6 +1,6 @@
 [package]
 name = "polaris"
-version = "10.9.2"
+version = "10.9.5"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -44,8 +44,8 @@ multi-instance = []
 # 详见 docs/lightweight-refactor-plan.md §5
 # ====================================================================
 
-# Git 集成（commands::git + services::git 模块门控）
-git = []
+# Git 集成（commands::git + services::git 模块门控 + git2 依赖）
+git = ["dep:git2"]
 
 # LSP 智能索引（tree-sitter AST 解析 + SQLite 持久化）
 lsp-index = ["dep:tree-sitter", "dep:tree-sitter-java", "dep:rayon", "dep:xxhash-rust"]
@@ -103,7 +103,10 @@ glob = "0.3"
 base64 = "0.22"
 urlencoding = "2"
 url = "2"
-git2 = { version = "0.18", features = ["vendored-openssl"] }
+# git2 按需依赖（`git` feature）：vendored-openssl 会为每个目标编译 OpenSSL,
+# Android aarch64 交叉编译被其构建脚本阻塞（探路闸门①,plans/mobile-self-contained-spike.md）。
+# 桌面/默认构建含 `git` feature,行为不变;移动/web-only 构建可剔除。
+git2 = { version = "0.18", features = ["vendored-openssl"], optional = true }
 similar = "2.4"
 bitflags = "2.4"
 walkdir = "2"

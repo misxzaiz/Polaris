@@ -1169,6 +1169,15 @@ impl PluginService {
 
             let plugin_dir = entry.path();
             if !plugin_dir.is_dir() {
+                // 2026-10-25 实例：mimo-tts 以 junction 指向 D 盘另一数据根，目标被挪动期间
+                // is_dir()=false 被静默跳过，插件"消失"且无任何日志，排查极难。
+                // 普通文件（如 state.json）跳过属正常，仅对"链接解析失败"留 warn 痕迹。
+                if entry.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
+                    tracing::warn!(
+                        "[PluginDiscover] 跳过无法解析的插件链接（目标不可达）: {}",
+                        plugin_dir.display()
+                    );
+                }
                 continue;
             }
 

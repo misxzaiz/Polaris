@@ -111,6 +111,7 @@ function createSessionManagerStore() {
         forkFromId: options.forkFromId,
         modelProfileId: options.modelProfileId,
         model: options.model,
+        profileMode: options.profileMode,
         agent: options.agent,
         kind: options.kind,
         commitWorkspaceId: options.commitWorkspaceId,

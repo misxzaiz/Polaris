@@ -791,6 +791,13 @@ export interface CreateSessionOptions {
   modelProfileId?: string
   /** 会话绑定的模型名（可选，不指定则使用全局默认） */
   model?: string
+  /**
+   * 会话绑定的供应商选择模式（official/profile 二态；配合 modelProfileId）。
+   * 透传到 SessionMetadata.profileMode，避免「面板选官方」语义丢失——否则会话级
+   * 官方选择在发送链路回落到状态栏镜像 profileMode（'profile'），残留旧 Profile id
+   * 被带上后端触发 incompatibleRuntime。
+   */
+  profileMode?: ProfileMode
   /** 会话绑定的专家 agent slug（可选，不指定则无专家） */
   agent?: string
   /** 会话用途标记（透传到 SessionMetadata.kind） */

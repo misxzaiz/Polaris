@@ -29,7 +29,6 @@ export { MultiSessionGrid } from './session/MultiSessionGrid';
 export { MultiWindowMenu } from './session/MultiWindowMenu';
 export { SessionCell } from './session/SessionCell';
 export { NewSessionButton } from './session/NewSessionButton';
-export { DispatchCenterButton } from './dispatch/DispatchCenter';
 
 // Fork/PR 关系可视化组件
 export { ForkIndicator, ForkTreeLine } from './session/ForkIndicator';

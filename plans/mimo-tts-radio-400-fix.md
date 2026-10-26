@@ -30,3 +30,4 @@
 
 - 安装副本含未入库的 LAN audioHost 特性（手机经局域网听音频），仓库无此代码；本次两处修复同时打在两边，特性差异保持原样，发布打包时需先合并。
 - 生产数据根未安装 mimo-tts 且 apiKey 为空，生产环境如需使用另行安装配置。
+- **2026-10-26 追加（修复后新报错"未注册"排查定案）**：dev 根 plugins/mimo-tts 是指向 `D:\app\polaris-s\plugins\mimo-tts` 的 **junction**；晚间 14:45–16:12Z 的各次启动/重扫描期间目标不可达，`scan_plugin_root` 对链接解析失败是**静默跳过**（无日志），导致 cap.mcp registry 快照无 mimo-tts → 电台预检报"MCP server 未注册或未启用"。junction 与目标此刻均健康（Rust std 探针验证 read_dir + is_dir + manifest 全通过），重启 dev 应用即恢复。已在 `plugin_service.rs scan_plugin_root` 补 warn：仅对"是链接但解析失败"留痕（普通文件跳过不噪音）。另注意：机器上还有独立安装的 `D:\app\polaris\polaris.exe`（9820）与第三数据根 `D:\app\polaris-s`，多实例多根并存是排查干扰源。

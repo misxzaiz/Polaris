@@ -498,7 +498,14 @@ async fn apply_model_profile_options(
         EngineId::OpenCode => "open-code",
         EngineId::Custom(id) => id.as_str(),
     };
-    if !profile.is_for_engine(expected_engine) {
+    // OpenCode 引擎豁免兼容性校验：opencode 有自己的 provider 体系，model 路由用
+    // --model <provider>/<model>，Polaris 的 ModelProfile targetEngines 通常只标了
+    // claude/simple-ai，会误伤 opencode 官方免费模型（残留旧 Profile id 时会
+    // 误中断请求抛 incompatibleRuntime）。此豁免不删除下方 OpenCode 分支的
+    // OPENAI_BASE_URL/API_KEY 注入——Profile 仍可作二阶能力提供端点，只是不再
+    // 因 targetEngines 不匹配而拦截。
+    let opencode_exempted = engine == &EngineId::OpenCode;
+    if !opencode_exempted && !profile.is_for_engine(expected_engine) {
         // 同样不静默跳过：明确告知用户所选 Profile 不适用于当前引擎，引导重新选择。
         tracing::warn!(
             "[{}] Profile {} 不适用于引擎 {:?}（targetEngines={:?}），中断请求",

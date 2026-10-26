@@ -76,4 +76,24 @@ describe('SessionStoreManager engine initialization', () => {
     expect(sessionStoreManager.getState().updateSessionEngine(sessionId, 'claude-code')).toBe(false)
     expect(sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId).toBe('simple-ai')
   })
+
+  it('persists profileMode into session metadata (官方选择不透传则丢失)', () => {
+    const sessionId = sessionStoreManager.getState().createSession({
+      type: 'free',
+      title: 'opencode official',
+      engineId: 'open-code',
+      profileMode: 'official',
+      modelProfileId: '__official_api__',
+    })
+
+    const meta = sessionStoreManager.getState().sessionMetadata.get(sessionId)
+    expect(meta?.profileMode).toBe('official')
+    expect(meta?.modelProfileId).toBe('__official_api__')
+    // 未透传时 profileMode 应保持 undefined（向下降级全局，不污染新会话）
+    const plainId = sessionStoreManager.getState().createSession({
+      type: 'free',
+      title: 'plain',
+    })
+    expect(sessionStoreManager.getState().sessionMetadata.get(plainId)?.profileMode).toBeUndefined()
+  })
 })
