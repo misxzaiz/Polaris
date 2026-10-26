@@ -142,11 +142,12 @@ describe('pluginLifecycleSubscriber (P0)', () => {
     mocks.mockListen.mockResolvedValue(mockUnlisten)
 
     const cleanup = initPluginLifecycleSubscriber()
-    // listen resolve 是异步的（实现里 .then 后才设 unlisten），等它 settle
-    await vi.waitFor(() => expect(mocks.mockListen).toHaveBeenCalledTimes(1))
+    // init 监听两个事件（plugin.lifecycle + plugin.service.status，P1-3），
+    // listen resolve 是异步的（实现里 .then 后才设 unlisten），等两个都 settle
+    await vi.waitFor(() => expect(mocks.mockListen).toHaveBeenCalledTimes(2))
     cleanup()
 
-    expect(mockUnlisten).toHaveBeenCalledTimes(1)
+    expect(mockUnlisten).toHaveBeenCalledTimes(2)
   })
 
   it('cleanup 置 disposed 后 handler 幂等防泄漏（重复 cleanup 安全）', async () => {
@@ -154,11 +155,11 @@ describe('pluginLifecycleSubscriber (P0)', () => {
     mocks.mockListen.mockResolvedValue(mockUnlisten)
 
     const cleanup = initPluginLifecycleSubscriber()
-    await vi.waitFor(() => expect(mocks.mockListen).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(mocks.mockListen).toHaveBeenCalledTimes(2))
 
     cleanup()
     cleanup() // 幂等：unlisten 已置 null，重复调用不应二次触发
 
-    expect(mockUnlisten).toHaveBeenCalledTimes(1)
+    expect(mockUnlisten).toHaveBeenCalledTimes(2)
   })
 })
