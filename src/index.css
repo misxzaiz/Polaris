@@ -2164,4 +2164,91 @@ html.focus-mode .chat-prose:hover > blockquote:not(:hover) {
   }
 }
 
+/* ============================================================================
+   Git 提交历史 · 窄宽降级（GIT-4 / GIT-5）
+   - 宿主：HistoryTab 列表滚动容器（scrollContainerRef），加 container-type: inline-size
+   - 依据容器实际宽度降级（比媒体查询准：面板停靠/抽屉/放大镜都随容器走）
+   - 极窄（≤ 378px，抽屉 318px 落此档）：sha / time / refs 徽章隐藏 → subject 独占宽度
+       hover 多选钮（+.sel）常显（无 hover 的触屏/小屏）
+   - 次窄（≤ 430px）：refs 徽章隐藏（sha/time 保留）
+   ============================================================================ */
+.git-history-list {
+  container-type: inline-size;
+}
+
+@container (max-width: 430px) {
+  .git-history-commit-row .git-refs {
+    display: none;
+  }
+}
+
+@container (max-width: 378px) {
+  .git-history-commit-row .git-sha {
+    display: none;
+  }
+  .git-history-commit-row .git-time {
+    display: none;
+  }
+  .git-history-commit-row .git-refs {
+    display: none;
+  }
+  /* 多选钮常显（无 hover 环境） */
+  .git-history-commit-row .git-multi-select {
+    opacity: 1;
+  }
+  .git-history-commit-row .git-multi-select:focus-visible {
+    opacity: 1;
+  }
+}
+
+/* ============================================================================
+   Git 提交历史 · sidebar 内联展开 message 区（GIT-2 / GIT-3）
+   - 对齐 CommitDetailsPane 展开语义：subject 单行、body 等宽 pre-wrap
+   - 折叠态：-webkit-line-clamp 固定 N 行；展开态：滚动区高度封顶
+   ============================================================================ */
+.git-inline-message-subject {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(var(--c-text-primary));
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.git-inline-message-body {
+  margin-top: 6px;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  color: rgb(var(--c-text-secondary));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.git-inline-message-body.clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--git-inline-clamp-lines, 5);
+  overflow: hidden;
+}
+
+.git-inline-message-body.expanded {
+  display: block;
+  overflow-y: auto;
+  max-height: var(--git-inline-message-max-height, 200px);
+}
+
+.git-inline-toggle {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgb(var(--c-primary));
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.git-inline-toggle:hover {
+  text-decoration: underline;
+}
+
 

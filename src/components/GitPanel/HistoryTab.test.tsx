@@ -431,7 +431,8 @@ describe('HistoryTab', () => {
 
     expect(await screen.findByText('src/App.tsx')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('Fix search panel'))
+    // 点击行内 subject（展开面板 message 区也含该文本，getByText 会命中多选；用行内第一条）
+    fireEvent.click(screen.getAllByText('Fix search panel')[0])
 
     await waitFor(() => {
       expect(screen.queryByText('src/App.tsx')).not.toBeInTheDocument()
@@ -464,6 +465,55 @@ describe('HistoryTab', () => {
     fireEvent.click(screen.getByTitle('history.collapseMessage'))
 
     expect(screen.queryAllByText(bodyMatcher)).toHaveLength(0)
+  })
+
+  it('shows inline commit message body (≤clamp lines) in sidebar detail without a toggle', async () => {
+    const commitWithShortBody = {
+      ...commits[0],
+      message: 'Fix search panel\n\n- Short body, fits inline',
+    }
+    getCommitDetails.mockResolvedValueOnce(detailsFor(commitWithShortBody))
+
+    render(<HistoryTab />)
+
+    // sidebar 形态：点行触发就地展开
+    fireEvent.click(await screen.findByText('Fix search panel'))
+
+    // 短 body 直接显示（不经过 clamp）
+    expect(await screen.findByText(/- Short body, fits inline/)).toBeInTheDocument()
+    // 短 body 无「展开全文」按钮
+    expect(screen.queryAllByTitle('history.expandMessage')).toHaveLength(0)
+  })
+
+  it('clamps a long inline body in sidebar detail and expands on demand', async () => {
+    // 超 clamp 阈值（5 行）的长 body
+    const longBody = Array.from({ length: 12 }, (_, i) => `- body line ${i + 1}`).join('\n')
+    const commitWithLongBody = {
+      ...commits[0],
+      message: `Fix search panel\n\n${longBody}`,
+    }
+    getCommitDetails.mockResolvedValueOnce(detailsFor(commitWithLongBody))
+
+    render(<HistoryTab />)
+
+    fireEvent.click(await screen.findByText('Fix search panel'))
+
+    // body 折叠态：clamped class 挂在 message body 容器（多行 body 是单个文本节点，需用正则匹配）
+    const bodyEl = await screen.findByText(/- body line 1/)
+    expect(bodyEl.className).toContain('clamped')
+    // 有「展开全文」按钮
+    const expandBtn = screen.getByTitle('history.expandMessage')
+    expect(expandBtn).toBeInTheDocument()
+
+    fireEvent.click(expandBtn)
+
+    // 展开 → 容器进入 expanded 滚动态
+    expect(bodyEl.className).toContain('expanded')
+    // 按钮变「折叠」
+    expect(screen.getByTitle('history.collapseMessage')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTitle('history.collapseMessage'))
+    expect(screen.queryByTitle('history.collapseMessage')).not.toBeInTheDocument()
   })
 
   it('opens a focused file history view from a changed file and can return', async () => {

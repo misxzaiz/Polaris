@@ -2,6 +2,10 @@ import type { GitDiffEntry } from '@/types/git'
 import type { DiffViewMode } from '@/components/Diff/DiffViewer'
 
 export const PAGE_SIZE = 50
+// sidebar 内联展开 message 区的折叠行数（超长 body 先 clamp 这 N 行，点开再滚动）
+export const INLINE_MESSAGE_CLAMP_LINES = 5
+// sidebar 内联展开 message 区展开态的最大高度（px）：超出后容器内部滚动，不把后续提交挤出视口
+export const INLINE_MESSAGE_MAX_HEIGHT = 200
 export const FILE_LIST_MODE_STORAGE_KEY = 'polaris.git.history.fileListMode'
 export const COMMIT_LIST_WIDTH_STORAGE_KEY = 'polaris.git.history.commitListWidth'
 export const FILE_PANE_WIDTH_STORAGE_KEY = 'polaris.git.history.filePaneWidth'

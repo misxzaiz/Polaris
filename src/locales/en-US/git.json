@@ -375,6 +375,7 @@
     "copyMessage": "Copy commit message",
     "expandMessage": "Expand full commit message",
     "collapseMessage": "Collapse commit message",
+    "showFullMessage": "Show full message ({{count}} lines)",
     "collapseFilePane": "Collapse changed files",
     "expandFilePane": "Expand changed files",
     "copied": "Copied",

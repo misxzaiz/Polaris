@@ -58,6 +58,8 @@ import {
   COMMIT_LIST_MAX_WIDTH,
   FILE_PANE_MIN_WIDTH,
   FILE_PANE_MAX_WIDTH,
+  INLINE_MESSAGE_CLAMP_LINES,
+  INLINE_MESSAGE_MAX_HEIGHT,
   getDiffKey,
   writeLocalStorage,
   getInitialFileListMode,
@@ -1300,10 +1302,54 @@ export function HistoryTab({
     if (!selectedDetails || selectedDetails.commit.sha !== commit.sha) return null
 
     const files = selectedDetails.files
+    // GIT-2/3：sidebar 内联展开的 message 区 —— 对齐 CommitDetailsPane 折叠语义。
+    // subject 单行、body 等宽 pre-wrap；body 有且行数超阈值时默认 clamp N 行，点「展开全文」进入滚动区。
+    // 折叠态复用 isCommitMessageExpanded（loadCommitDetails 选新提交 / clearSelection 已重置，语义唯一）。
+    // 数据源用 selectedDetails.commit.message（详情接口返回完整 message，行内 commit 只有 subject 截断视图）；
+    // commit 参数仅用于 sha 匹配与 author 展示。
+    const rawMessage = selectedDetails.commit.message ?? ''
+    const messageLines = rawMessage.split('\n')
+    const subject = messageLines[0] || rawMessage
+    const body = messageLines.slice(1).join('\n').replace(/^\s+/, '')
+    const hasBody = body.trim().length > 0
+    // 折叠判定：body 非空行数 > clamp 行数才需要「展开全文」（短 body 直接全显）
+    const bodyLineCount = messageLines.slice(1).filter(line => line.trim().length > 0).length
+    const bodyClampNeeded = hasBody && bodyLineCount > INLINE_MESSAGE_CLAMP_LINES
+    const bodyClamped = !isCommitMessageExpanded && bodyClampNeeded
+
     return (
       <div className="bg-background-elevated border-y border-border-subtle">
-        <div className="flex items-center gap-2 pl-7 pr-3 py-1.5 text-[11px] text-text-tertiary">
+        <div className="pt-2.5 pb-1.5 pl-7 pr-3">
+          <div className="git-inline-message-subject">{subject}</div>
+          {hasBody && (
+            <div
+              className={`git-inline-message-body ${bodyClamped ? 'clamped' : 'expanded'}`}
+              style={{
+                ['--git-inline-clamp-lines' as string]: INLINE_MESSAGE_CLAMP_LINES,
+                ['--git-inline-message-max-height' as string]: `${INLINE_MESSAGE_MAX_HEIGHT}px`,
+              }}
+            >
+              {body}
+            </div>
+          )}
+          {bodyClampNeeded && (
+            <button
+              type="button"
+              onClick={() => setIsCommitMessageExpanded(prev => !prev)}
+              className="git-inline-toggle"
+              title={isCommitMessageExpanded ? t('history.collapseMessage') : t('history.expandMessage')}
+            >
+              {isCommitMessageExpanded
+                ? t('history.collapseMessage')
+                : t('history.showFullMessage', { count: bodyLineCount })}
+            </button>
+          )}
+        </div>
+        {/* meta 行：sha/time 收留于此（窄宽档行内隐藏 sha/time 后，展开面板仍可读，GIT-4 不丢信息） */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-7 pr-3 py-1.5 text-[11px] text-text-tertiary">
           <span className="truncate max-w-[150px]">{commit.author}</span>
+          <span className="font-mono shrink-0">{commit.shortSha}</span>
+          <span className="shrink-0">{formatRelativeTime(commit.timestamp, t)}</span>
           <span>·</span>
           <span className="shrink-0">{t('history.filesChanged', { count: files.length })}</span>
           <span className="text-success shrink-0">+{selectedDetails.totalAdditions}</span>
@@ -1342,7 +1388,7 @@ export function HistoryTab({
           onClick={(event) => handleCommitRowClick(commit, event)}
           onContextMenu={(e) => handleCommitContextMenu(e, commit)}
           title={`${subject}\n${commit.author}`}
-          className={`group flex items-center gap-2 px-3 py-1.5 cursor-pointer border-l-2 transition-colors ${
+          className={`git-history-commit-row group flex items-center gap-2 px-3 py-1.5 cursor-pointer border-l-2 transition-colors ${
             isSelected
               ? 'bg-primary/10 border-primary'
             // 多选行用 warning 色区隔（详情选中用 primary，二者语义不同、可叠加出现）
@@ -1360,11 +1406,11 @@ export function HistoryTab({
               style={{ background: isSelected ? 'rgb(var(--c-primary))' : getCommitTypeColor(commit.message) }}
             />
           )}
-          <span className="text-[11px] font-mono text-text-tertiary shrink-0">{commit.shortSha}</span>
+          <span className="git-sha text-[11px] font-mono text-text-tertiary shrink-0">{commit.shortSha}</span>
           {/* refs 装饰：色收敛到语义 token；当前分支判定按 ref.name===当前分支名
               （后端 kind 只发 local/remote/tag，前端旧'head'判定是死代码） */}
           {rowRefs.length > 0 && (
-            <span className="flex items-center gap-1 shrink-0 overflow-hidden">
+            <span className="git-refs flex items-center gap-1 shrink-0 overflow-hidden">
               {rowRefs.slice(0, 4).map((ref) => {
                 const isCurrentRef = ref.name === currentBranchName
                 return (
@@ -1400,7 +1446,7 @@ export function HistoryTab({
               toggleCommitSelection(commit.sha)
             }}
             title={t('history.addSelection')}
-            className={`p-1 rounded transition-colors shrink-0 ${
+            className={`git-multi-select p-1 rounded transition-colors shrink-0 ${
               isInSelection
                 ? 'text-warning opacity-100 bg-warning/10'
                 : 'opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-warning hover:bg-warning/10 focus:opacity-100'
@@ -1408,7 +1454,7 @@ export function HistoryTab({
           >
             {isInSelection ? <Check size={12} /> : <Plus size={12} />}
           </button>
-          <span className="text-[11px] text-text-tertiary shrink-0">{formatRelativeTime(commit.timestamp, t)}</span>
+          <span className="git-time text-[11px] text-text-tertiary shrink-0">{formatRelativeTime(commit.timestamp, t)}</span>
         </div>
         {!isWorkbench && isSelected && (
           <>
@@ -1537,7 +1583,7 @@ export function HistoryTab({
         onScroll={handleScroll}
         onKeyDown={handleCommitListKeyDown}
         tabIndex={-1}
-        className="flex-1 overflow-y-auto min-h-0 outline-none"
+        className="git-history-list flex-1 overflow-y-auto min-h-0 outline-none"
       >
         {/* P1 多选操作条（sticky 常驻列表顶部；对比需恰好 2 个，cherry-pick ≥1） */}
         {isCommitListMode && selectedCommits.size > 0 && (

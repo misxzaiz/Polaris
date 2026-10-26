@@ -375,6 +375,7 @@
     "copyMessage": "复制提交信息",
     "expandMessage": "展开完整提交信息",
     "collapseMessage": "折叠提交信息",
+    "showFullMessage": "展开全文（{{count}} 行）",
     "collapseFilePane": "收起变更文件列表",
     "expandFilePane": "展开变更文件列表",
     "copied": "已复制",
