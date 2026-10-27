@@ -226,6 +226,12 @@ pub struct ModelProfile {
 /// `SIMPLE_AI_CONTEXT_WINDOW`（向后兼容）> 默认 200_000。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
+    /// 图片输入（多模态）能力声明。
+    /// - `None` 或 `"auto"`：按模型名 + 协议启发式推断（见 `vision.rs`）
+    /// - `"support"`：该 Profile 的模型确定支持图片输入（直通原生图块）
+    /// - `"unsupported"`：确定不支持（走「落盘 + AI 决策」指向路径，绝不发图块）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_input: Option<String>,
     /// 创建时间 (ISO 8601)
     #[serde(default)]
     pub created_at: Option<String>,

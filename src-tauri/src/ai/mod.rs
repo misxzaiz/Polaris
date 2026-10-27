@@ -8,6 +8,7 @@
 
 pub mod traits;
 pub mod types;
+pub mod vision;
 pub mod session;
 pub mod registry;
 pub mod engine;

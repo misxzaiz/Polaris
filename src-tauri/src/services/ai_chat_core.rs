@@ -194,6 +194,8 @@ struct ProcessedAttachment {
     file_references: Vec<String>,
     /// 图片原始数据（用于 stream-json 模式原生传递给模型）
     image_data: Vec<ImageData>,
+    /// 图片落盘后的本地路径（供「落盘 + 指向 + AI 决策」路径使用）
+    image_paths: Vec<String>,
 }
 
 /// 图片原始数据
@@ -219,6 +221,7 @@ fn process_attachments(work_dir: &str, attachments: &[Attachment]) -> Result<Pro
         embedded_sections: Vec::new(),
         file_references: Vec::new(),
         image_data: Vec::new(),
+        image_paths: Vec::new(),
     };
 
     // 创建 .polaris 目录（如果不存在）
@@ -271,10 +274,54 @@ fn process_attachments(work_dir: &str, attachments: &[Attachment]) -> Result<Pro
                     raw_base64.len()
                 );
                 result.image_data.push(ImageData {
-                    media_type,
-                    data: raw_base64,
+                    media_type: media_type.clone(),
+                    data: raw_base64.clone(),
                     file_name: attachment.file_name.clone(),
                 });
+
+                // 落盘图片到 .polaris/attachments/，供「落盘 + 指向 + AI 决策」路径使用。
+                // 图片以 base64 传输，这里解码写回二进制；路径随 image_paths 返回，
+                // 由 build_message_with_attachments 生成指引文本告知模型可读文件/调 vision MCP。
+                match BASE64_STANDARD.decode(&raw_base64) {
+                    Ok(bytes) => {
+                        let att_dir = polaris_dir.join("attachments");
+                        if std::fs::create_dir_all(&att_dir).is_err() {
+                            tracing::warn!(
+                                "[process_attachments] 创建 attachments 目录失败: {:?}",
+                                att_dir
+                            );
+                        } else {
+                            let ext = guess_image_ext(&media_type, &attachment.file_name);
+                            let file_name = format!("img_{}.{}", file_index, ext);
+                            let img_path = att_dir.join(&file_name);
+                            match std::fs::write(&img_path, &bytes) {
+                                Ok(()) => {
+                                    tracing::info!(
+                                        "[process_attachments] 图片已落盘: {:?} ({} bytes)",
+                                        img_path,
+                                        bytes.len()
+                                    );
+                                    result.image_paths.push(img_path.to_string_lossy().to_string());
+                                    file_index += 1;
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "[process_attachments] 图片落盘失败: {:?} ({})",
+                                        img_path,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "[process_attachments] 图片 base64 解码失败，跳过落盘: {} ({})",
+                            attachment.file_name,
+                            e
+                        );
+                    }
+                }
             }
             "file" => {
                 // 文本/代码文件：优先使用前端传递的 textContent
@@ -402,7 +449,10 @@ fn guess_image_ext(mime_type: &str, file_name: &str) -> String {
 
 /// 构建包含附件内容的最终消息
 fn build_message_with_attachments(message: &str, processed: &ProcessedAttachment) -> String {
-    if processed.embedded_sections.is_empty() && processed.file_references.is_empty() {
+    if processed.embedded_sections.is_empty()
+        && processed.file_references.is_empty()
+        && processed.image_paths.is_empty()
+    {
         return message.to_string();
     }
 
@@ -431,7 +481,77 @@ fn build_message_with_attachments(message: &str, processed: &ProcessedAttachment
         ));
     }
 
+    // 图片指引（落盘 + 指向 + AI 决策）：模型若支持视觉可 read_file 直读，
+    // 否则可调 mcp__image-recognition__recognize_image 识别。绝不盲发图块（避免 400）。
+    if !processed.image_paths.is_empty() {
+        let img_lines: Vec<String> = processed
+            .image_paths
+            .iter()
+            .map(|p| format!("- {}", p))
+            .collect();
+        parts.push(format!(
+            "用户上传了 {} 张图片，已保存到以下路径：\n{}\n\
+             请根据当前模型能力自行决定：\n\
+             a) 若你支持视觉（多模态），可用 read_file 直接查看图片内容；\n\
+             b) 否则请调用 mcp__image-recognition__recognize_image 工具，\
+             传入 image=\"<上述路径>\" 识别图片内容后，把识别结果告诉用户；\n\
+             c) 若两者都不可行，请明确告知用户图片无法识别。\n\
+             注意：不要把图片 base64 直接嵌入文本（会超长且无效）。",
+            processed.image_paths.len(),
+            img_lines.join("\n")
+        ));
+    }
+
     parts.join("\n\n")
+}
+
+/// 图片直通判定（供 start/continue_chat_inner 的直通点使用）。
+///
+/// 从 `state` 读取配置，按 `profile_id` 找到 `ModelProfile`，用 `vision::resolve_vision_support`
+/// 判定该 Profile 是否确定支持视觉。返回 true 才允许把 base64 图块传给引擎。
+///
+/// 边界：
+/// - `profile_id` 为 None（官方/未选 Profile）→ 按引擎默认处理：Claude 家族确定支持，
+///   返回 true；否则（无 Profile 可查，模型名未知）保守返回 false（走指向路径）。
+/// - Profile 找不到 → 保守 false。
+/// - SimpleAI 必须有 Profile（它从 Profile 读 API key），无 Profile 时本来就走不通，
+///   保守 false 无副作用。
+fn should_direct_send_image(
+    state: &crate::AppState,
+    profile_id: Option<&str>,
+) -> bool {
+    let Some(pid) = profile_id else {
+        // 未选 Profile：无模型信息可判定。保守返回 false（走指向路径，避免 400）。
+        // 注：Claude 官方端点（engine=ClaudeCode, profile=None）实际支持视觉，
+        // 但这里拿不到 engine 上下文；官方 Claude 模型名含 "claude" 会走下方
+        // Profile 分支（若配置了官方 Profile），或由 model 名兜底。此处保守。
+        tracing::info!("[vision] 未指定模型 Profile，跳过图片直通（保守走指向路径）");
+        return false;
+    };
+
+    let config = match state.clone_config() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("[vision] 读取配置失败，跳过图片直通: {}", e);
+            return false;
+        }
+    };
+
+    match config.model_profiles.iter().find(|p| p.id == *pid) {
+        Some(profile) => {
+            let support = crate::ai::vision::resolve_vision_support(profile);
+            tracing::info!(
+                "[vision] Profile {} 图片能力判定: {:?}",
+                profile.id,
+                support
+            );
+            support == crate::ai::vision::VisionSupport::Support
+        }
+        None => {
+            tracing::warn!("[vision] 未找到 Profile {}，跳过图片直通", pid);
+            false
+        }
+    }
 }
 
 // ============================================================================
@@ -1047,6 +1167,7 @@ pub async fn start_chat_inner(
                     embedded_sections: Vec::new(),
                     file_references: Vec::new(),
                     image_data: Vec::new(),
+                    image_paths: Vec::new(),
                 }
             }
         } else {
@@ -1054,6 +1175,7 @@ pub async fn start_chat_inner(
                 embedded_sections: Vec::new(),
                 file_references: Vec::new(),
                 image_data: Vec::new(),
+                image_paths: Vec::new(),
             }
         };
 
@@ -1283,19 +1405,30 @@ pub async fn start_chat_inner(
         session_opts.fork_session_id = Some(fork_sid.clone());
     }
     if !processed.image_data.is_empty() {
-        let images: Vec<ImageAttachment> = processed
-            .image_data
-            .iter()
-            .map(|img| ImageAttachment {
-                media_type: img.media_type.clone(),
-                data: img.data.clone(),
-            })
-            .collect();
-        tracing::info!(
-            "[start_chat_inner] 传递 {} 张图片给引擎（stream-json 模式）",
-            images.len()
-        );
-        session_opts = session_opts.with_image_attachments(images);
+        // 图片直通判定：仅当 Profile 显式声明支持或模型名命中已知视觉模型时，
+        // 才把 base64 图块传给引擎。否则（unknown/unsupported）跳过直通，
+        // 走「落盘 + 指向 + AI 决策」路径（图片已由 build_message_with_attachments
+        // 生成指引文本注入 user 消息），避免把图块发给不支持的模型导致 400。
+        if should_direct_send_image(state, options.model_profile_id.as_deref()) {
+            let images: Vec<ImageAttachment> = processed
+                .image_data
+                .iter()
+                .map(|img| ImageAttachment {
+                    media_type: img.media_type.clone(),
+                    data: img.data.clone(),
+                })
+                .collect();
+            tracing::info!(
+                "[start_chat_inner] 传递 {} 张图片给引擎（stream-json 模式）",
+                images.len()
+            );
+            session_opts = session_opts.with_image_attachments(images);
+        } else {
+            tracing::info!(
+                "[start_chat_inner] 模型不支持/未声明视觉，跳过图片直通（走落盘+指向路径），共 {} 张图",
+                processed.image_data.len()
+            );
+        }
     }
 
     // 为当前会话生成一个临时 session_id，传给 start_proxy 作为代理索引。
@@ -1652,6 +1785,7 @@ pub async fn continue_chat_inner(
                 embedded_sections: Vec::new(),
                 file_references: Vec::new(),
                 image_data: Vec::new(),
+                image_paths: Vec::new(),
             }
         }
     } else {
@@ -1659,6 +1793,7 @@ pub async fn continue_chat_inner(
             embedded_sections: Vec::new(),
             file_references: Vec::new(),
             image_data: Vec::new(),
+            image_paths: Vec::new(),
         }
     };
 
@@ -1874,19 +2009,27 @@ pub async fn continue_chat_inner(
         }
     }
     if !processed.image_data.is_empty() {
-        let images: Vec<ImageAttachment> = processed
-            .image_data
-            .iter()
-            .map(|img| ImageAttachment {
-                media_type: img.media_type.clone(),
-                data: img.data.clone(),
-            })
-            .collect();
-        tracing::info!(
-            "[continue_chat_inner] 传递 {} 张图片给引擎（stream-json 模式）",
-            images.len()
-        );
-        session_opts = session_opts.with_image_attachments(images);
+        // 图片直通判定（同 start）：仅确定支持视觉的 Profile 才直通图块，否则走指向路径。
+        if should_direct_send_image(state, options.model_profile_id.as_deref()) {
+            let images: Vec<ImageAttachment> = processed
+                .image_data
+                .iter()
+                .map(|img| ImageAttachment {
+                    media_type: img.media_type.clone(),
+                    data: img.data.clone(),
+                })
+                .collect();
+            tracing::info!(
+                "[continue_chat_inner] 传递 {} 张图片给引擎（stream-json 模式）",
+                images.len()
+            );
+            session_opts = session_opts.with_image_attachments(images);
+        } else {
+            tracing::info!(
+                "[continue_chat_inner] 模型不支持/未声明视觉，跳过图片直通（走落盘+指向路径），共 {} 张图",
+                processed.image_data.len()
+            );
+        }
     }
 
     // ──────────────────────────────────────────────────────
