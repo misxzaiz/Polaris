@@ -48,33 +48,23 @@ describe('ArtifactPreviewRenderer 尺寸自适应', () => {
     vi.unstubAllGlobals();
   });
 
-  it('桌面普通容器（800px）：iframe 高度 min(60vh, 640) = 540px（高于旧版 420 固定值）', () => {
+  it('统一高度（与格宽解耦）：min(75vh, 760) = 675px（旧版按格宽降级 16:9 导致"没有加高"）', () => {
     const { container } = render(<ArtifactPreviewRenderer block={makeBlock()} />);
     act(() => {
       MockResizeObserver.instances[0]?.fire(800);
     });
-    // innerHeight=900 → 60vh = 540px；640 上限不触发
+    // innerHeight=900 → 75vh = 675px；640 旧上限已移除
     const frame = container.querySelector('div[class*="overflow-hidden"]');
-    expect((frame as HTMLElement).style.height).toBe('540px');
+    expect((frame as HTMLElement).style.height).toBe('675px');
   });
 
-  it('桌面较窄容器（600px）：同样启用 60vh 高度档（旧版 420 上限已移除）', () => {
+  it('默认 350px 会话格（窄格）：同样 675px，不再降级到 16:9 的 240px', () => {
     const { container } = render(<ArtifactPreviewRenderer block={makeBlock()} />);
     act(() => {
-      MockResizeObserver.instances[0]?.fire(600);
+      MockResizeObserver.instances[0]?.fire(350);
     });
     const frame = container.querySelector('div[class*="overflow-hidden"]');
-    expect((frame as HTMLElement).style.height).toBe('540px');
-  });
-
-  it('窄容器（375px）：narrow 触发，iframe 高度 16:9 自适应保底 240px', () => {
-    const { container } = render(<ArtifactPreviewRenderer block={makeBlock()} />);
-    act(() => {
-      MockResizeObserver.instances[0]?.fire(375);
-    });
-    const frame = container.querySelector('div[class*="overflow-hidden"]');
-    // 375 * 9/16 = 210.9 < 240 下限 → 保底 240px（手机屏占比显著低于 420px）
-    expect((frame as HTMLElement).style.height).toBe('240px');
+    expect((frame as HTMLElement).style.height).toBe('675px');
   });
 });
 
@@ -100,27 +90,27 @@ describe('ArtifactPreviewRenderer 应用内全屏', () => {
     expect(dialog).toBeTruthy();
     expect(dialog?.textContent).toContain('原型 A');
     expect(dialog?.textContent).toContain('退出全屏');
-    expect(dialog?.textContent).toContain('等比');
+    expect(dialog?.textContent).toContain('铺满');
   });
 
-  it('全屏默认等比档，可切换到铺满并记忆在 localStorage', async () => {
+  it('全屏默认铺满档，可切换到等比并记忆在 localStorage', async () => {
     const { getByTitle } = render(<ArtifactPreviewRenderer block={makeBlock()} />);
     const fsButton = getByTitle('全屏预览');
     await act(async () => {
       fireEvent.click(fsButton);
     });
     const dialog = document.querySelector('div[role="dialog"]');
-    // 默认等比：内容区是 flex 居中 letterbox
-    expect(dialog?.textContent).toContain('等比');
-
-    // 切换铺满：当前按钮文本为「等比」，点击切到「铺满」
-    const fitBtn = Array.from(dialog!.querySelectorAll('button')).find((b) => b.textContent?.includes('等比'));
-    await act(async () => {
-      fireEvent.click(fitBtn as HTMLElement);
-    });
+    // 默认铺满（用户定）：内容区 h-full w-full
     expect(dialog?.textContent).toContain('铺满');
-    // 已写入 localStorage
-    expect(localStorage.getItem('polaris.preview.fsmode')).toBe('fill');
+
+    // 切换等比：当前按钮文本为「铺满」，点击切到「等比」
+    const ratioBtn = Array.from(dialog!.querySelectorAll('button')).find((b) => b.textContent?.includes('铺满'));
+    await act(async () => {
+      fireEvent.click(ratioBtn as HTMLElement);
+    });
+    expect(dialog?.textContent).toContain('等比');
+    // 已写入 localStorage（v2 key）
+    expect(localStorage.getItem('polaris.preview.fsmode.v2')).toBe('ratio');
   });
 
   it('退出全屏：Portal 消失，卡片回归消息流', async () => {
@@ -175,19 +165,19 @@ describe('ArtifactPreviewRenderer 更多菜单与信息密度', () => {
     });
   }
 
-  it('底部状态条常驻仅 全屏/更多 两个图标按钮（A 沉浸直通定稿）', () => {
+  it('底部状态条常驻 全屏/加宽/更多 三个图标按钮（加宽直达，不埋菜单）', () => {
     const { container } = render(<ArtifactPreviewRenderer block={makeBlock()} />);
     const footer = container.querySelector('footer');
     const buttons = footer!.querySelectorAll('button[class*="h-6"]');
-    expect(buttons.length).toBe(2); // 全屏/更多
+    expect(buttons.length).toBe(3); // 全屏/加宽/更多
   });
 
-  it('点击更多展开 元信息行/加宽/新窗/复制/下载/源码 六项', async () => {
+  it('点击更多展开 元信息行/新窗/复制/路径/下载/源码（加宽已在底栏，菜单不再重复）', async () => {
     const { container } = render(<ArtifactPreviewRenderer block={makeBlock({ sourcePath: '.polaris/previews/abc/index.html' })} />);
     await openMore(container);
     const menu = container.querySelector('[role="menu"]');
     expect(menu).toBeTruthy();
-    expect(menu?.textContent).toContain('加宽预览（×2）');
+    expect(menu?.textContent).not.toContain('加宽预览');
     expect(menu?.textContent).toContain('在新标签页打开');
     expect(menu?.textContent).toContain('复制 HTML');
     expect(menu?.textContent).toContain('复制路径');
@@ -285,25 +275,16 @@ describe('ArtifactPreviewRenderer 弹出加宽（×2 breakout）', () => {
     vi.unstubAllGlobals();
   });
 
-  /** 从「更多」菜单触发加宽（加宽入口已收进菜单） */
-  async function expandViaMenu(container: HTMLElement) {
-    const moreBtn = Array.from(container.querySelectorAll('footer button[class*="h-6"]')).find((b) =>
-      b.getAttribute('title') === '更多操作'
-    );
+  /** 底栏「加宽」按钮直达（不再经由菜单） */
+  async function expandViaBar(getByTitle: (title: string) => HTMLElement) {
     await act(async () => {
-      fireEvent.click(moreBtn as HTMLElement);
-    });
-    const item = Array.from(container.querySelectorAll('[role="menuitem"]')).find((b) =>
-      b.textContent?.includes('加宽预览')
-    );
-    await act(async () => {
-      fireEvent.click(item as HTMLElement);
+      fireEvent.click(getByTitle('加宽预览（×2）'));
     });
   }
 
-  it('菜单点加宽：body 出现 fixed 面板（宽 = 卡片×2），收起后消失', async () => {
-    const { container } = render(<ArtifactPreviewRenderer block={makeBlock({ title: '加宽目标' })} />);
-    await expandViaMenu(container);
+  it('点击加宽：body 出现 fixed 面板（宽 = 卡片×2），收起后消失', async () => {
+    const { getByTitle, container } = render(<ArtifactPreviewRenderer block={makeBlock({ title: '加宽目标' })} />);
+    await expandViaBar(getByTitle);
     const panel = document.querySelector('div[role="dialog"][aria-label*="加宽预览"]') as HTMLElement | null;
     expect(panel).toBeTruthy();
     expect(panel!.style.width).toBe('800px');
@@ -319,8 +300,8 @@ describe('ArtifactPreviewRenderer 弹出加宽（×2 breakout）', () => {
   });
 
   it('Escape 先收加宽面板', async () => {
-    const { container } = render(<ArtifactPreviewRenderer block={makeBlock()} />);
-    await expandViaMenu(container);
+    const { getByTitle } = render(<ArtifactPreviewRenderer block={makeBlock()} />);
+    await expandViaBar(getByTitle);
     expect(document.querySelector('div[role="dialog"][aria-label*="加宽预览"]')).toBeTruthy();
     await act(async () => {
       fireEvent.keyDown(window, { key: 'Escape' });
@@ -329,8 +310,8 @@ describe('ArtifactPreviewRenderer 弹出加宽（×2 breakout）', () => {
   });
 
   it('与全屏互斥：加宽状态下点全屏，加宽面板收起', async () => {
-    const { container, getByTitle } = render(<ArtifactPreviewRenderer block={makeBlock()} />);
-    await expandViaMenu(container);
+    const { getByTitle } = render(<ArtifactPreviewRenderer block={makeBlock()} />);
+    await expandViaBar(getByTitle);
     await act(async () => {
       fireEvent.click(getByTitle('全屏预览'));
     });
@@ -356,6 +337,11 @@ describe('ArtifactPreviewRenderer 全屏等比档', () => {
       fireEvent.click(getByTitle('全屏预览'));
     });
     const dialog = document.querySelector('div[role="dialog"][aria-label*="全屏预览"]')!;
+    // 默认铺满 → 切到等比档再断言
+    const toggleBtn = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent?.includes('铺满'));
+    await act(async () => {
+      fireEvent.click(toggleBtn as HTMLElement);
+    });
     // jsdom rect 为 0 → 走 9/16 兜底比例；关键是存在 aspect-ratio 约束
     const ratioBox = Array.from(dialog.querySelectorAll('div')).find((d) => d.style.aspectRatio);
     expect(ratioBox).toBeTruthy();

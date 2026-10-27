@@ -5,7 +5,6 @@ import { clsx } from 'clsx';
 import type { ArtifactPreviewBlock } from '@/types';
 import { copyToClipboard } from '@/utils/clipboard';
 import { isTauri } from '@/utils/platform';
-import { useContainerWidth } from '@/hooks/useContainerWidth';
 import { invoke } from '@/services/transport';
 import {
   openInDefaultApp,
@@ -71,17 +70,18 @@ const TOPBAR_HEIGHT = 40;
 const FS_TOOLBAR_HEIGHT = 48;
 const FS_CONTENT_PADDING = 32;
 
-/** 窄屏判定阈值：卡片容器宽度低于此值启用移动端布局 */
-const NARROW_THRESHOLD = 560;
-/** 窄屏 iframe 高度自适应：16:9，上限 420px，下限 240px */
-const FRAME_MAX_HEIGHT = 420;
-const FRAME_MIN_HEIGHT = 240;
-const FRAME_ASPECT_RATIO = 9 / 16;
-/** 桌面内嵌预览高度：min(60vh, 640px)——显著高于旧版固定 420px（用户反馈"高度没变"） */
-const FRAME_DESKTOP_VH_RATIO = 0.6;
-const FRAME_DESKTOP_HEIGHT_CAP = 640;
-/** localStorage 记忆全屏档位 key */
-const FS_MODE_KEY = 'polaris.preview.fsmode';
+/**
+ * 内嵌预览高度：min(75vh, 760px)，所有卡片宽度统一。
+ * 旧版按格宽降级到 16:9（默认 350px 格只有 240px），用户实测「没有加高」的根因；
+ * 现与格宽解耦，窄格同样拿到高预览。
+ */
+const FRAME_VH_RATIO = 0.75;
+const FRAME_HEIGHT_CAP = 760;
+/**
+ * localStorage 记忆全屏档位 key。v2：默认档由等比改为铺满（用户定），换 key
+ * 使旧档位记忆不覆盖新默认。
+ */
+const FS_MODE_KEY = 'polaris.preview.fsmode.v2';
 
 /** 底部状态条图标按钮（24px，条高 32px 内） */
 const ICON_BTN_CLS =
@@ -114,10 +114,10 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   const [copied, setCopied] = useState<'html' | 'path' | null>(null);
   // 应用内全屏覆盖层（放大本卡片，等比 letterbox / 铺满两档）
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // 全屏档位：'ratio'（等比 letterbox，默认）/ 'fill'（铺满）。选择写 localStorage 记忆
+  // 全屏档位：'fill'（铺满，默认）/ 'ratio'（等比 letterbox）。选择写 localStorage 记忆
   const [fsMode, setFsMode] = useState<'ratio' | 'fill'>(() => {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(FS_MODE_KEY) : null;
-    return saved === 'fill' ? 'fill' : 'ratio';
+    return saved === 'ratio' ? 'ratio' : 'fill';
   });
   // 更多操作菜单（复制 HTML / 下载 / 查看源码 收敛其后）
   const [moreOpen, setMoreOpen] = useState(false);
@@ -150,21 +150,14 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
   // 内嵌预览盒：进全屏前实测宽高比用
   const previewBoxRef = useRef<HTMLDivElement | null>(null);
+  // 卡片根元素：弹出加宽时捕获锚定矩形用
+  const cardRef = useRef<HTMLElement | null>(null);
 
-  // 窄屏判定：容器宽度 < 560 启用移动端布局
-  const { ref: cardRef, width: cardWidth } = useContainerWidth<HTMLElement>();
-  const narrow = cardWidth > 0 && cardWidth < NARROW_THRESHOLD;
-
-  // iframe 高度：窄屏 16:9 自适应（240–420）；桌面 min(60vh, 640px)
+  // iframe 高度：min(75vh, 760px)，与卡片宽度解耦（详见 FRAME_VH_RATIO 注释）
   const frameHeight = useMemo(() => {
-    if (narrow) {
-      return Math.round(
-        Math.min(FRAME_MAX_HEIGHT, Math.max(FRAME_MIN_HEIGHT, cardWidth * FRAME_ASPECT_RATIO))
-      );
-    }
     const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
-    return Math.round(Math.min(vh * FRAME_DESKTOP_VH_RATIO, FRAME_DESKTOP_HEIGHT_CAP));
-  }, [narrow, cardWidth]);
+    return Math.round(Math.min(vh * FRAME_VH_RATIO, FRAME_HEIGHT_CAP));
+  }, []);
 
   const sizeLabel = useMemo(() => {
     const bytes = new Blob([displayBlock.html]).size;
@@ -410,6 +403,15 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
         <button type="button" className={ICON_BTN_CLS} onClick={handleEnterFullscreen} title="全屏预览" aria-label="全屏预览">
           <Maximize2 className="h-3.5 w-3.5" />
         </button>
+        <button
+          type="button"
+          className={clsx(ICON_BTN_CLS, isExpanded && 'bg-background-hover text-text-primary')}
+          onClick={handleToggleExpanded}
+          title="加宽预览（×2）"
+          aria-pressed={isExpanded}
+        >
+          <Expand className="h-3.5 w-3.5" />
+        </button>
         <div className="relative flex-none">
           <button
             type="button"
@@ -437,11 +439,6 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
                 {createdLabel ? ` · ${createdLabel}` : ''}
                 {displayBlock.requirementId ? ` · ${displayBlock.requirementId}` : ''}
               </div>
-              <MoreMenuItem
-                icon={isExpanded ? Minimize2 : Expand}
-                label={isExpanded ? '收起加宽' : '加宽预览（×2）'}
-                onClick={() => { handleToggleExpanded(); setMoreOpen(false); }}
-              />
               <MoreMenuItem
                 icon={ExternalLink}
                 label={isTauri() && displayBlock.sourcePath ? '在浏览器打开' : '在新标签页打开'}
