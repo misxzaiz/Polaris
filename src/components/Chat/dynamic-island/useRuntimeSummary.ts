@@ -30,6 +30,7 @@ import type {
 } from '@/types';
 import { parseWorkflowResult } from '../tool-calls/workflowParsers';
 import { extractToolKeyInfo, getToolCategoryDescription, getToolDisplayName } from '@/utils/toolConfig';
+import { deriveChangeSummary, EMPTY_CHANGE_SUMMARY, type SessionChangeSummary } from './changeSummary';
 
 /** 运行态类型 */
 export type RuntimeKind = 'task' | 'agent' | 'workflow' | 'tool' | 'plan' | 'progress';
@@ -134,6 +135,8 @@ export interface RuntimeSummary {
   progressMessage: string | null;
   /** AI 思考文本（最后一个 thinking block.content，流式累积） */
   thinking: string | null;
+  /** 会话变更汇总（文件操作 + 后台任务，纯派生自 messages/blocks，常驻变更段数据源） */
+  changeSummary: SessionChangeSummary;
 }
 
 const EMPTY_SUMMARY: RuntimeSummary = {
@@ -149,6 +152,7 @@ const EMPTY_SUMMARY: RuntimeSummary = {
   elapsedMs: 0,
   progressMessage: null,
   thinking: null,
+  changeSummary: EMPTY_CHANGE_SUMMARY,
 };
 
 const WORKFLOW_TOOL_NAME = 'workflow';
@@ -396,13 +400,14 @@ export function deriveRuntimeSummary(
   now: number,
   isInterrupting: boolean = false,
   usageStats: UsageStats | null = null,
+  changeSummary: SessionChangeSummary = EMPTY_CHANGE_SUMMARY,
 ): RuntimeSummary {
   const water = deriveWater(usageStats);
   const urgent = deriveUrgent(blocks || []);
   const thinking = deriveThinking(blocks || []);
 
   if (!blocks || blocks.length === 0) {
-    if (!progressMessage) return { ...EMPTY_SUMMARY, isInterrupting, urgent, water, thinking };
+    if (!progressMessage) return { ...EMPTY_SUMMARY, isInterrupting, urgent, water, thinking, changeSummary };
     // 终态进度文案不转圈（工具已结束），非终态才作为 running 进度卡
     const terminal = isTerminalProgress(progressMessage);
     const failed = isFailedProgress(progressMessage);
@@ -424,6 +429,7 @@ export function deriveRuntimeSummary(
       urgent,
       water,
       thinking,
+      changeSummary,
       hasRunning: !terminal,
       runningCount: terminal ? 0 : 1,
       slides: card.slide ? [card.slide] : [],
@@ -714,6 +720,7 @@ export function deriveRuntimeSummary(
     elapsedMs,
     progressMessage,
     thinking,
+    changeSummary,
   };
 }
 
@@ -756,7 +763,9 @@ export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
     const usage = state.usageStats;
     // now 用 tick（稳定），而非 Date.now()
     const now = tickStartRef.current;
-    const next = deriveRuntimeSummary(blocks, pm, now, interrupting, usage);
+    // 会话变更汇总：messages（历史）+ currentBlocks（流式）纯派生，memo 在 changeSummary.ts 内
+    const changeSummary = deriveChangeSummary(state.messages ?? [], state.currentMessage?.blocks, now);
+    const next = deriveRuntimeSummary(blocks, pm, now, interrupting, usage, changeSummary);
     if (
       cachedStoreRef.current === store &&
       shallowEqualSummary(cachedRef.current, next)
@@ -810,6 +819,34 @@ function shallowEqualSummary(a: RuntimeSummary, b: RuntimeSummary): boolean {
   if (a.urgent.length !== b.urgent.length) return false;
   if (a.water?.used !== b.water?.used) return false;
   if (a.water?.window !== b.water?.window) return false;
+  // 变更汇总（常驻变更段数据源）：标量 + 文件/任务清单逐项浅比较
+  const ca = a.changeSummary;
+  const cb = b.changeSummary;
+  if (ca.totalFiles !== cb.totalFiles) return false;
+  if (ca.totalAdded !== cb.totalAdded) return false;
+  if (ca.totalRemoved !== cb.totalRemoved) return false;
+  if (ca.runningBgCount !== cb.runningBgCount) return false;
+  if (ca.files.length !== cb.files.length) return false;
+  for (let i = 0; i < ca.files.length; i++) {
+    const fa = ca.files[i];
+    const fb = cb.files[i];
+    if (!fa || !fb) return false;
+    if (fa.filePath !== fb.filePath) return false;
+    if (fa.addedLines !== fb.addedLines) return false;
+    if (fa.removedLines !== fb.removedLines) return false;
+    if (fa.opCount !== fb.opCount) return false;
+    if (fa.lastKind !== fb.lastKind) return false;
+    if (fa.lastOpAt !== fb.lastOpAt) return false;
+  }
+  if (ca.backgroundTasks.length !== cb.backgroundTasks.length) return false;
+  for (let i = 0; i < ca.backgroundTasks.length; i++) {
+    const ta = ca.backgroundTasks[i];
+    const tb = cb.backgroundTasks[i];
+    if (!ta || !tb) return false;
+    if (ta.taskId !== tb.taskId) return false;
+    if (ta.status !== tb.status) return false;
+    if (ta.label !== tb.label) return false;
+  }
   // urgent 内容比较
   for (let i = 0; i < a.urgent.length; i++) {
     const ua = a.urgent[i];

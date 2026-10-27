@@ -41,11 +41,7 @@
   /* 展开态固定宽度，不被 fit-content 压窄 */
   width: min(440px, calc(100% - 32px));
 }
-.island-root.island-exiting {
-  opacity: 0;
-  transform: translateX(-50%) translateY(-6px);
-  transition: opacity 0.5s, transform 0.5s;
-}
+/* v3 常驻变更：collapsed 收尾后转为常驻形态，不再有 island-exiting 淡出隐藏 */
 
 /* ========== compact 条 ========== */
 .island-compact {
@@ -812,4 +808,353 @@
 @keyframes island-marquee {
   0% { transform: translateX(100%); }
   100% { transform: translateX(-100%); }
+}
+
+/* ========== v3 常驻变更段（compact 右侧，任何状态可见） ========== */
+.island-delta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: rgb(var(--c-text-secondary));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.island-delta-ico {
+  width: 11px;
+  height: 11px;
+  display: flex;
+  align-items: center;
+  color: rgb(var(--c-text-tertiary));
+}
+.island-delta-ico > svg {
+  width: 100%;
+  height: 100%;
+}
+.island-delta-n {
+  color: rgb(var(--c-text-secondary));
+}
+.island-delta-add {
+  color: rgb(var(--c-status-success));
+  font-weight: 500;
+}
+.island-delta-del {
+  color: rgb(var(--c-status-danger));
+  font-weight: 500;
+}
+.island-delta-bg {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-left: 5px;
+  margin-left: 2px;
+  border-left: 1px solid rgba(var(--c-border), 0.16);
+  color: rgb(var(--c-primary));
+}
+.island-delta-empty {
+  color: rgb(var(--c-text-muted));
+  opacity: 0.75;
+}
+
+/* ========== v3 展开面板：明细分节 tab ========== */
+.island-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px 4px 0;
+  border-bottom: 1px solid rgba(var(--c-border), 0.1);
+}
+.island-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: rgb(var(--c-text-tertiary));
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+.island-tab > svg {
+  width: 12px;
+  height: 12px;
+}
+.island-tab:hover {
+  color: rgb(var(--c-text-secondary));
+}
+.island-tab-on {
+  color: rgb(var(--c-text-primary));
+  border-bottom-color: rgb(var(--c-primary));
+}
+.island-tab-count {
+  min-width: 14px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgb(var(--c-primary));
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 变更汇总列表 */
+.island-changes,
+.island-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.island-change-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+.island-change-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.island-change-ico {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.island-change-ico > svg {
+  width: 100%;
+  height: 100%;
+}
+.island-change-edit {
+  color: rgb(var(--c-primary));
+}
+.island-change-write {
+  color: rgb(var(--c-status-success));
+}
+.island-change-delete {
+  color: rgb(var(--c-status-danger));
+}
+.island-change-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgb(var(--c-text-primary));
+  direction: rtl;
+  text-align: left;
+}
+.island-change-ops {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: rgb(var(--c-text-tertiary));
+  border: 1px solid rgba(var(--c-border), 0.14);
+  border-radius: 7px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.island-change-stat {
+  flex-shrink: 0;
+  display: flex;
+  gap: 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.island-change-stat b {
+  min-width: 24px;
+  text-align: right;
+  font-weight: 500;
+}
+.island-change-add {
+  color: rgb(var(--c-status-success));
+}
+.island-change-del {
+  color: rgb(var(--c-status-danger));
+}
+.island-change-wrap {
+  display: flex;
+  flex-direction: column;
+}
+/* 行主体：可展开时为 button（重置为行布局），不可展开时为 div */
+.island-change-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.island-change-static {
+  cursor: default;
+}
+.island-change-chev {
+  flex-shrink: 0;
+  display: flex;
+  color: rgb(var(--c-text-muted));
+  transition: transform 0.2s;
+}
+.island-change-chev > svg {
+  width: 10px;
+  height: 10px;
+}
+.island-change-chev-open {
+  transform: rotate(90deg);
+}
+.island-change-open {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: rgb(var(--c-text-muted));
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.island-change-open > svg {
+  width: 11px;
+  height: 11px;
+}
+.island-change-open:hover {
+  color: rgb(var(--c-primary));
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* 行内 diff 预览 */
+.island-diff {
+  margin: 2px 6px 4px 25px;
+  border: 1px solid rgba(var(--c-border), 0.12);
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.14);
+}
+.island-diff-body {
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+.island-diff-line {
+  display: flex;
+  white-space: pre;
+  color: rgb(var(--c-text-secondary));
+}
+.island-diff-sign {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  user-select: none;
+  opacity: 0.8;
+}
+.island-diff-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+.island-diff-add {
+  background: rgba(var(--c-status-success), 0.1);
+  color: rgb(var(--c-status-success));
+}
+.island-diff-del {
+  background: rgba(var(--c-status-danger), 0.1);
+  color: rgb(var(--c-status-danger));
+}
+.island-diff-more {
+  padding: 3px 8px;
+  font-size: 10px;
+  color: rgb(var(--c-text-muted));
+  border-top: 1px solid rgba(var(--c-border), 0.08);
+}
+
+/* 后台任务列表 */
+.island-task-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+.island-task-line:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.island-task-ico {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: rgb(var(--c-text-tertiary));
+}
+.island-task-ico > svg {
+  width: 100%;
+  height: 100%;
+}
+.island-task-cmd {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgb(var(--c-text-primary));
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}
+.island-bg-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  border: 1px solid rgba(var(--c-border), 0.16);
+  color: rgb(var(--c-text-secondary));
+  white-space: nowrap;
+}
+.island-bg-running {
+  color: rgb(var(--c-primary));
+  border-color: rgba(var(--c-primary), 0.4);
+}
+.island-bg-failed {
+  color: rgb(var(--c-status-danger));
+  border-color: rgba(var(--c-status-danger), 0.4);
+}
+
+/* 口径脚注 / 链接 */
+.island-note {
+  font-size: 10px;
+  color: rgb(var(--c-text-muted));
+  padding: 4px 6px 0;
+  line-height: 1.6;
+}
+.island-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 10px;
+  color: rgb(var(--c-primary));
+  cursor: pointer;
+  font-family: inherit;
+}
+.island-link:hover {
+  text-decoration: underline;
 }

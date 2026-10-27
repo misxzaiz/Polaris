@@ -1,7 +1,12 @@
 /**
  * 灵动岛（Dynamic Island）v2 —— 会话运行态中枢
  *
- * 状态机：hidden → compact → expanded → collapsed（已完成降级）→ hidden
+ * 状态机：hidden → compact → expanded → collapsed（已完成降级，5s）→ resident（常驻）
+ *
+ * v3 变更（常驻变更汇总，plans/dynamic-island-change-summary-plan.md）：
+ * - 空闲不再卸载：渲染「就绪 + 变更段」常驻胶囊，随时可见本次会话改了什么
+ * - compact 新增右侧常驻变更段：文件数 / +N −M / 后台任务数（数据源 changeSummary.ts）
+ * - collapsed 完成态停留 5s 后转为常驻形态（不再淡出隐藏）
  *
  * v2 变更（用户反馈驱动）：
  * - 贴顶小形态（top:0 只留底部圆角，compact 28px），背景亮两档与暗背景形成反差
@@ -17,9 +22,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { clsx } from 'clsx';
-import { ChevronDown, Square, TriangleAlert, CircleCheck } from 'lucide-react';
+import { ChevronDown, Square, TriangleAlert, CircleCheck, FileDiff, Terminal } from 'lucide-react';
 import { useRuntimeSummary, formatDuration, type CompactSlide, type UrgentCard } from './useRuntimeSummary';
 import { DynamicIslandExpanded } from './DynamicIslandExpanded';
+import type { SessionChangeSummary } from './changeSummary';
 import { findStoreByConversationId } from '@/stores/conversationStore/sessionStoreManager';
 import { useToastStore } from '@/stores/toastStore';
 import { aiChatDispatch } from '@/services/aiChatDispatch'
@@ -50,7 +56,7 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
   const [collapsedExiting, setCollapsedExiting] = useState(false);
   const collapsedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { hasRunning, hasFailed, isInterrupting, slides, cards, doneCount, urgent, thinking } = summary;
+  const { hasRunning, hasFailed, isInterrupting, slides, cards, doneCount, urgent, thinking, changeSummary } = summary;
 
   // 判断是否处于 collapsed（已完成降级）态：无运行中、无失败、无 urgent、有已完成卡片
   const isCollapsed = !hasRunning && !hasFailed && !isInterrupting && urgent.length === 0 && doneCount > 0;
@@ -60,6 +66,8 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
   // 思考时 blocks 里有 thinking block（content 流式累积），但无 task/agent 卡片 → hasRunning=false、slides=[]
   // Minimal 态正是补这个缺口，接 deriveThinking 数据源
   const isThinking = !!thinking && !hasRunning && urgent.length === 0 && !isInterrupting;
+  // v3 常驻：空闲（或 collapsed 停留结束）不再卸载，渲染「就绪 + 变更段」常驻胶囊
+  const isResident = isIdle || collapsedExiting;
 
   // 重置轮播索引当 slides 变化
   useEffect(() => {
@@ -87,7 +95,8 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
     };
   }, [expanded, slides.length, carouselIdx, urgent.length, isThinking]);
 
-  // collapsed 退场：进入 collapsed 态后停留 5s，无交互则淡出
+  // collapsed 收尾：进入 collapsed 态后停留 5s，无新活动则转为常驻形态
+  // （v3 常驻变更：不再淡出隐藏——空闲时岛仍渲染「就绪 + 变更段」胶囊）
   useEffect(() => {
     if (collapsedTimerRef.current) {
       clearTimeout(collapsedTimerRef.current);
@@ -96,11 +105,11 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
     if (isCollapsed && !expanded) {
       setCollapsedExiting(false);
       collapsedTimerRef.current = setTimeout(() => {
+        // 转为常驻形态（isResident 分支渲染）
         setCollapsedExiting(true);
-        // 淡出动画后不渲染（交由 isIdle 自然卸载）
       }, COLLAPSED_HOLD);
     } else if (hasRunning || urgent.length > 0) {
-      // 恢复运行态或出现 urgent 时取消退场
+      // 恢复运行态或出现 urgent 时取消收尾
       setCollapsedExiting(false);
     }
     return () => {
@@ -222,15 +231,12 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
     ? Math.max(6, Math.min(20, thinking.length / 8))
     : 14;
 
-  // 空闲：不渲染
-  if (isIdle) return null;
-
-  // 状态点颜色：urgent 最优先 → 失败 → 已完成 → 运行中
+  // 状态点颜色：urgent 最优先 → 失败 → 已完成/常驻 → 运行中
   const dotClass = urgent.length > 0
     ? 'island-dot-warn'
     : hasFailed
       ? 'island-dot-fail'
-      : isCollapsed
+      : (isCollapsed || isResident)
         ? 'island-dot-done'
         : isThinking
           ? 'island-dot-thinking'
@@ -255,7 +261,6 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
         expanded && 'island-expanded',
         isCollapsed && !expanded && 'island-collapsed',
         isThinking && !expanded && 'island-minimal',
-        collapsedExiting && 'island-exiting',
       )}
     >
       {/* 折叠态 */}
@@ -297,7 +302,7 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
               </span>
             </div>
           </>
-        ) : isCollapsed ? (
+        ) : isCollapsed && !collapsedExiting ? (
           <>
             <div className="island-main">
               <span className="island-seg">
@@ -307,6 +312,13 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
             </div>
             <span className="island-time">{formatDuration(summary.elapsedMs)}</span>
           </>
+        ) : isResident ? (
+          <div className="island-main">
+            <span className="island-seg">
+              <span className="island-seg-ico island-seg-ico-done"><CircleCheck /></span>
+              <span className="island-seg-lbl">就绪</span>
+            </span>
+          </div>
         ) : (
           <>
             <div className="island-main">
@@ -315,6 +327,9 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
             <span className="island-time">{formatDuration(summary.elapsedMs)}</span>
           </>
         )}
+
+        {/* 会话变更段：常驻显示（v3）——文件数 / +N −M / 后台任务数 */}
+        <ChangeDelta summary={changeSummary} />
 
         <span className={clsx('island-chev', expanded && 'island-chev-open')}>
           <ChevronDown />
@@ -334,6 +349,7 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
           elapsedMs={summary.elapsedMs}
           water={summary.water}
           onUrgentDecision={handleUrgentDecision}
+          changeSummary={changeSummary}
         />
       )}
     </div>
@@ -352,6 +368,27 @@ function Carousel({ slide }: { slide: CompactSlide }) {
       {slide.barPercent != null && (
         <span className="island-mini-bar">
           <i style={{ width: `${slide.barPercent}%` }} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** 会话变更段：常驻显示本次会话的文件变更与后台任务计数（数据源 changeSummary.ts） */
+function ChangeDelta({ summary }: { summary: SessionChangeSummary }) {
+  if (summary.totalFiles === 0 && summary.backgroundTasks.length === 0) {
+    return <span className="island-delta island-delta-empty">无变更</span>;
+  }
+  return (
+    <span className="island-delta">
+      <span className="island-delta-ico"><FileDiff /></span>
+      <span className="island-delta-n">{summary.totalFiles} 文件</span>
+      <span className="island-delta-add">+{summary.totalAdded}</span>
+      <span className="island-delta-del">−{summary.totalRemoved}</span>
+      {summary.runningBgCount > 0 && (
+        <span className="island-delta-bg">
+          <span className="island-delta-ico"><Terminal /></span>
+          <span>{summary.runningBgCount}</span>
         </span>
       )}
     </span>

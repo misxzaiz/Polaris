@@ -22,7 +22,7 @@ import { ThinkingOrb } from '../common/ThinkingOrb';
 import { ChatNavigator } from '../session/ChatNavigator';
 import { DynamicIsland } from '../dynamic-island';
 import { ArtifactVersionsProvider, buildArtifactVersionsMap } from '../chatBlocks/artifactVersions';
-import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from '../chatUtils/constants';
+import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE, ISLAND_HEADER_SPACER_STYLE } from '../chatUtils/constants';
 import { useMessageAutoScroll, BOTTOM_ANCHOR_EPSILON_PX } from './useMessageAutoScroll';
 import { ScrollToBottomButton } from '../common/ScrollToBottomButton';
 import { EmptyState as RichEmptyState } from '../common/EmptyState';
@@ -283,6 +283,8 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
           components={{
             // 空态用 EmptyPlaceholder 承接，避免 isEmpty 三元分支导致 Virtuoso 整树卸载重建
             EmptyPlaceholder: EmptyState,
+            // 顶部占位：常驻灵动岛（v3 空闲也不卸载）贴顶悬浮，首条消息需避开
+            Header: () => <div style={ISLAND_HEADER_SPACER_STYLE} />,
             // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随
             Scroller: Scroller,
             Footer: () => (

@@ -11,6 +11,12 @@ export const VIEWPORT_EXTENSION = { top: 100, bottom: 150 };
 export const FOOTER_SPACER_STYLE = { height: '120px' } as const;
 
 /**
+ * Virtuoso 顶部间距：为常驻灵动岛（v3 空闲也不卸载）预留空间，
+ * 避免首条消息被贴顶悬浮岛遮住。
+ */
+export const ISLAND_HEADER_SPACER_STYLE = { height: '36px', flexShrink: 0 } as const;
+
+/**
  * 状态图标配置
  */
 export const STATUS_CONFIG = {
