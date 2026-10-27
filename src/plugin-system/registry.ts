@@ -165,13 +165,18 @@ class PluginRegistry {
     // 获取插件安装路径（用于解析适配器入口等相对路径）
     const manifest = this.manifests.get(pluginId)
     const installPath = manifest?.installPath
+    // 引擎 CLI 路径同样支持 {{pluginDir}} 占位符（与 MCP argsTemplate / 执行器一致）。
+    // 为什么必须替换：插件安装目录随数据根变化（dev/test/便携版各不相同），
+    // 清单里写死绝对路径会让引擎在别的机器或换数据根后指回旧目录。
+    const fillPluginDir = (value: string): string =>
+      installPath ? value.split('{{pluginDir}}').join(installPath) : value
     const engineConfig = {
       id: engine.id,
       name: engine.name,
       description: engine.description,
       cli: {
-        command: engine.cli.command,
-        args: engine.cli.args ?? [],
+        command: fillPluginDir(engine.cli.command),
+        args: (engine.cli.args ?? []).map(fillPluginDir),
         installGuide: engine.cli.installGuide ?? '',
       },
       protocol: engine.protocol ?? 'pi-rpc',
