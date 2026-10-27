@@ -17,6 +17,7 @@ export {
   useSessionMetadataList,
   useActiveSessionId,
   useSessionManagerActions,
+  RENDER_EVENT_TYPES,
 } from './sessionStoreManager'
 export {
   useActiveSession,

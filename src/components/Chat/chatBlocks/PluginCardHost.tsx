@@ -170,9 +170,12 @@ export function PluginCardHost({ block, onSendToChat }: PluginCardHostProps) {
     return <LoadingFallback />
   }
 
-  const respond = block.mode === 'interaction' && block.status === 'pending' && block.sessionId
+  // sessionId 允许为空（cap.ui.render 可不填，spec cap-ui-render-sessionid-optional）：
+  // 回传空串即可——后端 respond_plugin_card 按 pending 表等值校验（空==空通过），
+  // 配对本质按 interactionId 全局 map，不依赖会话路由
+  const respond = block.mode === 'interaction' && block.status === 'pending'
     ? async (result: unknown) => {
-        await respondPluginCard(block.sessionId!, block.id, result)
+        await respondPluginCard(block.sessionId ?? '', block.id, result)
       }
     : undefined
 

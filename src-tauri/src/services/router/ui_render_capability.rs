@@ -24,7 +24,9 @@
 //! - `request`：渲染一帧（v1 行为全保留）
 //!   ```jsonc
 //!   { "action": "request",
-//!   "sessionId": "session-uuid",      // 必填（前端 respond_plugin_card 回填依赖）
+//!   "sessionId": "session-uuid",      // 可选；不填 = 投递到前端当前活跃会话
+//!                                     // （外部入口推荐不填——乱填非目标会话 ID 可能
+//!                                     //   撞上真实 conversationId 误投其他会话）
 //!   "pluginId": "polaris.ui",        // 归属（卡片 header 显示）
 //!   "cardId": "confirm",             // 前端 chatCardRegistry 匹配 key（custom 帧）
 //!   "toolName": "ui.render",         // 兜底渲染的卡片名；模板帧用默认值即可命中 UiFrameCard
@@ -153,7 +155,7 @@ impl UiRenderCapability {
                 "unregister": { "params": { "templateId": "string" }, "returns": "{ unregistered: true, templateId }" },
                 "list": { "params": {}, "returns": "{ templates: [{templateId,title,description,owner,persisted}] }" },
                 "request": { "params": {
-                    "sessionId": "string（必填）",
+                    "sessionId": "string? 可选，推荐不填：不填/空白 = 前端投递到当前活跃会话；乱填非目标会话 ID 可能撞上真实 conversationId 误投其他会话（显式传值须为前端会话 ID）",
                     "pluginId": "string（必填）",
                     "cardId": "string（必填）",
                     "toolName": "string?（默认 ui.render）",
@@ -717,8 +719,20 @@ impl UiRenderCapability {
 
     // ==================== 动作：request（渲染一帧） ====================
 
+    /// request.sessionId 可选化提取（spec cap-ui-render-sessionid-optional）：
+    /// absent/空/纯空白统一归一为空串 = 「未路由」显式语义，前端渲染白名单
+    /// 兜底投递到当前活跃会话；显式传值行为不变（respond_plugin_card 等值校验闭环）。
+    fn extract_optional_session_id(params: &Value) -> String {
+        params
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    }
+
     fn do_request(&self, params: &Value, ctx: &dyn Context) -> Result<Value, String> {
-        let session_id = Self::require_str(params, "sessionId")?.to_string();
+        let session_id = Self::extract_optional_session_id(params);
         let plugin_id = Self::require_str(params, "pluginId")?.to_string();
         let card_id = Self::require_str(params, "cardId")?.to_string();
         let tool_name = params
@@ -953,9 +967,16 @@ mod tests {
             );
         }
         // 审计一致性抽查：request 必填三键与 returns 形状
-        for key in ["sessionId", "pluginId", "cardId"] {
+        for key in ["pluginId", "cardId"] {
             assert!(d["actions"]["request"]["params"][key].is_string(), "缺 {key}");
         }
+        // sessionId 已可选化（spec cap-ui-render-sessionid-optional）：describe 必须
+        // 保留「可选」提示，防止 AI 侧仍按必填习惯乱填（乱填可能误投其他会话）
+        let session_id_doc = d["actions"]["request"]["params"]["sessionId"]
+            .as_str()
+            .expect("缺 sessionId 参数文档");
+        assert!(session_id_doc.contains("可选"), "sessionId 文档须标注可选: {session_id_doc}");
+        assert!(session_id_doc.contains("推荐不填"), "sessionId 文档须标注推荐不填: {session_id_doc}");
         assert!(d["actions"]["request"]["returns"]
             .as_str()
             .unwrap()
@@ -1028,5 +1049,24 @@ mod tests {
         let mut empty_datasets = base;
         empty_datasets["datasets"] = json!([]);
         assert!(validate_chart(empty_datasets).is_err());
+    }
+
+    /// sessionId 可选化提取：absent/空/纯空白统一归一空串（未路由语义），
+    /// 显式传值（含首尾空白）trim 后原样保留
+    #[test]
+    fn session_id_extraction_is_optional_and_trimmed() {
+        assert_eq!(UiRenderCapability::extract_optional_session_id(&json!({})), "");
+        assert_eq!(
+            UiRenderCapability::extract_optional_session_id(&json!({ "sessionId": null })),
+            ""
+        );
+        assert_eq!(
+            UiRenderCapability::extract_optional_session_id(&json!({ "sessionId": "  " })),
+            ""
+        );
+        assert_eq!(
+            UiRenderCapability::extract_optional_session_id(&json!({ "sessionId": " front-uuid " })),
+            "front-uuid"
+        );
     }
 }

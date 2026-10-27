@@ -56,6 +56,15 @@ export function isProtectedSession(metadata: SessionMetadata | undefined): boole
   return !!metadata && !!metadata.kind && PROTECTED_SESSION_KINDS.has(metadata.kind)
 }
 
+/**
+ * 实体渲染事件白名单（单一权威，EventRouter 同款语义引用本常量）：
+ * 外部入口（MCP bridge / cap_dispatch 经 cap.ui.render 等调用）的这类事件不承载
+ * 会话主体逻辑，只驱动卡片渲染 / 回答回写——路由 miss 或无路由 ID 时允许兜底投递
+ * 到当前活跃会话。其余事件保持丢弃语义，避免重新引入「回退 activeSessionId」的
+ * 历史根因（见对不准窗口/新开窗口旧 bug）。
+ */
+export const RENDER_EVENT_TYPES: ReadonlySet<string> = new Set(['plugin_card', 'plugin_card_answered'])
+
 // ============================================================================
 // Manager Store Type
 // ============================================================================
@@ -561,72 +570,86 @@ function createSessionManagerStore() {
       // 单一路由路径：_routeSessionId 是前端 sessionId（由 EventRouter 从 contextId 解析注入）。
       // 不再用 event.sessionId（后端 conversationId）兜底，不再回退 activeSessionId，
       // 不再"找不到 store 就自动建会话"——这三条正是"对不准窗口/新开窗口"的根因。
+      // 例外：实体渲染事件白名单（RENDER_EVENT_TYPES）不承载会话主体逻辑，允许兜底。
+      let targetSessionId: string
       const routeSessionId = event._routeSessionId
       if (!routeSessionId) {
-        log.warn('事件缺少 _routeSessionId，丢弃', { type: event.type })
-        return
-      }
-      // 实体渲染事件白名单：外部入口（MCP bridge / cap_dispatch 经 cap.ui.render 等调用）携带的
-      // routeSessionId 是后端 conversationId（对不上任何前端 store），但这类事件不承载会话主体逻辑，
-      // 只驱动卡片渲染 / 回答回写，兜底投递到当前活跃会话即可。其余事件保持丢弃语义，
-      // 避免重新引入「回退 activeSessionId」的历史根因（见对不准窗口/新开窗口旧 bug）。
-      const RENDER_EVENT_TYPES: ReadonlySet<string> = new Set(['plugin_card', 'plugin_card_answered'])
-
-      const store = get().stores.get(routeSessionId)
-      // 实际投递目标 sessionId（未兜底 = routeSessionId；兜底 = 活跃会话）
-      let targetSessionId = routeSessionId
-      if (!store) {
-        if (RENDER_EVENT_TYPES.has(event.type)) {
-          // 渲染卡片事件：优先 conversationId 精确反查；查不到才活跃会话兜底
-          // （批 5 收敛：外部入口卡片优先回到来源会话，跨端不再误投活跃会话）
-          const conversationId = (event as { sessionId?: string }).sessionId
-          const entry = conversationId
-            ? [...get().stores.entries()].find(
-                ([, s]) => s.getState().conversationId === conversationId,
-              )
-            : undefined
-          if (entry) {
-            log.info('渲染事件按 conversationId 反查投递', {
-              routeSessionId,
-              target: entry[0],
-              type: event.type,
-            })
-            targetSessionId = entry[0]
-          } else {
-            const activeId = get().activeSessionId
-            const activeStore = activeId ? get().stores.get(activeId) : undefined
-            if (activeId && activeStore) {
-              log.warn('渲染事件未匹配到原始会话，兜底投递到活跃会话', {
+        // 无路由 ID：仅渲染白名单放行——cap.ui.render sessionId 可不填（不填 = 「未路由」
+        // 显式语义，spec cap-ui-render-sessionid-optional），直接投递到当前活跃会话。
+        // 空 sessionId 永不参与 conversationId 反查，消除乱填撞上真实会话误投的隐患。
+        // 其余事件保持丢弃语义不变。
+        if (!RENDER_EVENT_TYPES.has(event.type)) {
+          log.warn('事件缺少 _routeSessionId，丢弃', { type: event.type })
+          return
+        }
+        const activeId = get().activeSessionId
+        const activeStore = activeId ? get().stores.get(activeId) : undefined
+        if (!activeId || !activeStore) {
+          log.warn('渲染事件无路由 ID 且无活跃会话，丢弃', { type: event.type })
+          return
+        }
+        log.info('渲染事件无路由 ID（sessionId 未填），投递到活跃会话', {
+          target: activeId,
+          type: event.type,
+        })
+        targetSessionId = activeId
+      } else {
+        const store = get().stores.get(routeSessionId)
+        // 实际投递目标 sessionId（未兜底 = routeSessionId；兜底 = 活跃会话）
+        targetSessionId = routeSessionId
+        if (!store) {
+          if (RENDER_EVENT_TYPES.has(event.type)) {
+            // 渲染卡片事件：优先 conversationId 精确反查；查不到才活跃会话兜底
+            // （批 5 收敛：外部入口卡片优先回到来源会话，跨端不再误投活跃会话）
+            const conversationId = (event as { sessionId?: string }).sessionId
+            const entry = conversationId
+              ? [...get().stores.entries()].find(
+                  ([, s]) => s.getState().conversationId === conversationId,
+                )
+              : undefined
+            if (entry) {
+              log.info('渲染事件按 conversationId 反查投递', {
                 routeSessionId,
-                fallback: activeId,
+                target: entry[0],
                 type: event.type,
               })
-              targetSessionId = activeId
+              targetSessionId = entry[0]
             } else {
-              log.warn('渲染事件未匹配到会话且无活跃会话，丢弃', { routeSessionId, type: event.type })
+              const activeId = get().activeSessionId
+              const activeStore = activeId ? get().stores.get(activeId) : undefined
+              if (activeId && activeStore) {
+                log.warn('渲染事件未匹配到原始会话，兜底投递到活跃会话', {
+                  routeSessionId,
+                  fallback: activeId,
+                  type: event.type,
+                })
+                targetSessionId = activeId
+              } else {
+                log.warn('渲染事件未匹配到会话且无活跃会话，丢弃', { routeSessionId, type: event.type })
+                return
+              }
+            }
+          } else {
+            // 批 5（审计 1.1 根因 / 裁决方案 M4）：跨端事件路由。事件的 contextId
+            // 是**发起端**的本地 UUID（对不上本端键），但 payload.sessionId 是引擎
+            // conversationId（跨端同构）——按其反查本端持有该会话的 store 精确投递。
+            // 两端从历史恢复同一会话后，任一端发起的流式双方都能渲染。
+            // 语义安全：只在「确有会话持有该 conversationId」时投递（精确匹配，
+            // 不触碰「回退 activeSessionId」旧根因）；无 sessionId 或查不到才丢弃。
+            const conversationId = (event as { sessionId?: string }).sessionId
+            const entry = conversationId
+              ? [...get().stores.entries()].find(
+                  ([, s]) => s.getState().conversationId === conversationId,
+                )
+              : undefined
+            if (entry) {
+              targetSessionId = entry[0]
+            } else {
+              // store 不存在 = 前端尚未创建该会话（用户从未打开 / 已删除）。
+              // 事件丢弃，由前端主动创建会话后再发起新一轮对话。
+              log.warn('事件未匹配到会话，丢弃', { routeSessionId, type: event.type })
               return
             }
-          }
-        } else {
-          // 批 5（审计 1.1 根因 / 裁决方案 M4）：跨端事件路由。事件的 contextId
-          // 是**发起端**的本地 UUID（对不上本端键），但 payload.sessionId 是引擎
-          // conversationId（跨端同构）——按其反查本端持有该会话的 store 精确投递。
-          // 两端从历史恢复同一会话后，任一端发起的流式双方都能渲染。
-          // 语义安全：只在「确有会话持有该 conversationId」时投递（精确匹配，
-          // 不触碰「回退 activeSessionId」旧根因）；无 sessionId 或查不到才丢弃。
-          const conversationId = (event as { sessionId?: string }).sessionId
-          const entry = conversationId
-            ? [...get().stores.entries()].find(
-                ([, s]) => s.getState().conversationId === conversationId,
-              )
-            : undefined
-          if (entry) {
-            targetSessionId = entry[0]
-          } else {
-            // store 不存在 = 前端尚未创建该会话（用户从未打开 / 已删除）。
-            // 事件丢弃，由前端主动创建会话后再发起新一轮对话。
-            log.warn('事件未匹配到会话，丢弃', { routeSessionId, type: event.type })
-            return
           }
         }
       }

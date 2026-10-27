@@ -7,6 +7,10 @@
  * 兜底投递到当前活跃会话，使卡片能渲染、可交互、可回写。
  *
  * 非白名单事件与无活跃会话时维持原丢弃语义。
+ *
+ * 另覆盖 sessionId 不填语义（spec cap-ui-render-sessionid-optional）：
+ * 事件无 _routeSessionId（后端裸发、无 contextId 信封）时，渲染白名单
+ * 直接投递到活跃会话，空 sessionId 不参与 conversationId 反查。
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
@@ -128,5 +132,86 @@ describe('plugin_card 外部入口兜底投递', () => {
     const state = store?.getState()
     // result 未写入活跃会话（message 应保持空）
     expect(state?.messages.length ?? 0).toBe(0)
+  })
+
+  // ===== sessionId 不填语义（spec cap-ui-render-sessionid-optional）=====
+  // cap.ui.render request 不填 sessionId → 后端裸发（无 contextId 信封）→
+  // EventRouter 转发 dispatchEvent（无 _routeSessionId）→ 直接投递活跃会话。
+
+  /** 构造无路由 ID 的 plugin_card 事件（模拟 sessionId 未填的裸发事件） */
+  const makeCardEventNoRoute = (interactionId = 'card-noroute-1'): PluginCardEvent => ({
+    type: 'plugin_card',
+    sessionId: '',
+    interactionId,
+    pluginId: 'demo',
+    cardId: 'render-test',
+    toolName: 'mcp__demo__render_test',
+    payload: { title: 'NoRoute', frame: {} },
+  })
+
+  it('无路由 ID：plugin_card 直接投递到活跃会话（sessionId 不填语义）', () => {
+    const activeId = sessionStoreManager.getState().createSession({ type: 'free', title: 'Active' })
+
+    sessionStoreManager.getState().dispatchEvent(makeCardEventNoRoute())
+
+    const blocks = cardBlocks(activeId)
+    expect(blocks.length).toBe(1)
+    expect(blocks[0]).toMatchObject({ type: 'plugin_card', id: 'card-noroute-1' })
+  })
+
+  it('无路由 ID：plugin_card_answered 同样投递活跃会话并回写状态', () => {
+    const activeId = sessionStoreManager.getState().createSession({ type: 'free', title: 'Active' })
+
+    sessionStoreManager.getState().dispatchEvent(makeCardEventNoRoute('card-noroute-2'))
+    sessionStoreManager.getState().dispatchEvent({
+      type: 'plugin_card_answered',
+      sessionId: '',
+      interactionId: 'card-noroute-2',
+      declined: false,
+      result: { ok: true },
+    })
+
+    const blocks = cardBlocks(activeId)
+    expect(blocks.length).toBe(1)
+    expect(blocks[0]).toMatchObject({
+      id: 'card-noroute-2',
+      status: 'answered',
+      response: { ok: true },
+    })
+  })
+
+  it('无路由 ID：空 sessionId 不参与 conversationId 反查（不误投匹配会话）', () => {
+    // 建一个 conversationId 恰为空串匹配不到的会话；即使存在其他会话，
+    // 空 sessionId 也只允许走活跃会话兜底，不触发反查分支
+    const activeId = sessionStoreManager.getState().createSession({ type: 'free', title: 'Active' })
+    const otherId = sessionStoreManager.getState().createSession({ type: 'free', title: 'Other', silentMode: true })
+
+    sessionStoreManager.getState().dispatchEvent(makeCardEventNoRoute())
+
+    expect(cardBlocks(activeId).length).toBe(1)
+    expect(cardBlocks(otherId).length).toBe(0)
+  })
+
+  it('无路由 ID：无活跃会话时维持丢弃语义', () => {
+    const tempId = sessionStoreManager.getState().createSession({ type: 'free', title: 'Temp' })
+    sessionStoreManager.getState().deleteSession(tempId)
+    expect(sessionStoreManager.getState().activeSessionId).toBeNull()
+
+    sessionStoreManager.getState().dispatchEvent(makeCardEventNoRoute())
+
+    expect(sessionStoreManager.getState().stores.size).toBe(0)
+  })
+
+  it('无路由 ID：非白名单事件维持丢弃语义', () => {
+    const activeId = sessionStoreManager.getState().createSession({ type: 'free', title: 'Active' })
+
+    sessionStoreManager.getState().dispatchEvent({
+      type: 'result',
+      output: 'hello',
+      sessionId: '',
+    })
+
+    const store = sessionStoreManager.getState().stores.get(activeId)
+    expect(store?.getState().messages.length ?? 0).toBe(0)
   })
 })

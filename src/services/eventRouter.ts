@@ -12,7 +12,7 @@
 
 import { listen } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
-import { sessionStoreManager } from '@/stores/conversationStore'
+import { sessionStoreManager, RENDER_EVENT_TYPES } from '@/stores/conversationStore'
 import type { AIEvent } from '@/ai-runtime'
 
 const log = createLogger('EventRouter')
@@ -87,6 +87,20 @@ export class EventRouter {
         // scheduler-/dispatch- 前缀：仍走 register/dispatch 旧路径（service 自行注入 _routeSessionId）
         if (contextId.startsWith('scheduler-') || contextId.startsWith('dispatch-')) {
           this.dispatch({ contextId, payload })
+          return
+        }
+
+        // 无 session 信封的渲染类事件（cap.ui.render sessionId 可不填——不填时后端
+        // wrap_question_route_event 走空值分支裸发，无 contextId）：转发
+        // sessionStoreManager.dispatchEvent（不带 _routeSessionId），由其渲染白名单
+        // 分支兜底投递到当前活跃会话（spec cap-ui-render-sessionid-optional）。
+        // 其余无 contextId 事件保持旧 handler 路径不变。
+        if (RENDER_EVENT_TYPES.has((payload as { type?: string } | null)?.type ?? '')) {
+          try {
+            sessionStoreManager.getState().dispatchEvent(payload as AIEvent)
+          } catch (e) {
+            log.error('分发无信封渲染事件到会话失败', e instanceof Error ? e : new Error(String(e)))
+          }
           return
         }
 
