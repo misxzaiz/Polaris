@@ -28,9 +28,36 @@ import {
   type AgnesConfigView,
 } from './api'
 import { useAgnesMediaStore } from './store'
+import { openExternalLink } from '@/services/linkExternal'
 import type { PluginPanelComponent } from '@/plugin-system/types'
 
 type Tab = 'image' | 'video' | 'settings'
+
+/**
+ * 下载媒体：fetch → blob → 触发浏览器下载。
+ *
+ * 不直接用 <a href download>：Android wry WebView 无 DownloadListener 时
+ * download 属性退化为普通导航，会整体替换 SPA 上下文（返回即刷新）。
+ * 该函数对 data:/http(s): 统一处理，跨域受限时兜底 openExternalLink
+ * （移动端 → 系统浏览器，不导航当前 SPA）。
+ */
+async function downloadMedia(url: string, filename: string) {
+  try {
+    const resp = await fetch(url)
+    const blob = await resp.blob()
+    const objUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objUrl
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(objUrl)
+  } catch {
+    // 回退到直接打开（CORS 等受限场景）
+    void openExternalLink(url)
+  }
+}
 
 // ============================================================================
 // 主组件
@@ -229,7 +256,12 @@ function ImageTab({ disabled, onSendToChat }: { disabled: boolean; onSendToChat?
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-0 transition-opacity group-hover:opacity-100">
                   <div className="line-clamp-2 text-[10px] text-white/90">{item.prompt}</div>
                   <div className="mt-1 flex gap-1">
-                    <a href={item.src} download={`agnes-${i}.png`} className="rounded bg-white/20 p-1 text-white hover:bg-white/30"><Download size={10} /></a>
+                    <button
+                      type="button"
+                      onClick={() => void downloadMedia(item.src, `agnes-${i}.png`)}
+                      className="rounded bg-white/20 p-1 text-white hover:bg-white/30"
+                      title={t('agnes.download', { defaultValue: '下载' })}
+                    ><Download size={10} /></button>
                     {onSendToChat && (
                       <button type="button" onClick={() => onSendToChat(item.src)} className="rounded bg-white/20 p-1 text-white hover:bg-white/30"><Send size={10} /></button>
                     )}
@@ -403,7 +435,12 @@ function VideoTab({ disabled, onSendToChat }: { disabled: boolean; onSendToChat?
                 <div className="mt-1.5">
                   <video src={item.url} controls className="w-full rounded" />
                   <div className="mt-1 flex gap-1">
-                    <a href={item.url} download={`agnes-${item.videoId.slice(0, 12)}.mp4`} className="flex items-center gap-1 rounded bg-background-hover px-1.5 py-0.5 text-[10px] text-text-secondary hover:text-text-primary"><Download size={10} />{t('agnes.download', { defaultValue: '下载' })}</a>
+                    <button
+                      type="button"
+                      onClick={() => void downloadMedia(item.url!, `agnes-${item.videoId.slice(0, 12)}.mp4`)}
+                      className="flex items-center gap-1 rounded bg-background-hover px-1.5 py-0.5 text-[10px] text-text-secondary hover:text-text-primary"
+                      title={t('agnes.download', { defaultValue: '下载' })}
+                    ><Download size={10} />{t('agnes.download', { defaultValue: '下载' })}</button>
                     {onSendToChat && (
                       <button type="button" onClick={() => onSendToChat(item.url!)} className="flex items-center gap-1 rounded bg-background-hover px-1.5 py-0.5 text-[10px] text-text-secondary hover:text-text-primary"><Send size={10} />{t('agnes.send', { defaultValue: '发送' })}</button>
                     )}
