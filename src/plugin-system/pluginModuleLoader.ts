@@ -7,6 +7,7 @@
  */
 
 import { readFile } from '@/services/tauri/fileService'
+import { rewriteReactImports } from './reactImportRewrite'
 
 let shimUrl: string | null = null
 
@@ -44,11 +45,9 @@ export async function loadModuleFromFile(filePath: string): Promise<Record<strin
   const code = await readFile(filePath)
   const reactShimUrl = await ensureReactShim()
 
-  const patchedCode = code
-    .replace(/from\s*["']react["']/g, `from "${reactShimUrl}"`)
-    .replace(/from\s*["']react\/jsx-runtime["']/g, `from "${reactShimUrl}"`)
-    .replace(/require\(\s*["']react["']\s*\)/g, `require("${reactShimUrl}")`)
-    .replace(/require\(\s*["']react\/jsx-runtime["']\s*\)/g, `require("${reactShimUrl}")`)
+  // 上下文感知重写：字符串/模板字面量里的代码模板（如 plugin-forge 脚手架）
+  // 不能被改写——裸正则会把模板文本也改掉，注入的 blob URL 破坏 bundle 语法
+  const patchedCode = rewriteReactImports(code, reactShimUrl)
 
   const blob = new Blob([patchedCode], { type: 'application/javascript' })
   const blobUrl = URL.createObjectURL(blob)
