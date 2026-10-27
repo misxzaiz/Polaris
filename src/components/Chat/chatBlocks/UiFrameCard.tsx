@@ -27,6 +27,7 @@ import type {
 } from '@/plugin-system/uiFrameTypes'
 import { collectDefaultValues, interpolateParams } from '@/plugin-system/uiFrameTypes'
 import { renderTemplateNodes } from './uiTemplateNodes'
+import { openExternalLink } from '@/services/linkExternal';
 
 // ============================ 小工具 ============================
 
@@ -456,7 +457,7 @@ function CustomFrameView({ frame }: { frame: Record<string, unknown> }) {
         <div className="flex items-center gap-2 text-[11px] text-text-muted">
           <span>📊 HTML 图表渲染</span>
           <button
-            onClick={() => window.open(htmlSrc, '_blank')}
+            onClick={() => void openExternalLink(htmlSrc)}
             className="rounded px-2 py-0.5 bg-primary/10 text-primary hover:bg-primary/20"
           >
             新窗口查看

@@ -2,6 +2,7 @@
  * Link 详情对话框：展示完整字段
  */
 import { X, ExternalLink, Lock, Calendar, Tag, Flag, CheckCircle2, Circle } from 'lucide-react'
+import { openExternalLink } from '@/services/linkExternal';
 import type { Link } from '@/services/personalHub/types'
 import {
   TYPE_LABELS, PRIORITY_LABEL, formatDateTime, formatRelativeDate,
@@ -45,7 +46,7 @@ export function LinkDetailDialog({ link, onClose, onEdit }: LinkDetailDialogProp
           {link.url && (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-text-secondary w-16 shrink-0">URL</span>
-              <a href={link.url} target="_blank" rel="noreferrer" className="text-primary hover:underline truncate inline-flex items-center gap-1">
+              <a href={link.url} rel="noreferrer" onClick={(e) => { e.preventDefault(); if (link.url) void openExternalLink(link.url); }} className="text-primary hover:underline truncate inline-flex items-center gap-1">
                 <ExternalLink size={11} /> <span className="truncate">{link.url}</span>
               </a>
             </div>
@@ -122,8 +123,8 @@ export function LinkDetailDialog({ link, onClose, onEdit }: LinkDetailDialogProp
         {link.url && (
           <a
             href={link.url}
-            target="_blank"
             rel="noreferrer"
+            onClick={(e) => { e.preventDefault(); if (link.url) void openExternalLink(link.url); }}
             className="flex-1 py-2 text-sm font-medium text-center text-primary border border-primary/30 rounded-lg hover:bg-primary/10"
           >
             访问链接

@@ -53,7 +53,8 @@ import {
 import { useToastStore } from '@/stores/toastStore'
 import { useTabStore } from '@/stores/tabStore'
 import { useBrowserDownloadStore } from '@/stores/browserDownloadStore'
-import { openInDefaultApp } from '@/services/tauri/windowService'
+import { openInDefaultApp } from '@/services/tauri/windowService';
+import { openExternalLink } from '@/services/linkExternal';
 import { useViewStore } from '@/stores/viewStore'
 import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession'
 import type { ContextBlock } from '@/stores/conversationStore/types'
@@ -962,7 +963,7 @@ export function BrowserPanel({
       const { openUrl } = await import('@tauri-apps/plugin-opener')
       await openUrl(currentUrl)
     } catch {
-      window.open(currentUrl, '_blank')
+      void openExternalLink(currentUrl)
     }
   }, [currentUrl])
 
@@ -1611,7 +1612,7 @@ export function BrowserPanel({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => { setEmbedBlocked(false); window.open(currentUrl, '_blank', 'noopener') }}
+                onClick={() => { setEmbedBlocked(false); void openExternalLink(currentUrl) }}
                 className="rounded-md border border-border bg-background-hover px-2.5 py-1 text-[11px] text-text-secondary transition-colors hover:text-text-primary"
               >
                 {t('browser.openExternal', { defaultValue: '在外部浏览器打开' })}

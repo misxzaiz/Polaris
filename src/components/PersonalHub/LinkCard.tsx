@@ -10,6 +10,7 @@ import {
   TYPE_LABELS, PRIORITY_LABEL, PRIORITY_COLOR, formatRelativeDate, isOverdue,
 } from './constants'
 import { decryptDescription } from '@/services/personalHub/crypto'
+import { ExternalLink as ExternalLinkBtn } from '@/components/Common';
 import { getPersonalHubConfig } from '@/services/personalHub/supabase'
 
 interface LinkCardProps {
@@ -80,16 +81,14 @@ function LinkCardInner({ link, onEdit, onDelete, onToggleComplete, onOpen }: Lin
           )}
 
           {link.url && (
-            <a
+            <ExternalLinkBtn
               href={link.url}
-              target="_blank"
-              rel="noreferrer"
               onClick={stop}
               className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline truncate max-w-full"
             >
               <ExternalLink size={10} />
               <span className="truncate">{link.url}</span>
-            </a>
+            </ExternalLinkBtn>
           )}
 
           {/* 标签 + 优先级 + 截止日期 + 类型 */}

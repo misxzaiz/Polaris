@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, CheckCircle2, Download, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, Loader2, RefreshCw } from 'lucide-react'
+
 import { currentMode } from '@/services/transport'
 import {
   checkAppUpdate,
@@ -11,6 +12,7 @@ import {
   type UpdateProgress,
 } from '@/services/updateService'
 import { useToastStore } from '@/stores/toastStore'
+import { ExternalLink as ExternalLinkBtn } from '@/components/Common';
 
 function normalizeVersion(version: string): string {
   return version.replace(/^v/i, '')
@@ -232,25 +234,21 @@ export function AppUpdateTab() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {release.msiAsset && (
-                      <a
+                      <ExternalLinkBtn
                         href={release.msiAsset.downloadUrl}
-                        target="_blank"
-                        rel="noreferrer"
                         className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-background-hover"
                       >
                         <Download size={12} />
                         {isCurrent ? t('appUpdate.download') : t('appUpdate.downloadMsi')}
-                      </a>
+                      </ExternalLinkBtn>
                     )}
-                    <a
+                    <ExternalLinkBtn
                       href={release.htmlUrl}
-                      target="_blank"
-                      rel="noreferrer"
                       className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-background-hover"
                     >
-                      <ExternalLink size={12} />
+                      <Download size={12} />
                       {t('appUpdate.openRelease')}
-                    </a>
+                    </ExternalLinkBtn>
                   </div>
                 </div>
               )

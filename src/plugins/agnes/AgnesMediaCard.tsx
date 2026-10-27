@@ -14,6 +14,7 @@
 import { memo, useMemo } from 'react'
 import { Download, ExternalLink, Film, Image as ImageIcon, Loader2 } from 'lucide-react'
 import type { PluginChatCardProps } from '@/plugin-system/types'
+import { openExternalLink } from '@/services/linkExternal';
 
 interface MediaData {
   type?: string
@@ -66,7 +67,7 @@ async function download(url: string, filename: string) {
     URL.revokeObjectURL(objUrl)
   } catch {
     // 回退到直接打开
-    window.open(url, '_blank', 'noopener')
+    void openExternalLink(url)
   }
 }
 

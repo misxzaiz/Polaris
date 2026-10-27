@@ -11,7 +11,9 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, Copy, Check, BookOpen, ExternalLink } from 'lucide-react'
+
 import { copyToClipboard } from '@/utils/clipboard'
+import { ExternalLink as ExternalLinkBtn } from '@/components/Common';
 
 /** 建表 SQL（对齐 Polaris 实际读写字段，移除未用的 category/order_index/view_count/keywords 与 comments 表） */
 const SETUP_SQL = `-- ========================================
@@ -134,14 +136,12 @@ export function SetupGuide() {
             <p>
               {t('personalHub.step1Desc', '访问 Supabase 官网注册并新建项目，记下区域与数据库密码。')}
             </p>
-            <a
+            <ExternalLinkBtn
               href="https://supabase.com/dashboard"
-              target="_blank"
-              rel="noreferrer"
               className="inline-flex items-center gap-1 text-primary hover:underline"
             >
               <ExternalLink size={10} /> supabase.com/dashboard
-            </a>
+            </ExternalLinkBtn>
           </Step>
 
           {/* 步骤 2：启用 Email 认证 */}

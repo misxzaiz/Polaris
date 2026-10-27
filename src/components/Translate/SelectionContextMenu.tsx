@@ -17,6 +17,7 @@ import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSes
 import { baiduTranslate } from '@/services/tauri';
 import { ttsService } from '@/services/ttsService';
 import { Copy, Search, Languages, Quote, MessageSquare, Check, X, Send, Loader2, FileCode, Volume2, Square } from 'lucide-react';
+import { openExternalLink } from '@/services/linkExternal';
 
 interface Position {
   x: number;
@@ -181,10 +182,10 @@ export function SelectionContextMenu() {
         const { openUrl } = await import('@tauri-apps/plugin-opener');
         await openUrl(searchUrl);
       } catch {
-        window.open(searchUrl, '_blank');
+        void openExternalLink(searchUrl);
       }
     } else {
-      window.open(searchUrl, '_blank');
+      void openExternalLink(searchUrl);
     }
     setSelection(null);
   };

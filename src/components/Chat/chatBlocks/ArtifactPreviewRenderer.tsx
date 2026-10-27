@@ -6,9 +6,8 @@ import type { ArtifactPreviewBlock } from '@/types';
 import { copyToClipboard } from '@/utils/clipboard';
 import { isTauri } from '@/utils/platform';
 import { invoke } from '@/services/transport';
-import {
-  openInDefaultApp,
-} from '@/services/tauri/windowService';
+import { openInDefaultApp } from '@/services/tauri/windowService';
+import { openExternalLink } from '@/services/linkExternal';
 import { forwardCardCapRequest } from '@/utils/htmlCardCapBridge';
 
 function safeFileName(value: string): string {
@@ -193,8 +192,8 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
 
   const openBlobPreview = useCallback(() => {
     const url = createHtmlBlobUrl(displayBlock.html);
-    const opened = window.open(url, '_blank', 'noopener,noreferrer');
-    window.setTimeout(() => URL.revokeObjectURL(url), opened ? 30_000 : 1_000);
+    openExternalLink(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }, [displayBlock.html]);
 
   const openInBrowser = useCallback(async () => {

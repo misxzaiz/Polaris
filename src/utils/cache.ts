@@ -6,6 +6,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { FileMatch } from '@/services/fileSearch';
+import { isMobileTauriRuntime } from '@/mobile/platform';
 import { isKatexMathEnabled } from '@/utils/performanceFeatures';
 import { createLogger } from './logger';
 
@@ -86,11 +87,17 @@ function normalizeMarkdownImageSrc(href: string): string {
   return convertFileSrc(decodeURIComponent(path));
 }
 
+/** 移动端加此标记，供全局 capture handler 识别外链 */
+function mobileExternalLinkAttr(): string {
+  if (typeof isMobileTauriRuntime !== 'function') return '';
+  return isMobileTauriRuntime() ? ' data-open-external="1"' : '';
+}
+
 const linkRenderer = {
   link({ href, text }: { href: string; text: string }) {
     const safeHref = escapeHtmlAttribute(href);
     const safeText = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeText}</a>`;
+    return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${mobileExternalLinkAttr()}${safeText}</a>`;
   },
   image({ href, title, text }: { href: string; title: string | null; text: string }) {
     const safeSrc = escapeHtmlAttribute(normalizeMarkdownImageSrc(href));

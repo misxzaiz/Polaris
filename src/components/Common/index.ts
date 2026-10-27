@@ -16,3 +16,4 @@ export { JsonTreeView } from './JsonTreeView';
 export { Modal } from './Modal';
 export * from './Icons/index';
 export { PermissionPromptHost } from './PermissionPromptHost';
+export { ExternalLink } from './ExternalLink';

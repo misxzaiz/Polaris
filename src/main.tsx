@@ -1,9 +1,11 @@
 import React from "react";
+import { useEffect } from 'react';
 import ReactDOM from "react-dom/client";
 import * as ReactJSXRuntime from "react/jsx-runtime";
 import App from "./App";
 import { MobileConnectionGate } from "./mobile/MobileConnectionGate";
 import { isMobileTauriRuntime } from "./mobile/platform";
+import { registerExternalLinkGlobalHandler } from './services/linkExternal';
 import "./i18n";
 import { bootstrapTheme } from '@/services/themeEngine';
 import { remoteSessionFollower } from '@/services/remoteSessionFollower';
@@ -117,11 +119,23 @@ const root = document.getElementById("root") as HTMLElement;
  *
  * 旧版独立 MobileApp companion 壳（?mobile=1）已废弃（2026-07-12 产品决策）。
  */
+function MobileLinkHandler() {
+  useEffect(() => {
+    void registerExternalLinkGlobalHandler();
+  }, []);
+  return null;
+}
+
 function RootApp() {
   if (isMobileTauriRuntime()) {
     return (
       <MobileConnectionGate>
-        {() => <App />}
+        {(_state) => (
+          <>
+            <MobileLinkHandler />
+            <App />
+          </>
+        )}
       </MobileConnectionGate>
     );
   }

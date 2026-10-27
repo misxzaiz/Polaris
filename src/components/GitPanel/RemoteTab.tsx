@@ -27,6 +27,7 @@ import { useGitRepoStatus } from './useGitRepoStatus'
 import { PushDialog } from './PushDialog'
 import { ConflictPredictionCard } from './ConflictPredictionCard'
 import type { GitRemote } from '@/types/git'
+import { openExternalLink } from '@/services/linkExternal'
 
 /** auto-fetch 开关持久化键（P1：本地设置项，默认关） */
 const AUTO_FETCH_STORAGE_KEY = 'polaris.git.autoFetch'
@@ -163,7 +164,7 @@ export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) 
     }
     // 移除 .git 后缀
     openUrl = openUrl.replace(/\.git$/, '')
-    window.open(openUrl, '_blank')
+    void openExternalLink(openUrl)
   }
 
   // 添加远程仓库
