@@ -48,23 +48,23 @@ describe('ArtifactPreviewRenderer 尺寸自适应', () => {
     vi.unstubAllGlobals();
   });
 
-  it('统一高度（与格宽解耦）：min(75vh, 760) = 675px（旧版按格宽降级 16:9 导致"没有加高"）', () => {
+  it('统一高度（与格宽解耦）：min(50vh, 480) = 450px（首轮 75vh/760 实测偏高大半屏，调低）', () => {
     const { container } = render(<ArtifactPreviewRenderer block={makeBlock()} />);
     act(() => {
       MockResizeObserver.instances[0]?.fire(800);
     });
-    // innerHeight=900 → 75vh = 675px；640 旧上限已移除
+    // innerHeight=900 → 50vh = 450px；760 旧上限已移除
     const frame = container.querySelector('div[class*="overflow-hidden"]');
-    expect((frame as HTMLElement).style.height).toBe('675px');
+    expect((frame as HTMLElement).style.height).toBe('450px');
   });
 
-  it('默认 350px 会话格（窄格）：同样 675px，不再降级到 16:9 的 240px', () => {
+  it('默认 350px 会话格（窄格）：同样 450px，不再降级到 16:9 的 240px', () => {
     const { container } = render(<ArtifactPreviewRenderer block={makeBlock()} />);
     act(() => {
       MockResizeObserver.instances[0]?.fire(350);
     });
     const frame = container.querySelector('div[class*="overflow-hidden"]');
-    expect((frame as HTMLElement).style.height).toBe('675px');
+    expect((frame as HTMLElement).style.height).toBe('450px');
   });
 });
 

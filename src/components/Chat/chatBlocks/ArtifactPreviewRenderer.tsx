@@ -71,12 +71,12 @@ const FS_TOOLBAR_HEIGHT = 48;
 const FS_CONTENT_PADDING = 32;
 
 /**
- * 内嵌预览高度：min(75vh, 760px)，所有卡片宽度统一。
- * 旧版按格宽降级到 16:9（默认 350px 格只有 240px），用户实测「没有加高」的根因；
- * 现与格宽解耦，窄格同样拿到高预览。
+ * 内嵌预览高度：min(50vh, 480px)，所有卡片宽度统一。
+ * 首轮 75vh/760px 实测偏高大半屏；调低为 50vh/480px（约对话面板高度一半），
+ * 兼顾预览信息密度与聊天上下文可见性。
  */
-const FRAME_VH_RATIO = 0.75;
-const FRAME_HEIGHT_CAP = 760;
+const FRAME_VH_RATIO = 0.5;
+const FRAME_HEIGHT_CAP = 480;
 /**
  * localStorage 记忆全屏档位 key。v2：默认档由等比改为铺满（用户定），换 key
  * 使旧档位记忆不覆盖新默认。
@@ -153,7 +153,7 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   // 卡片根元素：弹出加宽时捕获锚定矩形用
   const cardRef = useRef<HTMLElement | null>(null);
 
-  // iframe 高度：min(75vh, 760px)，与卡片宽度解耦（详见 FRAME_VH_RATIO 注释）
+  // iframe 高度：min(50vh, 480px)，与卡片宽度解耦（详见 FRAME_VH_RATIO 注释）
   const frameHeight = useMemo(() => {
     const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
     return Math.round(Math.min(vh * FRAME_VH_RATIO, FRAME_HEIGHT_CAP));
