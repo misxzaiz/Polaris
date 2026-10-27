@@ -295,7 +295,7 @@ export function LeftPanelContent({
     const isActive = p === active
     const isBuiltin = p in builtinPanels
     panels.push(
-      <div key={p} className={isActive ? 'flex-1 min-w-0 min-h-0' : 'hidden'}>
+      <div key={p} className={isActive ? 'flex-1 min-w-0 min-h-0' : 'hidden'} style={{ isolation: 'isolate' }}>
         {isBuiltin ? builtinPanels[p] : <PluginPanelHost panelType={p} onSendToChat={onSendToChat} />}
       </div>
     )
