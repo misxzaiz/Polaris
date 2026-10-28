@@ -1,7 +1,8 @@
-import { Component, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Component, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ErrorInfo } from 'react'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { pluginPanelRegistry } from '@/plugin-system/panelRegistry'
+import { notePluginPanelOpen } from '@/services/pluginUsageObserver'
 import type { PluginPanelComponent } from '@/plugin-system/types'
 
 interface PluginPanelHostProps {
@@ -77,18 +78,27 @@ export function PluginPanelHost({ panelType, onSendToChat }: PluginPanelHostProp
 
   const pluginId = pluginPanelRegistry.getPluginId(panelType) ?? ''
 
+  // 面板打开观测（plans/plugin-usage-observation.md）：面板模块加载成功 = 用户
+  // 打开了该插件面板，记一次到 cap.kv plugin.usage.*（守望台读时合并）。
+  // ref 守卫：StrictMode 双挂载 / loadKey 重试不重复计数；每会话每面板记 1 次
+  //（面板保活常驻，切换显隐不重挂）。
+  const notedRef = useRef(false)
   const loadPanel = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const C = await pluginPanelRegistry.load(panelType)
       setComponent(() => C)
+      if (!notedRef.current) {
+        notedRef.current = true
+        if (pluginId) notePluginPanelOpen(pluginId)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
-  }, [panelType])
+  }, [panelType, pluginId])
 
   useEffect(() => {
     loadPanel()
