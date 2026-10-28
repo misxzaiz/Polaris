@@ -110,3 +110,20 @@ Settings：`{ schemaVersion, currencySymbol: '¥', defaultRemindDays: 3 }`（v1 
 - `node test/smoke-real.mjs`：真实桥端到端（登记→对账→改价→统计→清理，快照恢复不污染）。
 - `pnpm typecheck`（面板）+ esbuild 打包 + pack 脚本产 zip。
 - 平台门禁：图标白名单（Activity）、`enabledByDefault`+设置开关两层门、permissions 仅 aiToolAccess。
+
+## 10. 后记：与「常契 changqi」的域撞车（2026-10-29，留维护者取舍）
+
+实施完成后发现并行会话同日交付了同域插件**常契 changqi**（插件仓 `40de1b8`，先于守闸 `db549c6` 入库，spec 在 `plans/changqi-plugin-spec.md`）。两插件 index.json 条目共存（validate 均零错误），**不删改对方为前提**，差异与合并建议如下：
+
+| 能力 | 守闸 shouzha | 常契 changqi |
+|---|---|---|
+| 对账闭环（扣费日过境=逾期红榜，不静默滚周期） | ✅ 核心 | 部分（advance 靠 lastConfirmedDate 下限） |
+| 价格史 + 涨价检出 | ✅ 独有 | ✗ |
+| 未来 12 个月现金流逐月投影 | ✅ 独有 | ✗（本月将扣） |
+| 取消止损统计（年化已省） | ✅ 独有 | ✗ |
+| CSV 往返（导入+导出+去重） | ✅ | 仅导出 |
+| anniversary 锚点推导（1/31→2/28→3/31 不漂移） | ✗（平推） | ✅ 更优 |
+| 五渠道取消路径引导 | ✗ | ✅ 独有 |
+| 渠道维度透视 / 面板 harness 交互验证 | ✗ / ✗ | ✅ / ✅ |
+
+两会话独立选中同一缺口，反向验证了需求判断。**建议**：二留一或合并——以守闸的「对账闭环+价格史+现金流」为骨架，吸收常契的「anniversary 锚点推导 + 五渠道取消引导」；合并后另一插件下架索引。此取舍属维护者决策，本次交付未越权处置对方成果。
