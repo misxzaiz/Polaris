@@ -34,5 +34,8 @@ export default {
     'footer-leading-blank': [2, 'always'],
     // Header max length
     'header-max-length': [2, 'always', 100],
+    // Body line width downgraded to warning: long-line Chinese bodies are the repository convention,
+    // enforcing 100 chars made CI Commit Lint fail on 5 consecutive main pushes (2026-10-30)
+    'body-max-line-length': [1, 'always', 100],
   },
 };

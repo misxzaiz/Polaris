@@ -29,6 +29,7 @@
 - 插件仓 workspaces + 公共测试 harness：插件数量继续上涨后再做。
 - CI clippy advisory → 阻塞：存量 warning 清理后移除 `continue-on-error`。
 - CI 增加 `cargo test`（Linux runner 可行性待验证；本机 `cargo test --lib` 不可用）。
+- 本地测试假失败：`fileService.test.ts` 直连 localhost:3000 产生 33 个 unhandled ECONNREFUSED（Windows 本地无监听；CI Test job 实证通过），触碰该测试文件时顺手 mock。
 
 ## 明确不做
 
