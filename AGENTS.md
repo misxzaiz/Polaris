@@ -36,7 +36,7 @@
 | Rust Web-only 门控检查 | `cargo check --no-default-features --bin polaris-web --bin polaris-mcp` | 发布前必须跑；见「命令门控」节 |
 | 测试包隔离构建 | `pnpm tauri:build:test` | 产 MSI，隔离数据根 `%APPDATA%\Polaris-dev` |
 
-> **CI 现状**：`ci.yml` 已有 commitlint / security / lint / test / build-check（含 `pnpm typecheck`）。
+> **CI 现状**：`ci.yml` 已有 commitlint / security / lint / test / build-check（含 `pnpm typecheck`）/ rust-gate（web-only 检查为阻塞项；clippy 为 advisory，存量 warning 清零后转阻塞。2026-10-30 落地）。
 > **本地已落地**（对照 ZG）：`typecheck` script（2026-10-10）。
 > **本地缺**（对照 ZG）：`clippy`/`knip`/`husky` 脚本门槛——`clippy` 存量 warning 治理见「Clippy 治理」节；`knip`/`husky` 是后续工作项。
 
@@ -101,6 +101,7 @@
 ## 五、插件与扩展边界
 
 - 插件是独立进程 / WASM 组件，通过 cap 总线与 MCP 交互；**核心可替换、一切皆插件**。
+- **功能路由原则（2026-10-30 定案）**：新增面向用户的功能**一律默认以插件实现**（独立进程 + cap 总线 / MCP，落 `Polaris-plugin` 仓），主仓核心只做缺陷修复、安全与性能治理；确需进核心的，先在 `plans/` 说明插件形态不可行的原因再立项。
 - 修改 `cap.*` 契约时，**同步**：
   - 后端 capability 实现（`router/`）
   - 前端 service（如有）
