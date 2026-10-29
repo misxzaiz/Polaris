@@ -167,11 +167,12 @@ jobs:
         run: cargo check --no-default-features --bin polaris-web --bin polaris-mcp
 
       # clippy 门槛形态（AGENTS.md §八：-D warnings -A dead_code）；
-      # 存量 warning 清理完成前先 advisory，清零后移除 continue-on-error 转阻塞
-      - name: Clippy (advisory)
+      # clippy 机器门槛（AGENTS.md §八）：-D warnings -A dead_code。
+      # 2026-10-30 存量清理完成（266→35，剩余全部 dead_code）后由 advisory 转阻塞；
+      # 新代码出现 dead_code 类告警时在该项上用 #[allow(dead_code)] 或模块级豁免
+      - name: Clippy (blocking)
         working-directory: src-tauri
         run: cargo clippy --lib -- -D warnings -A dead_code
-        continue-on-error: true
 
   tauri-build:
     name: Tauri Build Check
