@@ -6,7 +6,7 @@
  * （chatCardRegistry）共用此加载器，保证外部插件组件与宿主共享同一份 React 实例。
  */
 
-import { readFile } from '@/services/tauri/fileService'
+import { readFileBinaryText } from '@/services/tauri/fileService'
 import { rewriteReactImports } from './reactImportRewrite'
 
 let shimUrl: string | null = null
@@ -42,7 +42,10 @@ async function ensureReactShim(): Promise<string> {
  * 从磁盘文件加载一个 ES module。宿主 React import 会被重写为 shim。
  */
 export async function loadModuleFromFile(filePath: string): Promise<Record<string, unknown>> {
-  const code = await readFile(filePath)
+  // 面板/卡片 bundle 常含大 vendor（如 exceljs ~950KB），get_file_content 的
+  // 1MB 文本限制会误杀合法 bundle（gezhi panel.js 1.45MB 即中招）。改用二进制
+  // 接口（download_file_binary，50MB 上限）读取，绕过文本限制。
+  const code = await readFileBinaryText(filePath)
   const reactShimUrl = await ensureReactShim()
 
   // 上下文感知重写：字符串/模板字面量里的代码模板（如 plugin-forge 脚手架）

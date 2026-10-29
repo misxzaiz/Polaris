@@ -41,6 +41,24 @@ export async function readFile(path: string): Promise<string> {
 }
 
 /**
+ * 读取文件内容（二进制接口，50MB 上限）。
+ *
+ * 用途：插件面板/聊天卡片的 JS bundle 常含大 vendor（如 exceljs、pptxgen），
+ * 超 get_file_content 的 1MB 文本限制。此接口走 download_file_binary（50MB），
+ * 前端 base64 解码后以 UTF-8 文本返回，绕过 1MB 文本限制。
+ * 注意：仅适用于文本型模块文件（.js/.mjs/.html 等）；二进制文件请用 downloadFile。
+ */
+export async function readFileBinaryText(path: string): Promise<string> {
+  const base64Content: string = await invoke('download_file_binary', { path });
+  const binaryString = atob(base64Content);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+/**
  * 下载文件到本地
  * - Tauri: 通过 base64 二进制接口读取，支持所有文件类型（上限 50MB）
  * - Web: 浏览器默认下载行为（仅文本文件可靠）
