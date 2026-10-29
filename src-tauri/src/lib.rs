@@ -1152,12 +1152,6 @@ pub fn run() {
             commands::router::audit_tail,
             commands::router::respond_permission_request,
             commands::router::audit_verify,
-            commands::provider_diagnostics::provider_route_logs,
-            commands::provider_diagnostics::provider_route_logs_clear,
-            commands::provider_diagnostics::provider_stats,
-            commands::provider_diagnostics::provider_stats_clear,
-            commands::provider_diagnostics::provider_failed_calls,
-            commands::provider_diagnostics::provider_failed_calls_clear,
             commands::router::router_dispatch_stream,
             // 插件引擎管理
             commands::plugin_engine::register_plugin_engine,
@@ -1233,23 +1227,6 @@ pub fn run() {
             commands::history_index::history_query,
             commands::history_index::history_search,
             commands::history_index::history_mark,
-            // LSP 语言服务器相关
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
-            #[cfg(feature = "lsp-index")]
             // 模型 Profile 命令
             test_model_profile_connection,
             fetch_models_for_profile,
