@@ -24,7 +24,7 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "security:audit": "audit-ci --config ./audit-ci.json"
+    "security:audit": "pnpm audit --prod --audit-level high --registry=https://registry.npmjs.org"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",
@@ -62,7 +62,7 @@
     "clsx": "^2.1.1",
     "crypto-js": "^4.2.0",
     "diff": "^8.0.2",
-    "dompurify": "^3.3.1",
+    "dompurify": "^3.4.17",
     "edge-tts-universal": "^1.4.0",
     "highlight.js": "^11.11.1",
     "html5-qrcode": "^2.3.8",
@@ -98,7 +98,6 @@
     "@vitejs/plugin-react": "^4.6.0",
     "@vitest/coverage-v8": "^4.1.0",
     "@vitest/ui": "^4.1.0",
-    "audit-ci": "^7.1.0",
     "autoprefixer": "^10.4.23",
     "esbuild": "^0.27.4",
     "eslint": "^9.39.4",

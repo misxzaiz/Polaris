@@ -1,3 +1,7 @@
 allowBuilds:
   esbuild: true
 nodeLinker: hoisted
+# 传递依赖安全底线：axios>=1.20.0 修 GHSA 高危系列，follow-redirects>=1.16.1 同源修复
+overrides:
+  axios: ^1.20.0
+  follow-redirects: ^1.16.1
