@@ -468,7 +468,7 @@ impl RouterBus {
     /// 判断方式：DynamicCapability 的 describe() 带 `"dynamic": true`；遍历查询
     /// 也可以。为 O(1) 与不构造 Value 开销，用显式类型检测：`as_dynamic()`。
     pub fn is_dynamic(&self, id: &CapabilityId) -> bool {
-        use crate::contracts::Capability as _;
+        // handles 存 dyn Capability，方法走 vtable 无需 trait 在作用域（原 as _ 导入冗余）
         self.handles
             .read()
             .unwrap()
@@ -479,7 +479,6 @@ impl RouterBus {
 
     /// 返回某 cap 的 summary（describe().summary）。
     pub fn summary_for(&self, id: &CapabilityId) -> String {
-        use crate::contracts::Capability as _;
         let desc = self
             .handles
             .read()

@@ -54,7 +54,7 @@ pub(crate) fn sessions_root(data_root: &Path) -> PathBuf {
 }
 
 /// 单个会话存档文件路径
-fn session_file_path(data_root: &PathBuf, session_id: &str) -> PathBuf {
+fn session_file_path(data_root: &Path, session_id: &str) -> PathBuf {
     sessions_root(data_root).join(format!("{}.json", sanitize_filename(session_id)))
 }
 
@@ -66,7 +66,7 @@ fn sanitize_filename(s: &str) -> String {
 }
 
 /// 保存一个会话到磁盘（覆盖写）。失败仅记 warn，不阻塞主流程。
-pub(crate) fn save_session(data_root: &PathBuf, record: &SessionRecord) {
+pub(crate) fn save_session(data_root: &Path, record: &SessionRecord) {
     let dir = sessions_root(data_root);
     if let Err(e) = fs::create_dir_all(&dir) {
         tracing::warn!("[SimpleAI] 创建会话存档目录失败: {}: {}", dir.display(), e);
@@ -87,7 +87,7 @@ pub(crate) fn save_session(data_root: &PathBuf, record: &SessionRecord) {
 }
 
 /// 删除一个会话存档（会话被删除/清理时调用）。文件不存在视为成功。
-pub(crate) fn delete_session(data_root: &PathBuf, session_id: &str) {
+pub(crate) fn delete_session(data_root: &Path, session_id: &str) {
     let path = session_file_path(data_root, session_id);
     match fs::remove_file(&path) {
         Ok(_) => tracing::info!("[SimpleAI] 会话存档已删除: {}", path.display()),
@@ -101,7 +101,7 @@ pub(crate) fn delete_session(data_root: &PathBuf, session_id: &str) {
 /// 返回 (session_id → (work_dir, messages)) 映射；损坏/不可读的单个存档
 /// 记 warn 跳过，不阻断整体恢复。
 pub(crate) fn load_all_sessions(
-    data_root: &PathBuf,
+    data_root: &Path,
 ) -> Vec<(String, String, Vec<Value>)> {
     let dir = sessions_root(data_root);
     let mut result = Vec::new();

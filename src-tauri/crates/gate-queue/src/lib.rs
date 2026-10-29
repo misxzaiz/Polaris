@@ -5,7 +5,7 @@
 //! 只依赖 std，`cargo test -p polaris-gate-queue` 可在受限环境真跑，给纯逻辑
 //! 提供字段级/时序级运行时验证；主仓经 path 依赖接入，避免代码双份。
 
-use std::sync::{Condvar, Mutex, MutexGuard};
+use std::sync::{Condvar, Mutex};
 
 // ============================================================================
 // WriteGate —— FIFO 票号写闸（读无限 / 写 max=1 的"队列完整版"）
