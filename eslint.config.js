@@ -32,6 +32,8 @@ export default tseslint.config(
       'examples/**',
       // Claude 工作区（worktrees 内的第三方产物 / dist）
       '.claude/**',
+      // ZCode agent 工作区（workflow 草稿/运行记录/可视化产物，非产品代码）
+      '.zcode/**',
       // 独立演示/迷你项目（minified lib + 输出截图）
       'glass-micro-world/**',
     ],
