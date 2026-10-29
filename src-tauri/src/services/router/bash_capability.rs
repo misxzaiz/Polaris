@@ -25,19 +25,19 @@
 //!               进程工作目录，非调用方目录）", "env":{k:v} 可选,
 //!               "timeoutMs":可选毫秒（默认 600000，0=不设超时上限）, "async":bool 可选,
 //!               "onSessionEnd":"keep|kill" 可选（默认 keep）}`
-//!               → 同步（async=false）：`{ "taskId":"t1", "pid":123, "status":"...",
+//!   → 同步（async=false）：`{ "taskId":"t1", "pid":123, "status":"...",
 //!                 "exitCode":0, "startedAt":..., "finishedAt":... }`（等待结束后返回，无 logPath）
-//!                 异步（async=true）：`{ "taskId":"t1", "pid":123, "status":"running", "logPath":"" }`
-//!                 （logPath 恒为空串，日志经 action=log 获取）
+//!   异步（async=true）：`{ "taskId":"t1", "pid":123, "status":"running", "logPath":"" }`
+//!   （logPath 恒为空串，日志经 action=log 获取）
 //! - `status` `{ "action":"status", "taskId":"t1" }`
-//!               → `{ "taskId":"t1", "status":"...", "exitCode":可选, "startedAt":..., "finishedAt":可选 }`
+//!   → `{ "taskId":"t1", "status":"...", "exitCode":可选, "startedAt":..., "finishedAt":可选 }`
 //! - `log`    `{ "action":"log", "taskId":"t1", "offset":0, "limit":200 }`
-//!               → `{ "taskId":"t1", "offset":0, "total":1024, "lines":["..."] }`
+//!   → `{ "taskId":"t1", "offset":0, "total":1024, "lines":["..."] }`
 //! - `wait`   `{ "action":"wait", "taskId":"t1", "timeoutMs":30000 }`
-//!               → `{ "taskId":"t1", "status":"...", "exitCode":可选, "finishedAt":可选 }`
+//!   → `{ "taskId":"t1", "status":"...", "exitCode":可选, "finishedAt":可选 }`
 //! - `kill`   `{ "action":"kill", "taskId":"t1" }` → `{ "taskId":"t1", "killed":true }`
 //! - `list`   `{ "action":"list", "sessionId":"可选", "status":"可选" }`
-//!               → `{ "tasks":[ { "taskId":"...", "status":"...", "command":"..." } ] }`
+//!   → `{ "tasks":[ { "taskId":"...", "status":"...", "command":"..." } ] }`
 //!
 //! # 会话关联
 //!

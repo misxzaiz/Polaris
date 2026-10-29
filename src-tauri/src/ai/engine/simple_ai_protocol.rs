@@ -130,7 +130,7 @@ pub fn strip_cli_model_suffix(model: &str) -> CliModelSuffix {
 /// - `200k`/`200K` → 200_000
 /// - `128000` → 128_000
 /// - `0.2m` → 200_000（小数结果四舍五入到整数）
-/// 不可解析（`thinking`、空、负数、超上限等）→ `None`，仅剥离不报错。
+///   不可解析（`thinking`、空、负数、超上限等）→ `None`，仅剥离不报错。
 fn parse_suffix_window(suffix: &str) -> Option<u64> {
     let s = suffix.trim();
     if s.is_empty() {

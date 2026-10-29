@@ -9,17 +9,17 @@
 //! # 动作协议（payload `{ "action": ... }`）
 //!
 //! - `get_info`     `{ "action": "get_info" }`
-//!                            → DataRootInfo（当前数据根路径/占用/子目录）
+//!   → DataRootInfo（当前数据根路径/占用/子目录）
 //! - `scan_legacy`  `{ "action": "scan_legacy" }`
-//!                            → Vec<LegacySource>（旧版残留数据源）
+//!   → Vec<LegacySource>（旧版残留数据源）
 //! - `migrate`      `{ "action": "migrate", "options": { "sources": [...], "overwrite": bool } }`
-//!                            → MigrateReport（合并旧数据到当前数据根）
+//!   → MigrateReport（合并旧数据到当前数据根）
 //! - `validate_target` `{ "action": "validate_target", "options": { "newPath": string|null,
 //!                            "mode": "switch_only"|"move_data" } }`
-//!                            → TargetValidation（切换目标路径校验）
+//!   → TargetValidation（切换目标路径校验）
 //! - `set_root`     `{ "action": "set_root", "options": { "newPath": string|null,
 //!                            "mode": "switch_only"|"move_data" } }`
-//!                            → SetDataRootReport（切换锚点，需重启生效）
+//!   → SetDataRootReport（切换锚点，需重启生效）
 
 use serde::{Deserialize, Serialize};
 use std::fs;

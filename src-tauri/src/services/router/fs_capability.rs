@@ -9,11 +9,11 @@
 //! # 动作协议（payload 统一 `{ "action": ... }`）
 //!
 //! - `list`         `{ "action": "list", "path": "<绝对路径>" }`
-//!                      → `{ "items": [ FileInfo... ] }`（目录直接子项，含 size/modified）
+//!   → `{ "items": [ FileInfo... ] }`（目录直接子项，含 size/modified）
 //! - `getFileInfo`  `{ "action": "getFileInfo", "path": "<绝对路径>" }`
-//!                      → `{ "item": FileInfo | null }`（目录：子项数；文件：大小/时间）
+//!   → `{ "item": FileInfo | null }`（目录：子项数；文件：大小/时间）
 //! - `exists`       `{ "action": "exists", "path": "<绝对路径>" }`
-//!                      → `{ "exists": bool }`
+//!   → `{ "exists": bool }`
 //!
 //! # 数据字段（与前端 `types/fileExplorer.ts` 对齐，snake_case 直通）
 //!

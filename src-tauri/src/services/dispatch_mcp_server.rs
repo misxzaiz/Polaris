@@ -13,16 +13,16 @@
 //! Wire protocol (matches `services::ask_listener`):
 //!   - Length-prefixed frames: u32 LE length + UTF-8 JSON body
 //!   - dispatch frame (client -> server):
-//!       { "type":"dispatch", "token":"<uuid>", "sessionId":"...",
-//!         "dispatchId":"...", "prompt":"...", "title":"...",
-//!         "workDir":null, "engineId":null }
+//!     { "type":"dispatch", "token":"<uuid>", "sessionId":"...",
+//!     "dispatchId":"...", "prompt":"...", "title":"...",
+//!     "workDir":null, "engineId":null }
 //!   - dispatch_result frame (server -> client):
-//!       { "type":"dispatch_result", "ok":true, "dispatchId":"...",
-//!         "sessionId":"dispatch-1-xxxx" }
+//!     { "type":"dispatch_result", "ok":true, "dispatchId":"...",
+//!     "sessionId":"dispatch-1-xxxx" }
 //!   - dispatch_status frame (client -> server):
-//!       { "type":"dispatch_status", "token":"<uuid>", "dispatchId":"..." }
+//!     { "type":"dispatch_status", "token":"<uuid>", "dispatchId":"..." }
 //!   - dispatch_status_result frame (server -> client):
-//!       { "type":"dispatch_status_result", "ok":true, "task": {...} }
+//!     { "type":"dispatch_status_result", "ok":true, "task": {...} }
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, TcpStream};

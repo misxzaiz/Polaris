@@ -70,7 +70,7 @@ fn truncate_to_token_cap(text: &str, token_cap: usize) -> String {
 /// 2. 若末尾是孤立 `assistant(tool_calls)`，有文本 content 则降级为纯文本消息，
 ///    否则整条删除；
 /// 3. 重复以上两步直至尾部不再是「孤立的 tool / tool_calls」。
-/// 该清洗保证中断后可继续对话（continue_session 复用历史时不会触发协议 400）。
+///    该清洗保证中断后可继续对话（continue_session 复用历史时不会触发协议 400）。
 pub(super) fn sanitize_tool_pairs(messages: &mut Vec<Value>) {
     loop {
         let len = messages.len();

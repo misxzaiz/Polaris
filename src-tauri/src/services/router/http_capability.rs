@@ -20,7 +20,7 @@
 //! - `request` `{ "action": "request", "method": "GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE", "url": "...",
 //!                 "headers": { k: v }, "body": "<raw>", "bodyType": "json|text|form|binary",
 //!                 "timeoutMs": 15000 }`
-//!                 → `{ "status": 200, "statusText": "OK", "ok": true,
+//!   → `{ "status": 200, "statusText": "OK", "ok": true,
 //!                      "contentType": "...", "headers": {k: v},
 //!                      "body": "<text 原文 | base64>", "isBase64": false,
 //!                      "url": "...", "timeMs": 123 }`

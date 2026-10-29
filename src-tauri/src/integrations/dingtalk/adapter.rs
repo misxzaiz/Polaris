@@ -11,10 +11,10 @@
  * Stream Mode 消息协议:
  *   - SYSTEM: { "type":"SYSTEM", "headers":{"topic":"CONNECTED|REGISTERED|KEEPALIVE|ping"} }
  *   - EVENT:  { "type":"EVENT",  "headers":{"topic":"/v1.0/im/bot/messages/get","messageId":"..."},
- *               "data":"{\"senderNick\":\"...\",\"text\":{\"content\":\"...\"},...}" }
- *               → 需要回 ACK: { "code":200, "headers":{"messageId":"..."}, "data":"{\"status\":\"SUCCESS\"}" }
+ *     "data":"{\"senderNick\":\"...\",\"text\":{\"content\":\"...\"},...}" }
+ *     → 需要回 ACK: { "code":200, "headers":{"messageId":"..."}, "data":"{\"status\":\"SUCCESS\"}" }
  *   - CALLBACK: { "type":"CALLBACK", "headers":{"topic":"/v1.0/im/bot/messages/get","messageId":"..."},
- *                 "data":"..." }
+ *     "data":"..." }
  *
  * 发消息 (企业机器人 Webhook):
  *   - POST <Webhook URL> {"msgtype":"text","text":{"content":"..."},"at":{...}}

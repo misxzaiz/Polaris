@@ -8,12 +8,12 @@
 //! Wire protocol (matches `services::ask_listener`):
 //!   - Length-prefixed frames: u32 LE length + UTF-8 JSON body
 //!   - ask frame (client -> server):
-//!       { "type":"ask", "token":"<uuid>", "sessionId":"...", "callId":"...",
-//!         "questions": [...] }
+//!     { "type":"ask", "token":"<uuid>", "sessionId":"...", "callId":"...",
+//!     "questions": [...] }
 //!   - answer frame (server -> client):
-//!       { "type":"answer", "declined": bool,
-//!         "answers":[{ "question":"...", "header":"...",
-//!                      "selected":[...], "customInput": null }] }
+//!     { "type":"answer", "declined": bool,
+//!     "answers":[{ "question":"...", "header":"...",
+//!     "selected":[...], "customInput": null }] }
 //!   - cancel frame (client -> server) — when CLI sends notifications/cancelled
 
 use std::io::{self, BufRead, BufReader, Read, Write};

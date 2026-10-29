@@ -274,7 +274,6 @@ struct JsonRpcError {
 // ============================================================================
 
 /// Run the Personal Hub MCP server: stdio JSON-RPC loop.
-
 pub fn run_ph_mcp_server(config_dir: &str, _workspace_path: Option<&str>) -> Result<()> {
     let _config_dir = PathBuf::from(config_dir);
     let handler = PersonalHubMcpHandler;

@@ -15,7 +15,7 @@
 //! # 动作协议（payload 统一 `{ "action": ... }`）
 //!
 //! - `list`       `{ "action": "list", "scope"?, "workspacePath"?, "status"?, "priority"?, "limit"? }`
-//!                          → `{ "items": [TodoItem...] }`
+//!   → `{ "items": [TodoItem...] }`
 //! - `get`        `{ "action": "get", "id" }` → `{ "item": TodoItem | null }`
 //! - `create`     `{ "action": "create", "content", "workspacePath"? ... }` → `{ "item": TodoItem }`
 //! - `update`     `{ "action": "update", "id", ...fields }` → `{ "item": TodoItem }`

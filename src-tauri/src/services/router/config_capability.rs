@@ -35,11 +35,11 @@
 //! # 动作协议（payload `{ "action": ... }`）
 //!
 //! - `get`     `{ "action": "get", "section": "<白名单名>"|"all"|"full" }`
-//!                      → 命名 section 为 `{ "section", "value" }` 包装；
-//!                        all 为白名单 section 裸对象；full 为完整 config
+//!   → 命名 section 为 `{ "section", "value" }` 包装；
+//!   all 为白名单 section 裸对象；full 为完整 config
 //! - `patch`   `{ "action": "patch", "section": "<key>", "value": {...} }`
-//!                      或顶层形态 `{ "action": "patch", "patch": { 顶层key: {...} } }`
-//!                      → 完整 config（与现有 update_config_patch 返回对齐）
+//!   或顶层形态 `{ "action": "patch", "patch": { 顶层key: {...} } }`
+//!   → 完整 config（与现有 update_config_patch 返回对齐）
 //! - `schema`  `{ "action": "schema" }` → 白名单纯声明
 //! - `reset_cli`  `{ "action": "reset_cli" }` → `{ "reset": true }`（占位，后续专用动作）
 //!

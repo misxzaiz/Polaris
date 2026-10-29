@@ -440,7 +440,7 @@ pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
 /// - 本函数（setup 闭包自动启动）：**懒激活** —— 仅当
 ///   1. `performance.scheduler_daemon` 开关为 true，且
 ///   2. 仓库中存在 `enabled` 的定时任务
-///   时才启动。无任务则不拉起，避免空转。
+///      时才启动。无任务则不拉起，避免空转。
 ///
 /// 失败不抛错（返回 Err 由调用方记日志），不阻塞应用启动（调用方应在 tokio::spawn 内调用）。
 #[cfg(feature = "tauri-app")]
@@ -505,7 +505,7 @@ pub const DAEMON_HEALTH_CHECK_SECS: u64 = 60;
 ///
 /// 触发条件严格限定为**僵尸态**：`scheduler_daemon` 槽位有值 + `is_healthy()==false`
 /// + 本进程持有锁。用户手动 `scheduler_stop` 会先把槽位置 None 再释放锁，因此不会
-/// 误触发自动重启；其他实例持有锁时也绝不抢占。
+///   误触发自动重启；其他实例持有锁时也绝不抢占。
 #[cfg(feature = "tauri-app")]
 pub fn spawn_scheduler_health_monitor(app: AppHandle) {
     tauri::async_runtime::spawn(async move {

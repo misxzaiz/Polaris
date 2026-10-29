@@ -483,7 +483,7 @@ impl PluginEngineRunner {
     /// 根据 manifest 声明的 providerConfig：
     /// - 格式 yaml：写 models.yml（omp）
     /// - 格式 json：写 models.json（Pi 风格）
-    /// api_value 由声明决定（omp: openai-completions, Pi: openai-chat-completions）
+    ///   api_value 由声明决定（omp: openai-completions, Pi: openai-chat-completions）
     ///
     /// model_id 是注册到 models[].id 的模型标识，CLI 的 --model 用它匹配。
     /// 对 omp：--model 必须命中 models[].id，所以 model_id = 真实模型名（如 deepseek-v4-flash）

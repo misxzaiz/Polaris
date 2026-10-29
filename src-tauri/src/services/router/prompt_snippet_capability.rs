@@ -2,8 +2,8 @@
 //!
 //! 对应 `dev/docs/sky/step4-migration.md` §2 playbook：命令层 `commands/prompt_snippet.rs`
 //! + `services/prompt_snippet_service.rs`（JSON 文件存储 `config/prompt-snippets.json`）
-//! 已摘除，本 capability 成为片段数据的**唯一入口**（前端经
-//! `router_dispatch("cap.prompt_snippet", ...)`）。
+//!   已摘除，本 capability 成为片段数据的**唯一入口**（前端经
+//!   `router_dispatch("cap.prompt_snippet", ...)`）。
 //!
 //! # 存储
 //!

@@ -11,17 +11,17 @@
 //!
 //! - `start`            `{ "action": "start", "pluginId": string, "contribution": {...},
 //!                            "installPath": string, "workspacePath": string? }`
-//!                            → ServiceStatus
+//!   → ServiceStatus
 //! - `stop`               `{ "action": "stop", "pluginId": string, "serviceId": string }`
-//!                            → ServiceStatus
+//!   → ServiceStatus
 //! - `restart`            `{ "action": "restart", "pluginId": string, "serviceId": string }`
-//!                            → ServiceStatus
+//!   → ServiceStatus
 //! - `list_status`        `{ "action": "list_status" }` → Vec<ServiceStatus>
 //! - `stop_for_plugin`   `{ "action": "stop_for_plugin", "pluginId": string }`
-//!                            → Vec<ServiceStatus>
+//!   → Vec<ServiceStatus>
 //! - `autostart`         `{ "action": "autostart", "pluginStates": { [k]: { enabled: bool } },
 //!                            "workspacePath": string? }` → Vec<ServiceStatus>
-//!                            （重发现已安装插件 + 按状态决定启动）
+//!   （重发现已安装插件 + 按状态决定启动）
 
 use std::collections::HashMap;
 use std::path::Path;

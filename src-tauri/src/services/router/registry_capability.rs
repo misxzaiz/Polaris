@@ -51,7 +51,7 @@ const SENSITIVE_TARGETS: &[&str] = &["cap.ai.chat", "cap.registry", "cap.help", 
 /// - L0 低危/展示域：任意插件可覆盖（无需授权）；
 /// - L2 高危域：需 config.capOverride.allow 白名单显式列出；
 /// - L4 永不覆盖：元能力/自递归高危/AI 核心通道（config 也不可放开）。
-/// 其余一律按 L2 处理（保守默认）。
+///   其余一律按 L2 处理（保守默认）。
 ///
 /// 2026-10-25 收窄（router-governance-hardening spec）：cap.kv / cap.history /
 /// cap.context / cap.prompt_snippet 移出 L0——覆盖 cap.kv 可劫持动态 cap 持久化

@@ -12,42 +12,42 @@
 //! # 动作协议（payload `{ "action": ... }`）
 //!
 //! - `list`                 `{ "action": "list", "available": bool }`
-//!                            → PluginListResult（已安装/可选插件列表）
+//!   → PluginListResult（已安装/可选插件列表）
 //! - `discover`             `{ "action": "discover", "workspacePath": string? }`
-//!                            → PluginDiscoveryResult（发现已安装插件；有 contributes.adapters
-//!                              贡献时进入 S2 翻译合并编排，缓存 miss 走 one-shot MCP 调用，
-//!                              失败只追加 stale errors，原生结果原样保留）
+//!   → PluginDiscoveryResult（发现已安装插件；有 contributes.adapters
+//!   贡献时进入 S2 翻译合并编排，缓存 miss 走 one-shot MCP 调用，
+//!   失败只追加 stale errors，原生结果原样保留）
 //! - `discover_adapter`     `{ "action": "discover_adapter", "adapterId": string,
 //!                            "rootPath": string, "workspacePath": string? }`
-//!                            → PluginDiscoveryResult（强制刷新单个适配器：绕开缓存与熔断，
-//!                            调试用入口；spec: plans/plugin-adapter-capability-spec.md）
+//!   → PluginDiscoveryResult（强制刷新单个适配器：绕开缓存与熔断，
+//!   调试用入口；spec: plans/plugin-adapter-capability-spec.md）
 //! - `install_locations`    `{ "action": "install_locations", "workspacePath": string? }`
-//!                            → PluginInstallLocations
+//!   → PluginInstallLocations
 //! - `validate_manifest`    `{ "action": "validate_manifest", "sourcePath": string }`
-//!                            → PluginManifestValidationResult
+//!   → PluginManifestValidationResult
 //! - `install_local`        `{ "action": "install_local", "sourcePath": string,
 //!                            "scope": "user"|"project", "workspacePath": string? }`
-//!                            → PluginOperationResult
+//!   → PluginOperationResult
 //! - `install_package`      `{ "action": "install_package", "packagePath": string, ... }`
-//!                            → PluginOperationResult
+//!   → PluginOperationResult
 //! - `install_remote`       `{ "action": "install_remote", "sourceUrl": string, ... }`  (async)
-//!                            → PluginOperationResult
+//!   → PluginOperationResult
 //! - `uninstall_local`      `{ "action": "uninstall_local", "installPath": string, ... }`
-//!                            → PluginOperationResult
+//!   → PluginOperationResult
 //! - `uninstall_with_cleanup` `{ "action": "uninstall_with_cleanup", "installPath": string,
 //!                            "pluginId": string, ... }`  (async)
-//!                            → PluginOperationResult（先停 PluginServiceManager 服务再杀进程删目录）
+//!   → PluginOperationResult（先停 PluginServiceManager 服务再杀进程删目录）
 //! - `force_uninstall`      `{ "action": "force_uninstall", "installPath": string, ... }`
-//!                            → PluginOperationResult
+//!   → PluginOperationResult
 //! - `check_update`         `{ "action": "check_update", "installPath": string }`  (async)
-//!                            → PluginUpdateCheckResult
+//!   → PluginUpdateCheckResult
 //! - `apply_update`         `{ "action": "apply_update", "installPath": string, ... }`  (async)
-//!                            → PluginOperationResult
+//!   → PluginOperationResult
 //! - `adapters_list`        `{ "action": "adapters_list", "workspacePath": string? }`
-//!                            → AdapterEntry[]（通用方言适配器贡献清单，只读；
-//!                              spec: plans/plugin-adapter-capability-spec.md §3.1）
-//! 其余 plugin.rs 命令（install/enable/disable/update/uninstall + marketplace_*）
-//! 无前端消费方，保留在命令层（step7 抽核只搬有消费方的 11 个）。
+//!   → AdapterEntry[]（通用方言适配器贡献清单，只读；
+//!   spec: plans/plugin-adapter-capability-spec.md §3.1）
+//!   其余 plugin.rs 命令（install/enable/disable/update/uninstall + marketplace_*）
+//!   无前端消费方，保留在命令层（step7 抽核只搬有消费方的 11 个）。
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};

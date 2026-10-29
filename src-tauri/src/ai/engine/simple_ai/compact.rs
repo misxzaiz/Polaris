@@ -721,7 +721,6 @@ fn fallback_drop_oldest(messages: &mut Vec<Value>) {
 ///
 /// 压缩后把原始历史写入应用数据目录，供「回查」或「对比模式」使用。
 /// 文件路径：`<DataRoot>/simple-ai/context-checkpoints/<session_id>/<timestamp>.json`
-
 use std::path::PathBuf;
 
 /// 获取压缩检查点存储根目录。
@@ -743,7 +742,7 @@ fn data_root_config_dir() -> Option<PathBuf> {
 /// 检查点存储根解析（纯函数，单测锁定优先级）：
 /// 1) profile.custom_env["POLARIS_DATA_ROOT"] 显式覆盖（用户/管理员级覆盖口）；
 /// 2) DataRoot 单例（其解析链已含 env POLARIS_DATA_ROOT > anchor > 默认）；
-/// 均缺失 → None（调用方仅告警跳过，不再静默、不 panic）。
+///    均缺失 → None（调用方仅告警跳过，不再静默、不 panic）。
 fn resolve_checkpoint_root(
     custom_env_root: Option<String>,
     data_root_dir: Option<PathBuf>,

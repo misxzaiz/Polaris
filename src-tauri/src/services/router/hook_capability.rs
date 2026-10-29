@@ -6,13 +6,13 @@
 //! # 动作协议（payload 统一 `{ "action": ... }`）
 //!
 //! - `register` `{ "hookId", "capId", "pluginId"? }`
-//!     → `{ "ok": true }`（幂等：同 hook+capId 已注册跳过）
+//!   → `{ "ok": true }`（幂等：同 hook+capId 已注册跳过）
 //! - `unregister` `{ "hookId", "capId" }` → `{ "removed": bool }`
 //! - `list` `{ "hookId"? }`
-//!     → 带 hookId：`{ "hookId", "handles": [{ "capId", "pluginId" }...] }`
-//!       不带：`{ "hooks": ["ai.tool.before", ...] }`（仅非空订阅的 hook）
+//!   → 带 hookId：`{ "hookId", "handles": [{ "capId", "pluginId" }...] }`
+//!   不带：`{ "hooks": ["ai.tool.before", ...] }`（仅非空订阅的 hook）
 //! - `dispatch` `{ "hookId", "data"? }`
-//!     → `{ "results": [ ...各回调返回值；失败项为 { "error", "capId" } ] }`
+//!   → `{ "results": [ ...各回调返回值；失败项为 { "error", "capId" } ] }`
 //!
 //! # 派发通道
 //!

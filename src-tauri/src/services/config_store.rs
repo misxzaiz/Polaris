@@ -206,7 +206,7 @@ impl ConfigStore {
     /// 幂等：
     ///   1. 覆盖 plugin_states["polaris.ask"] 的启用状态，其余字段按插件默认值补齐
     ///   2. 清理 config.json 里的 `interaction.askMcpEnabled` 字段，避免下次启动重复迁移
-    /// 老 `interaction` 整个 block 若空则删除，非空则保留其余字段（防御未来扩展）。
+    ///      老 `interaction` 整个 block 若空则删除，非空则保留其余字段（防御未来扩展）。
     fn migrate_legacy_ask_disabled_to_plugin(config_dir: &Path) {
         let state_service = crate::services::plugin_state_service::PluginStateService::new(
             config_dir.to_path_buf(),
@@ -946,6 +946,7 @@ impl OldConfig {
             work_dir: self.work_dir,
             session_dir: self.session_dir,
             git_bin_path: self.git_bin_path,
+            auto_launch: false,
             floating_window: Default::default(),
             baidu_translate: None,
             personal_hub: Default::default(),
