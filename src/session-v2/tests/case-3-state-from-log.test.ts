@@ -253,7 +253,10 @@ describe('案例 3：状态从日志计算', () => {
     const elapsed = performance.now() - start
 
     console.log(`1000 条事件 getStatus: ${elapsed.toFixed(2)}ms`)
-    expect(elapsed).toBeLessThan(5)
+    // 墙钟护栏放宽为 100ms（对齐 case-1/case-4 同款处理）：原 5ms 是空载调优值，
+    // 全量测试/并行构建同机时必炸（2026-10-30 实测受载 5.89ms）；护栏职责是防
+    // 「算法级劣化」（O(n²) 级会在百 ms 以上），正确性由下方 status 断言承担。
+    expect(elapsed).toBeLessThan(100)
     expect(status.running).toBe(false)
     expect(status.lastEventSeq).toBe(1000)
   })
