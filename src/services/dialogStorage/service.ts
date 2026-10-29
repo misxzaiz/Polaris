@@ -64,9 +64,15 @@ function enqueuePersist(key: string, job: () => Promise<void>): Promise<void> {
   const prev = persistChains.get(key) ?? Promise.resolve()
   const next = prev.catch(() => {}).then(job)
   persistChains.set(key, next)
-  void next.finally(() => {
-    if (persistChains.get(key) === next) persistChains.delete(key)
-  })
+  // 清理链必须自带 catch：finally 会透传 next 的拒绝，而这条影子链无人 await，
+  // 缺 catch 时每次持久化失败（后端不可达/离线）都产生 unhandled rejection
+  void next
+    .finally(() => {
+      if (persistChains.get(key) === next) persistChains.delete(key)
+    })
+    .catch(() => {
+      /* 拒绝已由返回值 next 传递给调用方，此处仅防影子链悬浮 */
+    })
   return next
 }
 
