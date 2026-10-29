@@ -1069,7 +1069,7 @@ impl IntegrationManager {
                     let text = &thinking.content;
                     if !text.is_empty() {
                         if let Ok(mut accumulated) = accumulated_text_clone.lock() {
-                            accumulated.push_str(&text);
+                            accumulated.push_str(text);
                         }
                     }
                 }

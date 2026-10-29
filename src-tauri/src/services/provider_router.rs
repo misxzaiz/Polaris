@@ -126,7 +126,7 @@ impl FailoverPattern {
         match self {
             Self::HttpStatus { code } => {
                 err.status
-                    .map(|s| s == *code || (*code >= 500 && s >= 500 && s < 600))
+                    .map(|s| s == *code || (*code >= 500 && (500..600).contains(&s)))
                     .unwrap_or(false)
             }
             Self::FirstTokenTimeout => err.first_token_timeout,

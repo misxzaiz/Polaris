@@ -445,15 +445,12 @@ fn parse_dirty_buffers(dirty: &[DirtyBuffer], workspace: &Path) -> Vec<FileIndex
         if buf.language != "java" {
             continue;
         }
-        match extractor::extract(&rel, abs, &buf.language, &buf.content) {
-            Ok(Some(mut fi)) => {
-                if fi.content_hash == 0 {
-                    fi.content_hash = xxhash_rust::xxh3::xxh3_64(buf.content.as_bytes());
-                }
-                fi.size = buf.content.len() as u64;
-                out.push(fi);
+        if let Ok(Some(mut fi)) = extractor::extract(&rel, abs, &buf.language, &buf.content) {
+            if fi.content_hash == 0 {
+                fi.content_hash = xxhash_rust::xxh3::xxh3_64(buf.content.as_bytes());
             }
-            _ => {}
+            fi.size = buf.content.len() as u64;
+            out.push(fi);
         }
     }
     out

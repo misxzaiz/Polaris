@@ -1156,7 +1156,7 @@ impl Capability for GitCapability {
                     };
                     ConflictFileResolution::CheckoutStage(side)
                 };
-                json_ok_svc(GitService::resolve_conflict_file(ws_path, &file_path, op))
+                json_ok_svc(GitService::resolve_conflict_file(ws_path, file_path, op))
             }
             "unstage_file" => json_ok_svc(GitService::unstage_file(
                 &workspace(p)?,

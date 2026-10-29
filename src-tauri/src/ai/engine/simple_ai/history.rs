@@ -17,7 +17,7 @@ use serde_json::Value;
 /// 中文等多字节字符按字符数计，实际 token 通常更多，作为保守截断阈值足够。
 pub(super) fn approx_token_count(text: &str) -> usize {
     // 手写向上取整除法（不用 usize::div_ceil 以兼容较旧的 Rust 工具链）。
-    (text.chars().count() + 3) / 4
+    text.chars().count().div_ceil(4)
 }
 
 /// 将历史中超过 `per_msg_token_cap` 的 assistant 文本输出逐条截断，保留头部并加标注。
@@ -95,7 +95,7 @@ pub(super) fn sanitize_tool_pairs(messages: &mut Vec<Value>) {
 
         if last_role == "assistant" && last.get("tool_calls").is_some() {
             // 孤立 assistant(tool_calls)：保留文本内容（若有），移除 tool_calls 降级为纯文本。
-            if last.get("content").and_then(Value::as_str).map_or(false, |t| !t.is_empty()) {
+            if last.get("content").and_then(Value::as_str).is_some_and(|t| !t.is_empty()) {
                 if let Some(obj) = messages[len - 1].as_object_mut() {
                     obj.remove("tool_calls");
                 }

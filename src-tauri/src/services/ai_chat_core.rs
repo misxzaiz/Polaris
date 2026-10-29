@@ -586,7 +586,7 @@ async fn apply_model_profile_options(
 
     let config = state
         .clone_config()
-        .map_err(|e| AppError::ProcessError(e))?;
+        .map_err(AppError::ProcessError)?;
     let profiles = &config.model_profiles;
     let Some(profile) = profiles.iter().find(|p| p.id == *profile_id) else {
         // 用户明确选择了某 Profile，但配置中已不存在（可能已删除或未同步）。
@@ -812,7 +812,7 @@ async fn apply_model_profile_options(
             let source_model = session_opts.model.clone()
                 .unwrap_or_else(|| profile.model.clone());
             let stripped = crate::ai::engine::simple_ai_protocol::strip_cli_model_suffix(&source_model);
-            let clean_model = stripped.base_model.clone().unwrap_or_else(|| source_model);
+            let clean_model = stripped.base_model.clone().unwrap_or(source_model);
 
             // 覆盖 session_opts.model 为纯模型名，确保传给 CLI 的 --model 不带后缀
             // （PluginEngine 的 write_provider_config model_id 和 build_command --model 都读这个字段）
@@ -1212,7 +1212,7 @@ pub async fn start_chat_inner(
     // 统一 MCP 配置准备
     let enable_mcp = options.enable_mcp_tools.unwrap_or(false);
     let mcp_config: McpSessionConfig = if enable_mcp {
-        if let Some(ref dir) = options.work_dir.as_deref().filter(|d| !d.trim().is_empty()) {
+        if let Some(dir) = options.work_dir.as_deref().filter(|d| !d.trim().is_empty()) {
             let ask_route_session_id = options.context_id.as_deref().and_then(|id| {
                 id.strip_prefix("session-")
                     .map(str::to_string)
@@ -1223,7 +1223,7 @@ pub async fn start_chat_inner(
                 work_dir: dir,
                 config_dir: &app_paths.config_dir,
                 resource_dir: app_paths.resource_dir.as_deref(),
-                app_root: &PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap(),
+                app_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap(),
                 ask_listener: state.ask_listener.get().cloned(),
                 ask_route_session_id,
                 disabled_mcp_servers: options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
@@ -1257,7 +1257,7 @@ pub async fn start_chat_inner(
             let sid = event.session_id();
             if !sid.is_empty() && !lifecycle_start_flag.swap(true, Ordering::SeqCst) {
                 append_session_event(
-                    &sid,
+                    sid,
                     crate::services::session_state::SessionEventType::SessionStart,
                     None,
                     None,
@@ -1334,12 +1334,10 @@ pub async fn start_chat_inner(
             } else {
                 serde_json::json!({ "contextId": cid, "turnId": turn_id, "payload": event })
             }
+        } else if let Some(ref enriched) = enriched {
+            serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": enriched })
         } else {
-            if let Some(ref enriched) = enriched {
-                serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": enriched })
-            } else {
-                serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": event })
-            }
+            serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": event })
         };
         tracing::debug!(
             "[start_chat_inner] 发送事件: {}",
@@ -1586,7 +1584,7 @@ pub async fn start_chat_inner(
                 attempt + 1,
                 max_attempts
             );
-            record_official_fallback(&state, None, &engine, &session_id).await;
+            record_official_fallback(state, None, &engine, &session_id).await;
             break;
         }
 
@@ -1810,7 +1808,7 @@ pub async fn continue_chat_inner(
     // 统一 MCP 配置准备
     let enable_mcp = options.enable_mcp_tools.unwrap_or(false);
     let mcp_config: McpSessionConfig = if enable_mcp {
-        if let Some(ref dir) = options.work_dir.as_deref().filter(|d| !d.trim().is_empty()) {
+        if let Some(dir) = options.work_dir.as_deref().filter(|d| !d.trim().is_empty()) {
             let ask_route_session_id = options.context_id.as_deref().and_then(|id| {
                 id.strip_prefix("session-")
                     .map(str::to_string)
@@ -1821,7 +1819,7 @@ pub async fn continue_chat_inner(
                 work_dir: dir,
                 config_dir: &app_paths.config_dir,
                 resource_dir: app_paths.resource_dir.as_deref(),
-                app_root: &PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap(),
+                app_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap(),
                 ask_listener: state.ask_listener.get().cloned(),
                 ask_route_session_id,
                 disabled_mcp_servers: options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
@@ -1855,7 +1853,7 @@ pub async fn continue_chat_inner(
             let sid = event.session_id();
             if !sid.is_empty() && !lifecycle_start_flag.swap(true, Ordering::SeqCst) {
                 append_session_event(
-                    &sid,
+                    sid,
                     crate::services::session_state::SessionEventType::SessionStart,
                     None,
                     None,
@@ -1932,12 +1930,10 @@ pub async fn continue_chat_inner(
             } else {
                 serde_json::json!({ "contextId": cid, "turnId": turn_id, "payload": event })
             }
+        } else if let Some(ref enriched) = enriched {
+            serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": enriched })
         } else {
-            if let Some(ref enriched) = enriched {
-                serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": enriched })
-            } else {
-                serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": event })
-            }
+            serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": event })
         };
         tracing::debug!(
             "[continue_chat_inner] 发送事件: {}",
@@ -2111,7 +2107,7 @@ pub async fn continue_chat_inner(
     if let Some((group, profiles)) = &route_choice {
         if let Some(ref pid) = chosen_profile_id {
             // 记录续聊轮的选择日志（InitialSelect / Bound），供路由日志面板追踪。
-            let kind = if attempt_log_dedup(&state, &session_id).await {
+            let kind = if attempt_log_dedup(state, &session_id).await {
                 RouteLogKind::Bound
             } else {
                 RouteLogKind::InitialSelect
@@ -2126,8 +2122,7 @@ pub async fn continue_chat_inner(
                     profile_id: Some(pid.clone()),
                     profile_name: profiles
                         .iter()
-                        .find(|p| &p.id == pid)
-                        .and_then(|p| Some(p.name.clone()))
+                        .find(|p| &p.id == pid).map(|p| p.name.clone())
                         .or_else(|| Some(pid.clone())),
                     session_id: Some(session_id.clone()),
                     engine: Some(format!("{:?}", engine)),
@@ -2142,7 +2137,7 @@ pub async fn continue_chat_inner(
         }
     } else if options.profile_mode == Some(ProfileMode::Group) {
         // 用户显式选「分组路由」但无激活分组：记录日志并回退官方（无 group 可用）。
-        record_official_fallback(&state, None, &engine, &session_id).await;
+        record_official_fallback(state, None, &engine, &session_id).await;
     }
 
     session_opts = apply_model_profile_options(

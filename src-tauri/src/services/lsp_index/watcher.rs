@@ -69,14 +69,12 @@ impl IndexService {
                                     e
                                 );
                             }
-                        } else {
-                            if let Err(e) = svc.remove_file(&workspace_clone, &ev.path) {
-                                tracing::warn!(
-                                    "watcher remove_file failed for {}: {}",
-                                    ev.path.display(),
-                                    e
-                                );
-                            }
+                        } else if let Err(e) = svc.remove_file(&workspace_clone, &ev.path) {
+                            tracing::warn!(
+                                "watcher remove_file failed for {}: {}",
+                                ev.path.display(),
+                                e
+                            );
                         }
                     }
                 }

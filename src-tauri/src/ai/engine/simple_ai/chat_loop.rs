@@ -123,7 +123,7 @@ pub(super) async fn run_chat_loop(
                 tracing::warn!(
                     "[SimpleAI] MCP server 启动超时（30s），跳过 MCP 工具注入, session={session_id}"
                 );
-                let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
+                event_callback(AIEvent::Progress(ProgressEvent::new(
                     session_id,
                     "MCP server 启动超时，已跳过。部分工具不可用。".to_string(),
                 )));
@@ -179,7 +179,7 @@ pub(super) async fn run_chat_loop(
     loop {
         // 默认 40 轮上限；custom_env 设为 0 可取消限制（不推荐）。
         if max_tool_rounds > 0 && round >= max_tool_rounds {
-            let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
+            event_callback(AIEvent::Progress(ProgressEvent::new(
                 session_id,
                 format!("Reached configured tool call round cap ({}), stopping.", max_tool_rounds),
             )));
@@ -226,7 +226,7 @@ pub(super) async fn run_chat_loop(
         let base_model = suffix
             .base_model
             .as_deref()
-            .unwrap_or_else(|| profile.model.as_str());
+            .unwrap_or(profile.model.as_str());
 
         // 构建请求体（按线路协议转换内部 OpenAI 消息格式）—— 用剥离后的纯模型名。
         // effort 来自会话配置（状态栏选择），映射为协议内思考参数（见 simple_ai_protocol.rs）。
@@ -354,7 +354,7 @@ pub(super) async fn run_chat_loop(
                     // 防御：changed() 在 sender 被替换/drop 时会返回 Err(RecvError)，
                     // 此时 channel 已无 observer，应视为非中断信号，继续等待流。
                     // 仅当 changed() 返回 Ok(true) 时才视为真正的中断请求。
-                    if abort_rx.borrow().clone() == true {
+                    if *abort_rx.borrow() == true {
                         tracing::warn!(
                             "[SimpleAI] [DIAG] abort_rx 被置为 true, 提前结束, session={session_id}"
                         );
@@ -390,7 +390,7 @@ pub(super) async fn run_chat_loop(
                             round
                         )));
                     }
-                    let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
+                    event_callback(AIEvent::Progress(ProgressEvent::new(
                         session_id,
                         format!("流空闲 {}s，本轮回复已截断。", stream_idle_secs),
                     )));
@@ -424,7 +424,7 @@ pub(super) async fn run_chat_loop(
                             round
                         )));
                     }
-                    let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
+                    event_callback(AIEvent::Progress(ProgressEvent::new(
                         session_id,
                         "网络波动，本轮回复已截断。".to_string(),
                     )));
@@ -459,13 +459,13 @@ pub(super) async fn run_chat_loop(
                     match delta {
                         StreamDelta::Text(text) => {
                             assistant_content.push_str(&text);
-                            let _ = event_callback(AIEvent::Token(TokenEvent::new(
+                            event_callback(AIEvent::Token(TokenEvent::new(
                                 session_id,
                                 text,
                             )));
                         }
                         StreamDelta::Thinking(thinking) => {
-                            let _ = event_callback(AIEvent::Thinking(ThinkingEvent::new(
+                            event_callback(AIEvent::Thinking(ThinkingEvent::new(
                                 session_id,
                                 thinking,
                             )));
@@ -507,7 +507,7 @@ pub(super) async fn run_chat_loop(
             usage_event = usage_event
                 .with_scope("turn")
                 .with_actual_model(actual_model.clone());
-            let _ = event_callback(AIEvent::Usage(usage_event));
+            event_callback(AIEvent::Usage(usage_event));
 
             // DX: 同步写入 SQLite 用量数据库（覆盖 SimpleAI 不经过代理的路径）。
             // 使用 spawn_blocking 避免 std::sync::Mutex 阻塞 tokio worker 线程。
@@ -580,7 +580,7 @@ pub(super) async fn run_chat_loop(
                     .collect(),
             );
             start_event.call_id = Some(tc["id"].as_str().unwrap_or("").to_string());
-            let _ = event_callback(AIEvent::ToolCallStart(start_event));
+            event_callback(AIEvent::ToolCallStart(start_event));
         }
 
         // 2. 保存 assistant 消息
@@ -686,7 +686,7 @@ pub(super) async fn run_chat_loop(
             if let Some(tid) = outcome.task_id.as_deref() {
                 end_event.task_id = Some(tid.to_string());
             }
-            let _ = event_callback(AIEvent::ToolCallEnd(end_event));
+            event_callback(AIEvent::ToolCallEnd(end_event));
 
             messages.push(json!({
                 "role": "tool",

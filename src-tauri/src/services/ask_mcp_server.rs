@@ -484,7 +484,9 @@ fn handle_form_call(params: Value, config: &AskMcpConfig) -> Result<Value> {
     let read = arguments.get("read").and_then(Value::as_str).unwrap_or("full");
     let mode = arguments.get("mode").and_then(Value::as_str).unwrap_or("dispatch").to_string();
     let style = arguments.get("style").cloned().unwrap_or_else(|| json!({}));
-    let template = arguments.get("template").cloned().unwrap_or_else(|| json!(null));
+    // unwrap_or 的参数须写成 json!(null)：clippy --fix 曾把宏展开体 $crate::Value::Null
+    // 落成源码导致语法错误；宏调用形式才是不求值语义的正确写法
+    let template = arguments.get("template").cloned().unwrap_or(json!(null));
     let fields = arguments
         .get("fields")
         .cloned()

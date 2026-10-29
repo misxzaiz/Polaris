@@ -53,7 +53,7 @@ fn default_permission_mode() -> &'static str {
 /// `acceptEdits` 并输出警告日志。此前此逻辑仅在 `default_permission_mode()`
 /// 的 else 分支中生效，但前端默认值始终为 `Some("bypassPermissions")`，
 /// 导致 root 检测成为死代码。此函数统一处理两种路径。
-fn resolve_permission_mode<'a>(user_mode: Option<&'a str>) -> &'a str {
+fn resolve_permission_mode(user_mode: Option<&str>) -> &str {
     match user_mode {
         Some(pm) if !pm.is_empty() => {
             #[cfg(unix)]

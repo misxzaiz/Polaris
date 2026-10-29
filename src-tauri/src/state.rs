@@ -726,7 +726,7 @@ pub fn create_app_state(
         lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
         #[cfg(feature = "lsp-index")]
         lsp_index_service: IndexService::new(),
-        event_broadcast: event_broadcast,
+        event_broadcast,
         #[cfg(feature = "tauri-app")]
         app_handle: OnceLock::new(),
         app_config_dir: OnceLock::new(),
@@ -904,7 +904,7 @@ impl AppState {
             }
             let temp = path.with_extension("json.tmp");
             let content = serde_json::to_string_pretty(&tasks)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                .map_err(|e| std::io::Error::other(e))?;
             std::fs::write(&temp, content)?;
             std::fs::rename(&temp, &path)?;
             Ok(())

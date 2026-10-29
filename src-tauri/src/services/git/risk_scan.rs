@@ -60,7 +60,7 @@ pub fn scan_commit_risk(
     let mut truncated = false;
 
     let mut text_cb =
-        |delta: git2::DiffDelta<'_>, hunk: Option<git2::DiffHunk<'_>>, line: git2::DiffLine<'_>| -> bool {
+        |delta: git2::DiffDelta<'_>, _hunk: Option<git2::DiffHunk<'_>>, line: git2::DiffLine<'_>| -> bool {
             if findings.len() >= MAX_TOTAL_FINDINGS {
                 truncated = true;
                 return true; // 截断即停
@@ -75,7 +75,7 @@ pub fn scan_commit_risk(
             let line_no = line.new_lineno().unwrap_or(0);
 
             // 大文件（每个文件只报一次）
-            if let Some(entry) = repo.find_blob(delta.new_file().id()).ok() {
+            if let Ok(entry) = repo.find_blob(delta.new_file().id()) {
                 if entry.size() > LARGE_FILE_BYTES as usize
                     && findings.iter().all(|f| f.file != file_path)
                 {

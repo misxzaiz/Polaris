@@ -357,7 +357,7 @@ impl AIEngine for SimpleAIEngine {
         messages.push(json!({ "role": "user", "content": message }));
 
         // 发送事件
-        let _ = (options.event_callback)(AIEvent::SessionStart(SessionStartEvent::new(
+        (options.event_callback)(AIEvent::SessionStart(SessionStartEvent::new(
             &session_id,
         )));
         let user_msg_event = if let Some(ref id) = options.client_message_id {
@@ -366,7 +366,7 @@ impl AIEngine for SimpleAIEngine {
         } else {
             UserMessageEvent::new(&session_id, message.to_string())
         };
-        let _ = (options.event_callback)(AIEvent::UserMessage(user_msg_event));
+        (options.event_callback)(AIEvent::UserMessage(user_msg_event));
 
         // 创建会话：初始即带上 system + 历史 + 首轮 user 消息，并标记运行中。
         // 这样即便运行期间用户触发 continue_session，也能读到完整初始上下文而非空历史。
@@ -440,7 +440,7 @@ impl AIEngine for SimpleAIEngine {
                     tracing::info!("[SimpleAI] 对话循环完成, session={}", sid);
                     // reason 显式带 Completed：此前缺省导致下游按 undefined 判定
                     // （如 dispatch 任务成败语义随引擎漂移，审计 3.11）
-                    let _ = cb(AIEvent::SessionEnd(
+                    cb(AIEvent::SessionEnd(
                         SessionEndEvent::new(&sid).with_reason(SessionEndReason::Completed),
                     ));
                     if let Some(ref c) = on_complete {
@@ -453,7 +453,7 @@ impl AIEngine for SimpleAIEngine {
                 // （审计 3.2：中断的 dispatch 任务曾因 reason 缺失被算作 completed）。
                 Err(AppError::Interrupted) => {
                     tracing::info!("[SimpleAI] 对话循环被用户中断, session={}", sid);
-                    let _ = cb(AIEvent::SessionEnd(
+                    cb(AIEvent::SessionEnd(
                         SessionEndEvent::new(&sid).with_reason(SessionEndReason::Aborted),
                     ));
                     if let Some(ref c) = on_complete {
@@ -462,8 +462,8 @@ impl AIEngine for SimpleAIEngine {
                 }
                 Err(e) => {
                     tracing::error!("[SimpleAI] 对话循环失败, session={}, error={}", sid, e);
-                    let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, e.to_string())));
-                    let _ = cb(AIEvent::SessionEnd(
+                    cb(AIEvent::Error(ErrorEvent::new(&sid, e.to_string())));
+                    cb(AIEvent::SessionEnd(
                         SessionEndEvent::new(&sid).with_reason(SessionEndReason::Error),
                     ));
                     if let Some(ref c) = on_complete {
@@ -485,8 +485,8 @@ impl AIEngine for SimpleAIEngine {
                 if join_err.is_panic() {
                     let msg = format!("SimpleAI 后台任务 panic: {}", join_err);
                     tracing::error!("[SimpleAI] {}, session={}", msg, supervisor_sid);
-                    let _ = supervisor_cb(AIEvent::Error(ErrorEvent::new(&supervisor_sid, msg)));
-                    let _ = supervisor_cb(AIEvent::SessionEnd(
+                    supervisor_cb(AIEvent::Error(ErrorEvent::new(&supervisor_sid, msg)));
+                    supervisor_cb(AIEvent::SessionEnd(
                         SessionEndEvent::new(&supervisor_sid).with_reason(SessionEndReason::Error),
                     ));
                     let mut guard = supervisor_sessions.lock().await;
@@ -544,7 +544,7 @@ impl AIEngine for SimpleAIEngine {
         } else {
             UserMessageEvent::new(session_id, message.to_string())
         };
-        let _ = (options.event_callback)(AIEvent::UserMessage(user_msg_event));
+        (options.event_callback)(AIEvent::UserMessage(user_msg_event));
 
         let sessions = Arc::clone(&self.sessions);
         let sid = session_id.to_string();
@@ -676,7 +676,7 @@ impl AIEngine for SimpleAIEngine {
             match result {
                 Ok(()) => {
                     tracing::info!("[SimpleAI] continue 完成, session={}", sid);
-                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
                     if let Some(ref c) = on_complete {
                         c(0);
                     }
@@ -684,15 +684,15 @@ impl AIEngine for SimpleAIEngine {
                 // 用户主动中断：优雅结束，不当作错误（不发红色 ErrorEvent）。
                 Err(AppError::Interrupted) => {
                     tracing::info!("[SimpleAI] continue 被用户中断, session={}", sid);
-                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
                     if let Some(ref c) = on_complete {
                         c(0);
                     }
                 }
                 Err(e) => {
                     tracing::error!("[SimpleAI] continue 失败, session={}, error={}", sid, e);
-                    let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, e.to_string())));
-                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    cb(AIEvent::Error(ErrorEvent::new(&sid, e.to_string())));
+                    cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
                     if let Some(ref c) = on_complete {
                         c(0);
                     }

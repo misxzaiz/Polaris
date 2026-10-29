@@ -572,7 +572,7 @@ fn do_patch(
         let saved = store
             .patch(Value::Object(top_patch))
             .map_err(|e| format!("config patch 失败: {}", e))?;
-        return Ok(serde_json::to_value(saved).map_err(|e| e.to_string())?);
+        return serde_json::to_value(saved).map_err(|e| e.to_string());
     }
 
     // 1. 白名单 section 校验（ReadOnly/Locked 拒绝）
@@ -595,7 +595,7 @@ fn do_patch(
     let saved = store
         .patch(Value::Object(top_patch))
         .map_err(|e| format!("config patch 失败: {}", e))?;
-    Ok(serde_json::to_value(saved).map_err(|e| e.to_string())?)
+    serde_json::to_value(saved).map_err(|e| e.to_string())
 }
 
 impl ConfigCapability {

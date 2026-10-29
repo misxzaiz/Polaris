@@ -34,7 +34,7 @@ pub fn run_requirements_mcp_server(config_dir: &str, workspace_path: Option<&str
     // 显式传入的 config_dir 若是数据根之外的遗留库（旧版 mcp.json 里展开的
     // {{appConfigDir}} 字面量），则只放行「读」；写操作报明确错误——避免
     // 「AI 从旧库读到数据、却写进新库、下次 list 消失」的读写分裂态。
-    let readonly_reason = detect_legacy_readonly_config(&config_dir.as_path());
+    let readonly_reason = detect_legacy_readonly_config(config_dir.as_path());
 
     let repository = UnifiedRequirementRepository::new(config_dir, workspace_path);
     match &readonly_reason {
@@ -323,7 +323,7 @@ fn execute_update_requirement(
     arguments: &Value,
     repository: &UnifiedRequirementRepository,
 ) -> Result<Value> {
-    let id = parse_id_arg(&arguments)?;
+    let id = parse_id_arg(arguments)?;
 
     let updates = RequirementUpdateParams {
         title: optional_trimmed_string(arguments.get("title")),
@@ -364,7 +364,7 @@ fn execute_delete_requirement(
     arguments: &Value,
     repository: &UnifiedRequirementRepository,
 ) -> Result<Value> {
-    let id = parse_id_arg(&arguments)?;
+    let id = parse_id_arg(arguments)?;
     let requirement = repository.delete_requirement(&id)?;
     Ok(tool_success_single(
         format!("已删除需求：{}", requirement.title),
@@ -376,7 +376,7 @@ fn execute_save_prototype(
     arguments: &Value,
     repository: &UnifiedRequirementRepository,
 ) -> Result<Value> {
-    let id = parse_id_arg(&arguments)?;
+    let id = parse_id_arg(arguments)?;
     let html = arguments
         .get("html")
         .and_then(Value::as_str)

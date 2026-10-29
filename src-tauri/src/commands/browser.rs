@@ -1013,7 +1013,7 @@ pub async fn browser_acquire_with_app(
         \t- 如果从未打开过内置浏览器面板，请先在侧边栏打开「浏览器」面板；\n\
         \t- 极少数情况下，主窗口最小化会导致前端未响应事件，请恢复窗口后重试。"
     );
-    return Err(AppError::TimeoutWithMessage(msg));
+    Err(AppError::TimeoutWithMessage(msg))
 }
 
 #[cfg(feature = "tauri-app")]
@@ -1461,7 +1461,7 @@ fn is_downloadable_url(url: &str) -> bool {
         .next()
         .unwrap_or("")
         .trim_end_matches('"');
-    if ext.len() < 1 || ext.len() > 6 || !ext.chars().all(|c| c.is_ascii_alphanumeric()) {
+    if ext.is_empty() || ext.len() > 6 || !ext.chars().all(|c| c.is_ascii_alphanumeric()) {
         return false;
     }
     matches!(ext, "exe" | "msi" | "dmg" | "apk" | "ipa")
@@ -1479,7 +1479,7 @@ fn is_downloadable_url(url: &str) -> bool {
 /// 从 URL 提取展示用文件名（不含扩展名校验、不做安全性清洗）。
 fn extract_filename_from_url(url: &Url) -> String {
     url.path_segments()
-        .and_then(|segs| segs.filter(|s| !s.is_empty()).last())
+        .and_then(|segs| segs.filter(|s| !s.is_empty()).next_back())
         .map(|s| s.to_string())
         .unwrap_or_default()
 }
@@ -2059,7 +2059,7 @@ pub async fn browser_wait_with_app(
     ms: Option<u64>,
     timeout_ms: Option<u64>,
 ) -> Result<BrowserInteractionResult> {
-    let timeout = timeout_ms.unwrap_or_else(|| match condition {
+    let timeout = timeout_ms.unwrap_or(match condition {
         "network_idle" | "navigation" | "page_loaded" | "button_enabled" => 30_000,
         _ => 15_000,
     });
@@ -2729,7 +2729,7 @@ pub async fn browser_find_with_app(
         escaped = escaped,
         cs = case_sensitive,
     );
-    let raw = browser_eval_with_app(&app, &label, &script, Some(3_500)).await?;
+    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
     let value = parse_eval_json(&raw)?;
     serde_json::from_value(value)
         .map_err(|e| AppError::ValidationError(format!("浏览器查找结果格式错误: {e}")))
@@ -2800,7 +2800,7 @@ pub async fn browser_zoom_with_app(
         }})()"#,
         scale = scale,
     );
-    let raw = browser_eval_with_app(&app, &label, &script, Some(2_000)).await?;
+    let raw = browser_eval_with_app(app, label, &script, Some(2_000)).await?;
     let value = parse_eval_json(&raw)?;
     serde_json::from_value(value)
         .map_err(|e| AppError::ValidationError(format!("浏览器缩放结果格式错误: {e}")))
@@ -3014,11 +3014,7 @@ pub async fn browser_show_overflow_menu(
         let registered = REGISTERED.get_or_init(|| Mutex::new(HashSet::new()));
         let already = {
             let mut guard = registered.lock().unwrap();
-            if guard.insert(label.clone()) {
-                false
-            } else {
-                true
-            }
+            !guard.insert(label.clone())
         };
 
         if !already {
@@ -3146,7 +3142,7 @@ fn browser_get_region_screenshot_with_app(
     // 屏幕坐标 = window_position + (bounds + region) × scale_factor
     let opt_bounds = browser_bounds(label).ok().flatten();
     let (bw, bh) = match opt_bounds {
-        Some(b) => (b.x as f64, b.y as f64),
+        Some(b) => (b.x, b.y),
         None => (0.0, 0.0),
     };
     let abs_x = (position.x as f64) + (bw + rect.x) * scale_factor;

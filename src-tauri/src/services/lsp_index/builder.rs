@@ -95,7 +95,7 @@ pub fn build_full(db: &IndexDb, workspace: &Path, progress: Option<ProgressFn>) 
 
             let n = done.fetch_add(1, Ordering::Relaxed) + 1;
             if let Some(cb) = progress.as_ref() {
-                if n % 64 == 0 || n == total {
+                if n.is_multiple_of(64) || n == total {
                     cb(n, total);
                 }
             }

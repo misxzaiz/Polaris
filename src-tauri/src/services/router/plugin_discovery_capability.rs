@@ -242,7 +242,7 @@ impl Capability for PluginDiscoveryCapability {
                 let adapters =
                     crate::services::adapter_discovery::collect_adapters(&discovery.plugins);
                 if adapters.is_empty() {
-                    return Ok(serde_json::to_value(discovery).map_err(|e| e.to_string())?);
+                    return serde_json::to_value(discovery).map_err(|e| e.to_string());
                 }
                 // S2 合并编排：有适配器贡献 → one-shot 翻译调用 + 缓存/熔断（spec §3.2）
                 Self::block_on_async(async move {

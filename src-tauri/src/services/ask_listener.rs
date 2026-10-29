@@ -514,7 +514,9 @@ async fn handle_form_frame(
     // AI 声明的样式（可选，前端 FormCard 按白名单键应用）。
     let style = frame.get("style").cloned().unwrap_or_else(|| json!({}));
     // 模板引用（可选，前端据此预填 + 显示「来自模板 X」）。
-    let template = frame.get("template").cloned().unwrap_or_else(|| json!(null));
+    // unwrap_or 的参数须写成 json!(null)：clippy --fix 曾把宏展开体 $crate::Value::Null
+    // 落成源码导致语法错误；宏调用形式才是不求值语义的正确写法
+    let template = frame.get("template").cloned().unwrap_or(json!(null));
 
     // 方向 4：模板展开。若 AI/前端传了 `template: {name}`，从工作区 DataRoot
     // 加载对应模板，用模板的 title/mode/style/fields 作为 baseline，再与本次
@@ -683,10 +685,10 @@ async fn handle_form_frame(
                 form_id,
                 form_flow::FORM_WAIT_TIMEOUT_SECS
             );
-            String::from(format!(
+            format!(
                 "表单等待超时（{}s），请让 AI 重新拉起",
                 form_flow::FORM_WAIT_TIMEOUT_SECS
-            ))
+            )
         }
     };
 
@@ -1689,7 +1691,7 @@ async fn handle_agent_delete_frame(
     }
     let slug = frame.get("slug").and_then(Value::as_str).unwrap_or_default();
 
-    let reply = match crate::commands::agent_corpus::custom_agent_delete_inner(&slug) {
+    let reply = match crate::commands::agent_corpus::custom_agent_delete_inner(slug) {
         Ok(()) => json!({ "type": "agent_delete_result", "ok": true, "slug": slug }),
         Err(e) => json!({
             "type": "agent_delete_result",

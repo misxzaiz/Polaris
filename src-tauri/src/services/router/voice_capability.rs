@@ -409,7 +409,7 @@ impl VoiceCapability {
                     let dir = self.samples_dir();
                     fs::create_dir_all(&dir).map_err(|e| format!("建样本目录失败: {e}"))?;
                     let file = format!("{id}.{ext}");
-                    let bytes = data_url_decode(&sample).or_else(|| {
+                    let bytes = data_url_decode(sample).or_else(|| {
                         // 裸 base64（无 data: 前缀）兜底
                         use base64::Engine as _;
                         base64::engine::general_purpose::STANDARD.decode(sample.as_bytes()).ok()

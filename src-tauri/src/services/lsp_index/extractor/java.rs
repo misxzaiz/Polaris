@@ -501,12 +501,10 @@ fn extract_method_signature(node: Node<'_>, src: &[u8]) -> String {
 /// 找第一个特定 kind 的子节点
 fn first_named_of_kinds<'a>(node: Node<'a>, kinds: &[&str]) -> Option<Node<'a>> {
     let mut cursor = node.walk();
-    for c in node.named_children(&mut cursor) {
-        if kinds.contains(&c.kind()) {
-            return Some(c);
-        }
-    }
-    None
+    // find 须绑定到 let：尾表达式的临时迭代器会活过 cursor 局部变量（E0597），
+    // let 语句在借用结束后才产出值
+    let found = node.named_children(&mut cursor).find(|&c| kinds.contains(&c.kind()));
+    found
 }
 
 /// 是否含有某个匿名（关键字）子节点
@@ -693,7 +691,7 @@ fn utf8_col_to_utf16(lines: &[&str], pos: tree_sitter::Point) -> u32 {
 
 fn preview_of(lines: &[&str], row: usize) -> String {
     let raw = lines.get(row).copied().unwrap_or("");
-    let trimmed = raw.trim_end_matches(|c: char| c == '\n' || c == '\r').trim();
+    let trimmed = raw.trim_end_matches(['\n', '\r']).trim();
     if trimmed.chars().count() > 200 {
         let s: String = trimmed.chars().take(200).collect();
         format!("{}…", s)

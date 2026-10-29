@@ -362,7 +362,7 @@ impl McpCapability {
             .unwrap_or("")
             .to_string();
         let gates = self.load_tool_gates();
-        let gate_map = gates.get(&plugin_id);
+        let _gate_map = gates.get(&plugin_id);
 
         // 按 plugin_id 聚合 server；空 plugin_id = 全部插件
         let mut by_plugin: std::collections::BTreeMap<
@@ -381,7 +381,7 @@ impl McpCapability {
         let servers = tokio::task::block_in_place(move || {
             rt.block_on(async move {
                 let mut list: Vec<Value> = Vec::new();
-                for (_pid, defs) in &by_plugin {
+                for defs in by_plugin.values() {
                     let plugin_gates = gates.get(&defs[0].plugin_id).cloned().unwrap_or_default();
                     for def in defs {
                         let tool_names: Vec<String> = match registry

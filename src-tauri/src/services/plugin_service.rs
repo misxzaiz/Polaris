@@ -339,9 +339,8 @@ impl PluginService {
 
         if let Some(workspace_path) = workspace_path {
             let workspace = workspace_path.to_string_lossy().to_string();
-            for root in [
-                workspace_path.join(".polaris").join("plugins"),
-            ] {
+            {
+                let root = workspace_path.join(".polaris").join("plugins");
                 Self::scan_plugin_root(
                     &root,
                     PluginManifestSource {
@@ -849,7 +848,7 @@ impl PluginService {
                                 return None;
                             }
                             // 取逗号后部分（ProcessId）
-                            let pid_str = trimmed.split(',').last()?.trim();
+                            let pid_str = trimmed.split(',').next_back()?.trim();
                             if pid_str.is_empty() || pid_str == "ProcessId" {
                                 return None;
                             }

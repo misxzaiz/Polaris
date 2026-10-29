@@ -322,10 +322,7 @@ pub fn observe_ctx(event: &AIEvent, engine: &str, context_id: Option<&str>) {
             let output = e.result.as_ref().map(value_to_text);
             let success = e.success;
             let should_flush = mutate_turn(&e.session_id, engine, |t| {
-                match output.as_deref() {
-                    Some(out) => update_tool_output(t, call_id.as_deref(), &tool, out, false),
-                    None => {}
-                }
+                if let Some(out) = output.as_deref() { update_tool_output(t, call_id.as_deref(), &tool, out, false) }
                 finalize_tool(t, call_id.as_deref(), &tool, success);
             });
             if should_flush {

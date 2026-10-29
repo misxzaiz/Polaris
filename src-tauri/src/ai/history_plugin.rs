@@ -161,7 +161,7 @@ impl PluginHistoryProvider {
     /// 兼容两种格式：
     /// - 字符串：`"content": "hello"`
     /// - 数组（OMP 风格）：`"content": [{"type":"text","text":"hello"}, ...]`
-    fn extract_text_content<'a>(content: &'a serde_json::Value) -> Option<&'a str> {
+    fn extract_text_content(content: &serde_json::Value) -> Option<&str> {
         // 字符串格式
         if let Some(s) = content.as_str() {
             return Some(s);
@@ -360,10 +360,10 @@ impl SessionHistoryProvider for PluginHistoryProvider {
                 let duration = t.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default();
                 let secs = duration.as_secs();
                 // 格式化为 ISO 8601
-                let naive = chrono::DateTime::from_timestamp(secs as i64, 0)
+                
+                chrono::DateTime::from_timestamp(secs as i64, 0)
                     .map(|dt| dt.to_rfc3339())
-                    .unwrap_or_default();
-                naive
+                    .unwrap_or_default()
             });
 
             items.push(SessionMeta {
@@ -467,7 +467,7 @@ pub(crate) fn parse_plugin_metadata(path: &Path) -> (Option<String>, usize, Opti
                 session_id = val.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
                 created_at = val.get("timestamp").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let cwd = val.get("cwd").and_then(|v| v.as_str());
-                if cwd.map_or(false, |c| !c.is_empty()) {
+                if cwd.is_some_and(|c| !c.is_empty()) {
                     workspace_path = cwd.map(|s| s.to_string());
                 }
             }

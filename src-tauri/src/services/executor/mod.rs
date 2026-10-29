@@ -328,6 +328,12 @@ pub struct ExecutorRegistry {
     executors: HashMap<String, Arc<dyn TaskExecutor>>,
 }
 
+impl Default for ExecutorRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ExecutorRegistry {
     pub fn new() -> Self {
         Self {

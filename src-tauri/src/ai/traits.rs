@@ -34,8 +34,10 @@ use std::sync::Arc;
 /// `parse()` 接受旧格式（"claude" 等），
 /// 确保存量会话数据和旧版配置文件不受影响。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum EngineId {
     /// Claude Code 引擎（Anthropic 官方 CLI）
+    #[default]
     ClaudeCode,
     /// Simple AI 引擎（内置轻量助手，直连模型供应商 API）
     SimpleAI,
@@ -58,11 +60,6 @@ impl<'de> Deserialize<'de> for EngineId {
     }
 }
 
-impl Default for EngineId {
-    fn default() -> Self {
-        EngineId::ClaudeCode
-    }
-}
 
 impl EngineId {
     /// 序列化到配置文件/API 的权威字符串表示（kebab-case）。
@@ -284,18 +281,15 @@ pub struct ProviderConfigDeclaration {
 /// Provider 配置文件格式
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ProviderConfigFormat {
     /// YAML 格式（omp 用 models.yml）
+    #[default]
     Yaml,
     /// JSON 格式（Pi 用 models.json）
     Json,
 }
 
-impl Default for ProviderConfigFormat {
-    fn default() -> Self {
-        Self::Yaml
-    }
-}
 
 /// CLI 入口配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -314,8 +308,10 @@ pub struct EngineCliConfig {
 /// RPC 协议类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum RpcProtocol {
     /// Pi 兼容的 --mode rpc JSONL 协议
+    #[default]
     PiRpc,
     /// 标准 stdio JSON-RPC 协议
     JsonRpc,
@@ -323,11 +319,6 @@ pub enum RpcProtocol {
     Command,
 }
 
-impl Default for RpcProtocol {
-    fn default() -> Self {
-        Self::PiRpc
-    }
-}
 
 /// Session ID CLI 标志风格
 ///
@@ -336,18 +327,15 @@ impl Default for RpcProtocol {
 /// - omp: 无 session-id 标志 (新会话), `--resume <id>` (恢复)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum SessionFlags {
     /// Pi 风格：--session-id / --session
+    #[default]
     Pi,
     /// omp 风格：无 session-id / --resume
     Omp,
 }
 
-impl Default for SessionFlags {
-    fn default() -> Self {
-        Self::Pi
-    }
-}
 
 /// 插件引擎能力标志
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

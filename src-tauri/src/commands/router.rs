@@ -152,7 +152,7 @@ pub async fn router_dispatch_stream(
     let ack = state
         .router
         .dispatch_stream(env)
-        .map_err(|e| AppError::Unknown(e))?;
+        .map_err(AppError::Unknown)?;
     Ok(RouterDispatchStreamResponse {
         msg_id: ack.msg_id.0,
         trace: ack.trace.0,
@@ -205,7 +205,7 @@ pub async fn audit_tail(count: Option<usize>) -> Result<AuditTailResponse> {
     let path = crate::services::router::audit_sink::audit_file_path();
     let (lines, total) =
         crate::services::router::audit_sink::tail_lines(&path, count.unwrap_or(20))
-            .map_err(|e| AppError::Unknown(e))?;
+            .map_err(AppError::Unknown)?;
     Ok(AuditTailResponse { lines, total })
 }
 

@@ -252,7 +252,7 @@ impl HttpCapability {
         if !["GET", "HEAD"].contains(&method) && !body.is_empty() {
             let has_ct = headers
                 .iter()
-                .any(|(k, _)| k.to_ascii_lowercase() == "content-type");
+                .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
             match body_type {
                 "json" => {
                     if !has_ct {

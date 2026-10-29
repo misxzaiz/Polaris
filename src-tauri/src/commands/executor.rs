@@ -21,7 +21,7 @@ pub async fn executor_execute(
     state: tauri::State<'_, crate::AppState>,
     params: ExecutorParams,
 ) -> Result<crate::services::executor::ExecutorResult> {
-    let ctx = ExecutorContext::from_ref(&*state);
+    let ctx = ExecutorContext::from_ref(&state);
     let result = state.executor_registry.execute(params, ctx).await;
     Ok(result)
 }

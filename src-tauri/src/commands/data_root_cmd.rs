@@ -27,7 +27,7 @@ pub fn open_path_in_explorer_inner(path: PathBuf) -> Result<()> {
             .arg(&path)
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .map_err(|e| AppError::IoError(e))?;
+            .map_err(AppError::IoError)?;
     }
     #[cfg(target_os = "macos")]
     {

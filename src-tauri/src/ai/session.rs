@@ -364,7 +364,7 @@ impl SessionManager {
                 return Ok(true);
             }
             // taskkill 命令本身失败 -> 不撒谎,让上层兜底重试
-            return Ok(false);
+            Ok(false)
         }
 
         #[cfg(not(windows))]

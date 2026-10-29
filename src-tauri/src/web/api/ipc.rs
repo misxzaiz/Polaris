@@ -621,9 +621,7 @@ async fn dispatch_browser_check_embed(args: &Value) -> Result<Json<Value>, WebEr
         .timeout(std::time::Duration::from_secs(8))
         .redirect(reqwest::redirect::Policy::limited(5))
         // 用真实浏览器 UA，尽量拿到与浏览器一致的最终响应（302 → cn.bing.com 等）
-        .user_agent(format!(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-        ))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36".to_string())
         .build()
         .map_err(|e| WebError::Internal(format!("创建 HTTP 客户端失败: {}", e)))?;
 
@@ -1601,8 +1599,8 @@ fn dispatch_update_requirement(state: &AppState, args: &Value) -> Result<Json<Va
     let repo = get_req_repo(state, args)?;
     let mut u = crate::models::requirement::RequirementUpdateParams::default();
     // Check both top-level and nested params for all fields
-    if let Some(v) = req_string(args, "title").ok() { u.title = Some(v); }
-    if let Some(v) = req_string(args, "description").ok() { u.description = Some(v); }
+    if let Ok(v) = req_string(args, "title") { u.title = Some(v); }
+    if let Ok(v) = req_string(args, "description") { u.description = Some(v); }
     if let Some(v) = args.get("status").or_else(|| args.get("params").and_then(|p| p.get("status"))).and_then(|v| v.as_str()) {
         u.status = serde_json::from_value(serde_json::Value::String(v.to_string())).ok();
     }
@@ -1770,11 +1768,7 @@ fn dispatch_terminal_open_in_external(args: &Value) -> Result<Json<Value>, WebEr
     let command = require_string(args, "command")?;
     let cwd = args.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
     let env = args.get("env").and_then(|v| {
-        if let Some(obj) = v.as_object() {
-            Some(obj.iter().map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string())).collect())
-        } else {
-            None
-        }
+        v.as_object().map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string())).collect())
     });
     json_result!(crate::commands::terminal::terminal_open_in_external(command, cwd, env))
 }
@@ -3016,7 +3010,7 @@ async fn dispatch_router_dispatch_stream(state: &AppState, args: &Value) -> Resu
     let ack = state
         .router
         .dispatch_stream(env)
-        .map_err(|e| WebError::Internal(e))?;
+        .map_err(WebError::Internal)?;
 
     Ok(Json(serde_json::json!({
         "msgId": ack.msg_id.0,

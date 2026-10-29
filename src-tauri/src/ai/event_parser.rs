@@ -676,7 +676,7 @@ impl EventParser {
         let content = message.get("content").and_then(|c| c.as_array());
 
         // 判定：含 tool_result 块的 user 事件是工具执行结果回传，不是用户输入
-        let has_tool_result = content.map_or(false, |blocks| {
+        let has_tool_result = content.is_some_and(|blocks| {
             blocks.iter().any(|item| {
                 item.as_object()
                     .and_then(|o| o.get("type"))

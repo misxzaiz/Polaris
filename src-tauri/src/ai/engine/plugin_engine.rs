@@ -630,7 +630,7 @@ impl PluginEngineRunner {
         let mut lines = content.lines().peekable();
 
         // 跳过至 providers: 行
-        while let Some(line) = lines.next() {
+        for line in lines.by_ref() {
             if line.trim() == "providers:" {
                 break;
             }

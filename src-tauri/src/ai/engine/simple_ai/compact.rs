@@ -245,7 +245,7 @@ async fn request_summary_once(
     let base_model = suffix
         .base_model
         .as_deref()
-        .unwrap_or_else(|| profile.model.as_str());
+        .unwrap_or(profile.model.as_str());
 
     let mut body = simple_ai_protocol::build_request_body_with_env(
         protocol,
@@ -401,7 +401,7 @@ async fn summarize_range_rolling(
     let total = segments.len();
     let mut running = String::new();
     for (idx, (s, e)) in segments.into_iter().enumerate() {
-        let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
+        event_callback(AIEvent::Progress(ProgressEvent::new(
             session_id,
             format!("正在压缩上下文…（第 {}/{} 段）", idx + 1, total),
         )));
@@ -608,7 +608,7 @@ pub(super) async fn compact_history(
         }
     };
 
-    let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
+    event_callback(AIEvent::Progress(ProgressEvent::new(
         session_id,
         "正在压缩上下文…".to_string(),
     )));
@@ -653,7 +653,7 @@ pub(super) async fn compact_history(
                     session_id,
                     (start, end),
                     &pre_compact_snapshot,
-                    &summary.trim(),
+                    summary.trim(),
                 ),
                 None => {
                     tracing::warn!(

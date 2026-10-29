@@ -525,7 +525,7 @@ fn execute_ph_list(arguments: &Value, client: &PhClient) -> Result<Value> {
     query_params.push(("select".to_string(), "*".to_string()));
 
     // 过滤器
-    let filters = build_filters(&arguments);
+    let filters = build_filters(arguments);
     for f in &filters {
         query_params.push(("".to_string(), f.clone()));
     }

@@ -126,6 +126,12 @@ pub struct LspManager {
     sessions: HashMap<String, LspSession>,
 }
 
+impl Default for LspManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LspManager {
     pub fn new() -> Self {
         Self {

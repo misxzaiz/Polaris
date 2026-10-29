@@ -137,17 +137,11 @@ impl Tool for BrowserTool {
     async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         // 将 session_id 注入为 agentKey fallback(若未显式提供)
         let mut enriched = args.clone();
-        if enriched.get("agentKey").is_none() && enriched.get("agent_key").is_none() {
-            if !ctx.session_id.trim().is_empty() {
+        if enriched.get("agentKey").is_none() && enriched.get("agent_key").is_none()
+            && !ctx.session_id.trim().is_empty() {
                 enriched["agentKey"] = json!(ctx.session_id);
             }
-        }
-        match BrowserActionDispatcher::from_app_handle()
-            .and_then(|d| {
-                // dispatcher 是同步构造,但 dispatch 是 async;不能在 and_then 里 await
-                // 这里返回 dispatcher 实例,下面 await
-                Ok(d)
-            }) {
+        match BrowserActionDispatcher::from_app_handle().map(|d| d) {
             Ok(dispatcher) => match dispatcher
                 .dispatch(&enriched, BrowserActionSource::SimpleAi)
                 .await

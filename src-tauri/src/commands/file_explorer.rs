@@ -242,7 +242,7 @@ fn is_supported_image_path(path: &Path) -> bool {
         .and_then(|v| v.to_str())
         .map(|ext| {
             let ext = ext.to_ascii_lowercase();
-            IMAGE_EXTENSIONS.iter().any(|candidate| *candidate == ext.as_str())
+            IMAGE_EXTENSIONS.contains(&ext.as_str())
         })
         .unwrap_or(false)
 }
