@@ -9,7 +9,7 @@
  * 3. dynamicEngineList 跨组件作用域 —— 运行时是否可访问
  * 4. normalizeEngines 的 null 安全性
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { pluginRegistry } from './registry'
 import { validateDiscoveredPlugin } from '@/services/pluginDiscoveryService'
 import { isProfileForEngine, resolveTargetEngines } from '@/types/modelProfile'

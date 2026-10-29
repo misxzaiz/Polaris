@@ -3,7 +3,6 @@
 //! 验证:applyConfig 同步链 / setter 回滚 / plugin config 读写
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { create } from 'zustand'
 
 // Mock transport index（含 invoke + listen + currentMode + auth）
 const mockInvoke = vi.fn()

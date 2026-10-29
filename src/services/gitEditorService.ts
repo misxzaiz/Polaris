@@ -76,7 +76,7 @@ export async function getWorkspaceGitStatus(workspacePath: string): Promise<GitR
     workspaceStatusCache.set(workspacePath, status)
     statusCacheTimestamps.set(workspacePath, now)
     return status
-  } catch (err) {
+  } catch {
     workspaceStatusCache.delete(workspacePath)
     statusCacheTimestamps.delete(workspacePath)
     return null

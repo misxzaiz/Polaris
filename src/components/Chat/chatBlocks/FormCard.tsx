@@ -486,6 +486,7 @@ function FormField({ field, uncontrolled, value, controlRef, disabled, onChange 
 
     // 时间类控件：date / time / datetime-local / month / week 都是原生 input，
     // 值一律作为 string 提交（服务端 target 能力按需解析）。min/max/step 透传。
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 仅作类型用（typeof 取字面量元组），运行时不读值
     const temporalTypes = ['date', 'time', 'datetime', 'month', 'week'] as const;
     const nativeInputType: Record<(typeof temporalTypes)[number], string> = {
       date: 'date',

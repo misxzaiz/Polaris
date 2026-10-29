@@ -541,7 +541,7 @@ export function PluginTab() {
         if (statuses.length > 0) {
           usePluginServiceStore.getState().updateServiceStatuses(statuses)
         }
-      } catch (_err) {
+      } catch {
         // 启动失败不阻塞 UI；服务管理面板会显示错误状态
       }
     } catch (error) {
@@ -703,7 +703,7 @@ export function PluginTab() {
       try {
         const serviceStore = usePluginServiceStore.getState()
         serviceStore.clearPluginServiceStatuses(pluginId)
-      } catch (_err) { /* ignore */ }
+      } catch { /* ignore */ }
 
       // 清理插件状态
       resetPluginState(pluginId)
@@ -740,7 +740,7 @@ export function PluginTab() {
       try {
         const serviceStore = usePluginServiceStore.getState()
         serviceStore.clearPluginServiceStatuses(pluginId)
-      } catch (_err) { /* ignore */ }
+      } catch { /* ignore */ }
 
       // 清理插件状态
       resetPluginState(pluginId)

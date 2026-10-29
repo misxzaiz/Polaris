@@ -87,7 +87,7 @@ describe('transport index mobile config', () => {
       disconnect: ReturnType<typeof vi.fn>;
       manualReconnect: ReturnType<typeof vi.fn>;
     }> = [];
-    const createHttpTransport = vi.fn((baseUrl: string) => {
+    const createHttpTransport = vi.fn((_baseUrl: string) => {
       const transport = {
         invoke: vi.fn(),
         listen: vi.fn(async () => () => {}),

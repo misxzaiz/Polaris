@@ -5,6 +5,9 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createLogger } from '@/utils/logger';
+
+const log = createLogger('useWindowSize');
 
 export interface WindowSize {
   width: number;
@@ -58,19 +61,16 @@ export function useWindowSize(options: UseWindowSizeOptions = {}): WindowSizeInf
 
     // [临时诊断] 最小化/恢复验证：记录每次 resize 的原始值、document.hidden 状态、
     // 以及是否触发 isCompact 翻转。确认后删除本块。
-    // eslint-disable-next-line no-console
-    console.log(
-      '[DiagResize]',
-      JSON.stringify({
-        t: new Date().toISOString().slice(17, 23),
-        rawWidth: window.innerWidth,
-        rawHeight: window.innerHeight,
-        hidden: document.hidden,
-        prevWidth: windowSizeRef.current.width,
-        wouldFlipCompact: window.innerWidth < compactThreshold,
-        prevIsCompact: windowSizeRef.current.isCompact,
-      }),
-    );
+    // 走 logger.debug：高频诊断按 AGENTS §六生产不落盘，替代裸 console
+    log.debug('[DiagResize]', {
+      t: new Date().toISOString().slice(17, 23),
+      rawWidth: window.innerWidth,
+      rawHeight: window.innerHeight,
+      hidden: document.hidden,
+      prevWidth: windowSizeRef.current.width,
+      wouldFlipCompact: window.innerWidth < compactThreshold,
+      prevIsCompact: windowSizeRef.current.isCompact,
+    });
 
     // 窗口最小化/隐藏时，WebView2 可能报告极小或 0 宽度，
     // 导致 isCompact 误翻转 → CenterStage 卸载 → BrowserPanel 销毁 WebView → 恢复后重新加载。

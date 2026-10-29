@@ -19,7 +19,7 @@ import { createRemoteSlice } from './remoteSlice'
 import { createStashSlice } from './stashSlice'
 import { createUtilitySlice } from './utilitySlice'
 import type {
-  GitState,
+  
   StatusState,
   StatusActions,
   RemoteState,

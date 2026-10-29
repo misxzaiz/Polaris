@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 // @ts-check
 /**
  * Polaris Web 一键打包脚本（跨平台）

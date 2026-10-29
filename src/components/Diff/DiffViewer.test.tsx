@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { DiffViewer } from './DiffViewer'
 
 // 短内容走全量渲染路径，不会用到 Virtuoso；保留一个无害 mock 以防大文件用例引入。

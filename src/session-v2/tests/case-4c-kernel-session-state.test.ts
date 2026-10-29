@@ -9,10 +9,9 @@
  * 通过注入 FakeKernel（内存替身）隔离，不触碰真实 getKernel 单例。
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import type { SessionState } from '../kernel/types'
-import type { KernelSessionState } from '../hooks/useKernelSessionState'
 
 // mock kernel 单例：返回可控 FakeKernel
 const fakeKernel = {

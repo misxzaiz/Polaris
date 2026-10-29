@@ -18,7 +18,7 @@ import {
   MESSAGE_STATE_TRANSITIONS,
   SESSION_STATE_TRANSITIONS,
 } from '../kernel/types'
-import type { MessageStateName, SessionRuntimeState } from '../kernel/types'
+import type { MessageStateName } from '../kernel/types'
 
 describe('阶段 0：Message 状态机', () => {
   let machine: MessageStateMachine

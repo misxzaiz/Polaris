@@ -31,7 +31,6 @@ vi.mock('@/plugin-system/chatCardRegistry', () => ({ chatCardRegistry: { get: ()
 
 import { handleAIEvent } from './eventHandler'
 import type { ConversationStore } from './types'
-import type { AIEvent } from '@/ai-runtime'
 
 const currentMsg = {
   id: 'msg-1',

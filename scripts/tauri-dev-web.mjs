@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 // @ts-check
 /**
  * tauri:dev 增强版 —— 固定后端 Web 端口为 9829
