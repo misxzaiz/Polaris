@@ -167,7 +167,7 @@ fn is_session_end_payload(json: &Value) -> bool {
 fn forward_chat_event(tx: &mpsc::Sender<Event>, json: Value) {
     match tx.try_send(make_event("chat-event", json.clone())) {
         Ok(()) => {}
-        Err(e) if matches!(e, tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
             if is_session_end_payload(&json) {
                 for _ in 0..40 {
                     std::thread::sleep(std::time::Duration::from_millis(50));

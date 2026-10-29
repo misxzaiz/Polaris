@@ -434,7 +434,7 @@ impl FailedCallCollector {
             session_id: entry.session_id.clone(),
             engine: entry.engine.clone(),
             error_kind: kind,
-            error_message: entry.error.clone().unwrap_or_else(String::new),
+            error_message: entry.error.clone().unwrap_or_default(),
             tried: entry.tried.clone(),
             failover_to,
             attempt: entry.attempt,

@@ -217,6 +217,7 @@ impl UsageDb {
     }
 
     /// 记录一次用量
+    #[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
     pub fn log_usage(
         &self,
         model: &str,
@@ -602,6 +603,7 @@ pub fn get_usage_db() -> Option<&'static UsageDb> {
 }
 
 /// 全局快捷记录用量（供代理 handler 调用，无需 AppState 引用）
+#[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
 pub fn record_usage(
     model: &str,
     request_model: Option<&str>,

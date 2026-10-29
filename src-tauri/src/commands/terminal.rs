@@ -146,6 +146,7 @@ impl TerminalManager {
 
     /// 创建新的终端会话
     #[cfg(not(target_os = "android"))]
+    #[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
     pub fn create_session(
         &self,
         event_sink: TerminalEventSink,
@@ -416,6 +417,7 @@ impl TerminalManager {
 /// 创建终端会话
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
 pub fn terminal_create(
     app_handle: AppHandle,
     state: tauri::State<AppState>,

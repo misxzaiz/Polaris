@@ -50,6 +50,9 @@ pub enum ServiceType {
 }
 
 impl ServiceType {
+    // 保留固有方法而非实现 FromStr：本解析是宽松语义（未知值回落 Worker），
+    // 与 FromStr 的 Result 失败语义不符（clippy::should_implement_trait）
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "http" => ServiceType::Http,

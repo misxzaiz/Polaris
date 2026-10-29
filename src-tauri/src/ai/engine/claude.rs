@@ -393,6 +393,7 @@ impl ClaudeEngine {
     }
 
     /// 构建命令
+    #[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
     fn build_command(
         &self,
         message: &str,

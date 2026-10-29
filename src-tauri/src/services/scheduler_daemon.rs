@@ -117,7 +117,9 @@ impl SchedulerDaemon {
         let workspace_path = self.workspace_path.clone();
 
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
-        self.stop_signal.lock().ok().map(|mut g| *g = Some(stop_tx));
+        if let Ok(mut g) = self.stop_signal.lock() {
+            *g = Some(stop_tx);
+        }
 
         tracing::info!("[SchedulerDaemon] 启动守护进程(桌面)，检查间隔: {}秒", CHECK_INTERVAL_SECS);
 
@@ -156,7 +158,9 @@ impl SchedulerDaemon {
         let event_broadcast = executor_ctx.event_broadcast.clone();
 
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
-        self.stop_signal.lock().ok().map(|mut g| *g = Some(stop_tx));
+        if let Ok(mut g) = self.stop_signal.lock() {
+            *g = Some(stop_tx);
+        }
 
         tracing::info!("[SchedulerDaemon] 启动守护进程 (web mode)，检查间隔: {}秒", CHECK_INTERVAL_SECS);
 
@@ -233,6 +237,7 @@ impl SchedulerDaemon {
 /// 结束（如 `check_and_execute_due_tasks` panic 导致 task 被 drop、`stop_rx` 被
 /// 丢弃），则重置为 false 并告警。否则 `running` 永久卡在 true，配合外部持有的
 /// 文件锁会形成「锁定但无人轮询」的僵尸状态，任务将永远不再触发。
+#[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
 async fn run_daemon_loop(
     running: Arc<AtomicBool>,
     mut stop_rx: tokio::sync::oneshot::Receiver<()>,

@@ -1455,8 +1455,7 @@ pub async fn start_chat_inner(
     // 切入点 C（async error + 首字超时）在 P2 接入 claude.rs。
     // ──────────────────────────────────────────────────────
     let route_choice = resolve_active_provider_group(state, options.provider_group_id.as_deref()).await;
-    let max_attempts: usize = if route_choice.is_some() {
-        let (g, _) = route_choice.as_ref().unwrap();
+    let max_attempts: usize = if let Some((g, _)) = route_choice.as_ref() {
         g.max_failover_attempts.max(1) as usize
     } else {
         1

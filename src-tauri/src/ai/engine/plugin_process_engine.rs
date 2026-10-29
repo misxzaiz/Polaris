@@ -363,6 +363,7 @@ fn build_start_params(
     ///
     /// `is_continue` 标志区分 start_session / continue_session 请求方法。
     /// `resume_token` 是续聊令牌，由适配器在上一轮会话结束时返回。
+    #[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
     fn spawn_event_reader(
         &self,
         mut child: Child,

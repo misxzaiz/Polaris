@@ -307,6 +307,7 @@ impl IntegrationManager {
     }
 
     /// 处理消息（统一入口）
+    #[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
     async fn handle_message(
         msg: IntegrationMessage,
         #[cfg(feature = "tauri-app")]

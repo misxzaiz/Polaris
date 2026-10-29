@@ -53,12 +53,15 @@ impl WorkspaceState {
     }
 }
 
+/// 状态变更回调类型（type_complexity：字段类型过长拆出别名）
+type StatusCallback = Arc<dyn Fn(&IndexStatus) + Send + Sync>;
+
 /// 全局服务（线程安全；clone 为 cheap Arc）。
 #[derive(Clone, Default)]
 pub struct IndexService {
     inner: Arc<Mutex<HashMap<PathBuf, Arc<WorkspaceState>>>>,
     /// 状态变更回调（前端事件桥接，由 lib.rs 注入）
-    on_status_change: Arc<RwLock<Option<Arc<dyn Fn(&IndexStatus) + Send + Sync>>>>,
+    on_status_change: Arc<RwLock<Option<StatusCallback>>>,
 }
 
 impl IndexService {

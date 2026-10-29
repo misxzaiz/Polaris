@@ -1479,7 +1479,7 @@ fn is_downloadable_url(url: &str) -> bool {
 /// 从 URL 提取展示用文件名（不含扩展名校验、不做安全性清洗）。
 fn extract_filename_from_url(url: &Url) -> String {
     url.path_segments()
-        .and_then(|segs| segs.filter(|s| !s.is_empty()).next_back())
+        .and_then(|mut segs| segs.rfind(|s| !s.is_empty()))
         .map(|s| s.to_string())
         .unwrap_or_default()
 }
@@ -2241,6 +2241,7 @@ pub async fn browser_wait(
 // ── browser_scroll ────────────────────────────────────────────────────────
 /// 滚动页面到指定位置、元素或方向
 #[cfg(feature = "tauri-app")]
+#[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
 pub async fn browser_scroll_with_app(
     app: &AppHandle,
     label: &str,
@@ -2349,6 +2350,7 @@ fn build_scroll_script(
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
 pub async fn browser_scroll(
     app: AppHandle,
     label: String,
@@ -2615,11 +2617,9 @@ fn build_type_char_script(ch: char) -> String {
         '\t' => "\\t",
         c => {
             let s = c.to_string();
-            if s.contains('\'') || s.contains('\\') {
-                Box::leak(s.into_boxed_str())
-            } else {
-                Box::leak(s.into_boxed_str())
-            }
+            // 原有的 contains 分支是死代码：'\'' 与 '\\' 已被上方显式臂接管，
+            // 单字符 to_string() 不可能再包含它们，两分支内容也完全一致
+            Box::leak(s.into_boxed_str())
         }
     };
 

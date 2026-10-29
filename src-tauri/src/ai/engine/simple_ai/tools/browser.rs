@@ -141,7 +141,7 @@ impl Tool for BrowserTool {
             && !ctx.session_id.trim().is_empty() {
                 enriched["agentKey"] = json!(ctx.session_id);
             }
-        match BrowserActionDispatcher::from_app_handle().map(|d| d) {
+        match BrowserActionDispatcher::from_app_handle() {
             Ok(dispatcher) => match dispatcher
                 .dispatch(&enriched, BrowserActionSource::SimpleAi)
                 .await

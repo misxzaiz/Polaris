@@ -253,6 +253,7 @@ pub async fn agnes_generate_image(
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
 pub async fn agnes_create_video(
     window: Window,
     prompt: String,

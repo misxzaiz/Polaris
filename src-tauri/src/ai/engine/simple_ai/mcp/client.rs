@@ -161,7 +161,6 @@ impl McpClient {
             .map_err(|_| {
                 // 超时时清理 pending，避免 sender 泄漏。
                 let pending = Arc::clone(&self.pending);
-                let id = id;
                 tokio::spawn(async move {
                     pending.lock().await.remove(&id);
                 });

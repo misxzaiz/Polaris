@@ -185,7 +185,7 @@ pub fn mute_control_script(mute: bool) -> String {
 
 /// 网络请求明细脚本：通过全局变量注入 limit，控制返回条数（防上下文膨胀）
 pub fn network_requests_script(limit: Option<usize>) -> String {
-    let limit_val = limit.unwrap_or(100).max(1).min(1000);
+    let limit_val = limit.unwrap_or(100).clamp(1, 1000);
     format!("(() => {{\nwindow.__POLARIS_NETWORK_LIMIT__ = {limit_val};\n{})()", NETWORK_REQUESTS_SCRIPT)
 }
 
@@ -198,7 +198,7 @@ pub fn storage_script(body: &str, args: &serde_json::Value) -> String {
 
 /// 控制台读取脚本：注入 { limit, clear } 到 window.__POLARIS_CONSOLE_ARGS__ 后执行。
 pub fn console_read_script(limit: Option<usize>, clear: bool) -> String {
-    let limit_val = limit.unwrap_or(100).max(1).min(500);
+    let limit_val = limit.unwrap_or(100).clamp(1, 500);
     format!("(() => {{\nwindow.__POLARIS_CONSOLE_ARGS__ = {{ limit: {limit_val}, clear: {clear} }};\n{CONSOLE_READ_SCRIPT}\n}})()")
 }
 

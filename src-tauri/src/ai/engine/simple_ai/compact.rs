@@ -365,6 +365,7 @@ async fn request_summary(
 
 /// 滚动分段摘要：区间估算不超预算 → 单次摘要（与现状一致）；超预算 → 按 turn
 /// 边界分段，逐段摘要并滚动带入上一段摘要合并，每次请求只发一段（永不撞窗口）。
+#[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
 async fn summarize_range_rolling(
     messages: &[Value],
     start: usize,

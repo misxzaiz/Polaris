@@ -182,11 +182,11 @@ fn parse_patch(patch: &str) -> Result<Vec<FileOp>, String> {
             let mut cur: Option<Chunk> = None;
             while i < lines.len() && !is_file_marker(lines[i]) {
                 let l = lines[i];
-                if l.starts_with("@@") {
+                if let Some(hunk_header) = l.strip_prefix("@@") {
                     if let Some(c) = cur.take() {
                         chunks.push(c);
                     }
-                    let ctx = l[2..].trim();
+                    let ctx = hunk_header.trim();
                     cur = Some(Chunk {
                         context: if ctx.is_empty() { None } else { Some(ctx.to_string()) },
                         old_lines: Vec::new(),

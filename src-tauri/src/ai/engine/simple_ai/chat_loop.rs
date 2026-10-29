@@ -60,6 +60,7 @@ const STREAM_IDLE_TIMEOUT_SECS: u64 = 300;
 const DEFAULT_MAX_TOOL_ROUNDS: u64 = 0;
 
 /// 发起 OpenAI Chat Completions 流式请求，执行工具调用循环
+#[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
 pub(super) async fn run_chat_loop(
     session_id: &str,
     messages: &mut Vec<Value>,
@@ -354,7 +355,7 @@ pub(super) async fn run_chat_loop(
                     // 防御：changed() 在 sender 被替换/drop 时会返回 Err(RecvError)，
                     // 此时 channel 已无 observer，应视为非中断信号，继续等待流。
                     // 仅当 changed() 返回 Ok(true) 时才视为真正的中断请求。
-                    if *abort_rx.borrow() == true {
+                    if *abort_rx.borrow() {
                         tracing::warn!(
                             "[SimpleAI] [DIAG] abort_rx 被置为 true, 提前结束, session={session_id}"
                         );

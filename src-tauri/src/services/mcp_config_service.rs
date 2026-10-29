@@ -1063,11 +1063,7 @@ fn build_mcp_server_args(
 /// issues with Node.js `child_process.spawn()` and some CLI tools. For paths
 /// under MAX_PATH (260 chars), the prefix is unnecessary.
 fn strip_unc_prefix(s: &str) -> String {
-    if s.starts_with(r"\\?\") {
-        s[4..].to_string()
-    } else {
-        s.to_string()
-    }
+    s.strip_prefix(r"\\?\").unwrap_or(s).to_string()
 }
 
 fn resolve_mcp_contribution_binary(
@@ -1098,6 +1094,7 @@ fn resolve_mcp_contribution_binary(
     })
 }
 
+#[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
 fn resolve_mcp_executable_path(
     resource_dir: Option<PathBuf>,
     app_root: PathBuf,

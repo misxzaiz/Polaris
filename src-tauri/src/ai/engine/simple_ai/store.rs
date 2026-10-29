@@ -15,7 +15,7 @@
  */
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -49,7 +49,7 @@ impl SessionRecord {
 }
 
 /// 会话存档根目录：`<DataRoot>/simple-ai/sessions`
-pub(crate) fn sessions_root(data_root: &PathBuf) -> PathBuf {
+pub(crate) fn sessions_root(data_root: &Path) -> PathBuf {
     data_root.join(SESSIONS_DIR_NAME)
 }
 

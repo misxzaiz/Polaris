@@ -904,7 +904,7 @@ impl AppState {
             }
             let temp = path.with_extension("json.tmp");
             let content = serde_json::to_string_pretty(&tasks)
-                .map_err(|e| std::io::Error::other(e))?;
+                .map_err(std::io::Error::other)?;
             std::fs::write(&temp, content)?;
             std::fs::rename(&temp, &path)?;
             Ok(())

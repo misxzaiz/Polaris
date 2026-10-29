@@ -72,6 +72,7 @@ pub struct FormHold {
 /// `mode`：`dispatch`（默认，收集后转发给目标能力）/ `collect`
 /// （仅收集参数，不转发）。collect 模式不做白名单校验——字段值只回喂 AI
 /// 自行处理（如启动项目、创建文件所需的参数收集）。
+#[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
 pub fn build_hold(
     form_id: &str,
     session_id: &str,

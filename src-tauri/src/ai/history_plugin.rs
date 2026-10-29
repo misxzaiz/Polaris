@@ -199,7 +199,7 @@ impl PluginHistoryProvider {
     ///
     /// OMP 风格工具结果在 role=toolResult 消息的 content 数组第一个 text 块中。
     fn extract_tool_result_from_content(content: &serde_json::Value) -> Option<ToolResultInfo> {
-        let Some(arr) = content.as_array() else { return None };
+        let arr = content.as_array()?;
         let mut tool_id = String::new();
         let mut tool_name = None;
         let mut output = None;

@@ -207,6 +207,7 @@ impl PluginEngineRunner {
     }
 
     /// 构建 RPC 命令
+    #[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
     fn build_command(
         &self,
         session_id: &str,
@@ -296,37 +297,37 @@ impl PluginEngineRunner {
 
         // MCP 桥接：根据消费策略注入 CLI 参数
         // 受 mcp_enabled 门控：关闭时注入 --no-extensions 但跳过 --extension
-        match (self.config.mcp_consumption, self.config.mcp_enabled) {
-            (McpConsumptionStrategy::PiExtension, _) => {
-                // Pi/OMP 风格：始终禁用自动扩展发现，显式注入桥接扩展
-                cmd.arg("--no-extensions");
-                argv.push("--no-extensions".into());
-                if self.config.mcp_enabled {
-                    if let Some(dir) = bridge_dir {
-                        if dir.exists() {
-                            cmd.arg("--extension").arg(dir);
-                            argv.push("--extension".into());
-                            argv.push(dir.to_string_lossy().to_string());
-                            tracing::info!(
-                                "[PluginEngine:{}] 注入 MCP 桥接 Extension: {}",
-                                self.config.id, dir.display()
-                            );
-                        } else {
-                            tracing::warn!(
-                                "[PluginEngine:{}] PiExtension 策略但桥接目录不存在，跳过 --extension",
-                                self.config.id
-                            );
-                        }
+        // McpServers/McpConfigPath/None：无需 CLI 参数注入（不命中即跳过）
+        // 单臂 + 通配的 match 改 if let（clippy::single_match），语义不变
+        if let (McpConsumptionStrategy::PiExtension, _) =
+            (self.config.mcp_consumption, self.config.mcp_enabled)
+        {
+            // Pi/OMP 风格：始终禁用自动扩展发现，显式注入桥接扩展
+            cmd.arg("--no-extensions");
+            argv.push("--no-extensions".into());
+            if self.config.mcp_enabled {
+                if let Some(dir) = bridge_dir {
+                    if dir.exists() {
+                        cmd.arg("--extension").arg(dir);
+                        argv.push("--extension".into());
+                        argv.push(dir.to_string_lossy().to_string());
+                        tracing::info!(
+                            "[PluginEngine:{}] 注入 MCP 桥接 Extension: {}",
+                            self.config.id, dir.display()
+                        );
+                    } else {
+                        tracing::warn!(
+                            "[PluginEngine:{}] PiExtension 策略但桥接目录不存在，跳过 --extension",
+                            self.config.id
+                        );
                     }
-                } else {
-                    tracing::info!(
-                        "[PluginEngine:{}] mcp_enabled=false，注入 --no-extensions 但不注入 --extension",
-                        self.config.id
-                    );
                 }
+            } else {
+                tracing::info!(
+                    "[PluginEngine:{}] mcp_enabled=false，注入 --no-extensions 但不注入 --extension",
+                    self.config.id
+                );
             }
-            // McpServers/McpConfigPath/None：无需 CLI 参数注入
-            _ => {}
         }
 
         // 系统提示词：传 --system-prompt / --append-system-prompt 给 CLI（与 Pi 引擎对齐）。
