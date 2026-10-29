@@ -156,10 +156,6 @@ export default defineConfig(async () => ({
           if (id.includes('@tauri-apps/api')) {
             return 'tauri';
           }
-          // Lodash and other utility libraries
-          if (id.includes('lodash') || id.includes('clsx') || id.includes('class-variance-authority')) {
-            return 'lodash';
-          }
         },
         // Set separate CSS file for each chunk
         assetFileNames: (assetInfo) => {
