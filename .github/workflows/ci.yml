@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
 
 jobs:
   commitlint:
@@ -49,7 +49,6 @@ jobs:
 
       - name: Run security audit
         run: pnpm run security:audit
-        continue-on-error: true
 
   lint:
     name: Lint
@@ -137,6 +136,42 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+  rust-gate:
+    name: Rust Gate
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 与 release-web.yml 一致：web-only 构建无需 webkit2gtk，仅 libssl-dev（git2/openssl 编译用）
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # AGENTS.md §3.4「发布前必跑」的机器门槛：web-only 门控破坏在此拦截（阻塞）
+      - name: Check web-only build (no default features)
+        working-directory: src-tauri
+        run: cargo check --no-default-features --bin polaris-web --bin polaris-mcp
+
+      # clippy 门槛形态（AGENTS.md §八：-D warnings -A dead_code）；
+      # 存量 warning 清理完成前先 advisory，清零后移除 continue-on-error 转阻塞
+      - name: Clippy (advisory)
+        working-directory: src-tauri
+        run: cargo clippy --lib -- -D warnings -A dead_code
+        continue-on-error: true
 
   tauri-build:
     name: Tauri Build Check
