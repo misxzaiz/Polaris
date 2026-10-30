@@ -4,6 +4,7 @@ import { VALID_PLUGIN_ICONS as SCHEMA_ICONS } from '@/plugin-system/schema'
 import {
   applyPluginUpdate,
   checkPluginUpdate,
+  devLinkPlugin,
   discoverInstalledPlugins,
   installPluginPackage,
   installRemotePlugin,
@@ -524,6 +525,79 @@ describe('pluginDiscoveryService', () => {
       const result = await uninstallPluginWithCleanup('D:\\plugins\\demo', 'example.demo-plugin')
       expect(result.success).toBe(false)
       expect(result.error).toContain('进程')
+    })
+  })
+
+  describe('dev-link 源码直连（needs/001）', () => {
+    it('parses the host-stamped dev field into PluginDevLinkInfo', () => {
+      const plugin = normalizeDiscoveredPlugin({
+        id: 'example.dev',
+        name: 'Example Dev',
+        version: '0.1.0',
+        source: { kind: 'user' },
+        installPath: 'C:\\plugins\\example.dev',
+        dev: { sourcePath: 'D:\\space\\base\\Polaris-plugin\\plugins\\example.dev' },
+      })
+
+      expect(plugin?.dev).toEqual({
+        sourcePath: 'D:\\space\\base\\Polaris-plugin\\plugins\\example.dev',
+      })
+    })
+
+    it('keeps dev=false/undefined for normally installed plugins', () => {
+      const plugin = normalizeDiscoveredPlugin({
+        id: 'example.normal',
+        name: 'Example Normal',
+        version: '0.1.0',
+        source: { kind: 'user' },
+        installPath: 'C:\\plugins\\example.normal',
+      })
+
+      expect(plugin?.dev).toBeUndefined()
+    })
+
+    it('drops a malformed dev stamp instead of failing the manifest', () => {
+      const plugin = normalizeDiscoveredPlugin({
+        id: 'example.dev',
+        name: 'Example Dev',
+        version: '0.1.0',
+        source: { kind: 'user' },
+        installPath: 'C:\\plugins\\example.dev',
+        dev: { unrelated: true },
+      })
+
+      expect(plugin?.dev).toBeUndefined()
+    })
+
+    it('rejects dev stamps with unexpected inner keys (deny_unknown_fields on the stamp)', () => {
+      const result = validateDiscoveredPlugin({
+        id: 'example.dev',
+        name: 'Example Dev',
+        version: '0.1.0',
+        source: { kind: 'user' },
+        dev: { sourcePath: 'D:\\src', sneaky: true },
+      })
+
+      // 嵌套 .strict() 的 unrecognized_keys 会以最内层未知键命名，但整个 manifest
+      // 依然 fail fast 拒绝（而非静默吞掉 sneaky）
+      expect(result.plugin).toBeNull()
+      expect(result.errors[0]).toContain('unrecognized top-level field: sneaky')
+    })
+
+    it('calls the backend dev_link action with sourcePath', async () => {
+      invokeMock.mockResolvedValueOnce(dispatchOk({ success: true, message: '已注册开发插件' }))
+
+      const result = await devLinkPlugin('D:\\space\\base\\Polaris-plugin\\plugins\\needs')
+      expect(result).toEqual({ success: true, message: '已注册开发插件' })
+      expect(invokeMock).toHaveBeenCalledWith('router_dispatch', {
+        req: {
+          target: 'cap.pluginDiscovery',
+          payload: {
+            action: 'dev_link',
+            sourcePath: 'D:\\space\\base\\Polaris-plugin\\plugins\\needs',
+          },
+        },
+      })
     })
   })
 })

@@ -176,6 +176,7 @@ impl McpCapability {
             mcp_enabled: true,
             mcp_servers: Default::default(),
             mcp_tool_gates: Default::default(),
+            dev_link: None,
         });
         entry.mcp_tool_gates = gates.clone();
         service.save(&states).map_err(|e| format!("写 state.json 失败: {e}"))?;
@@ -465,6 +466,7 @@ impl McpCapability {
             mcp_enabled: true,
             mcp_servers: Default::default(),
             mcp_tool_gates: Default::default(),
+            dev_link: None,
         });
 
         // 有 tools 列表 → per-tool 门（更新 state.json + 全局镜像）

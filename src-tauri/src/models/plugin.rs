@@ -79,8 +79,23 @@ pub struct DiscoveredPluginManifest {
     pub permissions: PluginManifestPermissions,
     #[serde(default, skip_serializing_if = "PluginOriginMetadata::is_empty")]
     pub origin: PluginOriginMetadata,
+    /// dev-link 直连标记（needs/001）：None = 正式安装；Some = 源码直连（更新短路、
+    /// 卸载只删链接本体）。以 state.json 为唯一权威，发现扫描时回读盖戳。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dev: Option<PluginDevLinkMetadata>,
     pub source: PluginManifestSource,
     pub install_path: String,
+}
+
+/// dev-link 直连插件元数据（needs/001 源码直连模式）
+///
+/// 权威数据在 `plugins/state.json` 的 `<pluginId>.devLink`；发现扫描回读后
+/// 盖戳到 `DiscoveredPluginManifest.dev`，前端据此渲染 DEV 徽标并调整卸载文案。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginDevLinkMetadata {
+    /// 源码目录绝对路径（junction/符号链接指向的目标，注册时已 canonicalize）
+    pub source_path: String,
 }
 
 /// 插件来源链接元数据
@@ -580,6 +595,7 @@ impl PluginManifestFile {
             contributes: self.contributes,
             permissions: self.permissions,
             origin: self.origin,
+            dev: None,
             source,
             install_path: install_path.to_string_lossy().to_string(),
         }
@@ -599,6 +615,10 @@ pub struct PluginUpdateCheckResult {
     pub source_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub download_url: Option<String>,
+    /// dev-link 直连插件跳过标记（needs/001）："dev-link" = 源码直连无更新概念，
+    /// checked=false 且无 error，前端据此显示「源码直连无需检查」而非「检查失败」。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skipped: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }

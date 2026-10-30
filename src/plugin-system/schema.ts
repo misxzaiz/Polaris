@@ -66,6 +66,8 @@ export const discoveredManifestShapeSchema = z
     compat: z.record(z.string(), z.unknown()).optional(),
     // 宿主盖戳字段（适配器产出不得自带，由容许其存在以回反序列化发现结果）
     source: z.record(z.string(), z.unknown()).optional(),
+    // dev-link 直连标记（needs/001，宿主盖戳）：{ sourcePath: 源码目录 }
+    dev: z.object({ sourcePath: z.string().min(1) }).strict().optional(),
     installPath: z.string().optional(),
   })
   .strict()

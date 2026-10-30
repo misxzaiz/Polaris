@@ -1302,6 +1302,7 @@ mod tests {
             },
             permissions: PluginManifestPermissions::default(),
             origin: PluginOriginMetadata::default(),
+            dev: None,
             source: PluginManifestSource {
                 kind: PluginManifestSourceKind::User,
                 workspace_path: None,
@@ -1646,6 +1647,7 @@ mod tests {
                 mcp_enabled: false,
                 mcp_servers: Default::default(),
                 mcp_tool_gates: Default::default(),
+                dev_link: None,
             },
         );
 
@@ -1668,6 +1670,7 @@ mod tests {
                     PluginMcpServerState { enabled: false },
                 )]),
                 mcp_tool_gates: Default::default(),
+                dev_link: None,
             },
         );
 
@@ -1693,6 +1696,7 @@ mod tests {
                 mcp_enabled: true,
                 mcp_servers: Default::default(),
                 mcp_tool_gates: Default::default(),
+                dev_link: None,
             },
         );
 

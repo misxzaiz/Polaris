@@ -125,6 +125,7 @@ impl Capability for AppAutolaunchCapability {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contracts::Source;
     use crate::contracts::validate_describe;
     use std::sync::Mutex as StdMutex;
 
@@ -202,6 +203,16 @@ mod tests {
 
         fn plugin_config(&self) -> Result<Value, String> {
             Ok(Value::Null)
+        }
+    }
+
+    /// 意图 mock：固定返回 configured（2026-10-31 修复：12a198ed 提交的测试引用了
+    /// 未定义的 FixedIntent，整个 lib test 目标无法编译）
+    struct FixedIntent(bool);
+
+    impl AutolaunchIntent for FixedIntent {
+        fn configured(&self) -> Result<bool, String> {
+            Ok(self.0)
         }
     }
 

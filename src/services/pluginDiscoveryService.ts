@@ -21,6 +21,7 @@ import type {
   PluginToolProviderContribution,
   PluginViewContribution,
   PolarisPluginManifest,
+  PluginDevLinkInfo,
 } from '@/plugin-system/types'
 // 契约单源（阶段 1.1）：枚举常量与 strict 校验只从 schema.ts 引入，禁止本文件再手写副本
 import {
@@ -74,6 +75,8 @@ export interface PluginUpdateCheckResult {
   checked: boolean
   sourceUrl?: string
   downloadUrl?: string
+  /** "dev-link" = 源码直连插件跳过了更新检查（needs/001），非失败 */
+  skipped?: string
   error?: string
 }
 
@@ -240,6 +243,13 @@ function normalizeOrigin(value: unknown): PluginOriginMetadata | undefined {
     downloadUrl: asString(value.downloadUrl),
   }
   return origin.repository || origin.homepage || origin.updateUrl || origin.downloadUrl ? origin : undefined
+}
+
+/** dev-link 直连标记（宿主盖戳）：缺 sourcePath 视为未标记 */
+function normalizeDevLink(value: unknown): PluginDevLinkInfo | undefined {
+  if (!isRecord(value)) return undefined
+  const sourcePath = asString(value.sourcePath)
+  return sourcePath ? { sourcePath } : undefined
 }
 
 function normalizePanel(value: unknown): PluginPanelContribution | undefined {
@@ -517,6 +527,7 @@ export function validateDiscoveredPlugin(raw: unknown): {
       permissions: normalizePermissions(raw.permissions),
       origin: normalizeOrigin(raw.origin),
       source,
+      dev: normalizeDevLink(raw.dev),
       installPath: asString(raw.installPath),
     },
     errors,
@@ -595,6 +606,17 @@ export async function installRemotePlugin(
     scope,
     workspacePath,
   })) as unknown as PluginOperationResult
+}
+
+/**
+ * dev-link 注册（needs/001 源码直连模式）
+ *
+ * 把本机插件源码目录注册为 dev 插件：宿主在安装目录建 junction 指向源码，
+ * 不复制文件；改 mcp/server.js 等源码后新会话即生效，全程无需 pack/重装。
+ * dev 插件的更新检查/应用更新被宿主短路，卸载只移除链接、保留源码目录。
+ */
+export async function devLinkPlugin(sourcePath: string): Promise<PluginOperationResult> {
+  return (await dispatchPluginDiscovery('dev_link', { sourcePath })) as unknown as PluginOperationResult
 }
 
 export async function uninstallLocalPlugin(

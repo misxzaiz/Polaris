@@ -32,6 +32,9 @@
 //!   → PluginOperationResult
 //! - `install_remote`       `{ "action": "install_remote", "sourceUrl": string, ... }`  (async)
 //!   → PluginOperationResult
+//! - `dev_link`             `{ "action": "dev_link", "sourcePath": string }`
+//!   → PluginOperationResult（needs/001 源码直连模式：junction 指向源码目录 +
+//!   state.json devLink 标记；dev 插件更新检查/应用更新短路，卸载只摘链接本体）
 //! - `uninstall_local`      `{ "action": "uninstall_local", "installPath": string, ... }`
 //!   → PluginOperationResult
 //! - `uninstall_with_cleanup` `{ "action": "uninstall_with_cleanup", "installPath": string,
@@ -73,6 +76,7 @@ pub const PLUGIN_DISCOVERY_ACTIONS: &[&str] = &[
     "install_local",
     "install_package",
     "install_remote",
+    "dev_link",
     "uninstall_local",
     "uninstall_with_cleanup",
     "force_uninstall",
@@ -132,6 +136,7 @@ impl PluginDiscoveryCapability {
                 "install_local": { "params": { "sourcePath": "string（必填）", "scope": "\"user\"|\"project\"?（缺省 user）", "workspacePath": "string?" }, "returns": "PluginOperationResult" },
                 "install_package": { "params": { "packagePath": "string（必填）", "scope": "\"user\"|\"project\"?（缺省 user）", "workspacePath": "string?" }, "returns": "PluginOperationResult" },
                 "install_remote": { "params": { "sourceUrl": "string（必填）", "scope": "\"user\"|\"project\"?（缺省 user）", "workspacePath": "string?" }, "returns": "PluginOperationResult（异步安装）" },
+                "dev_link": { "params": { "sourcePath": "string（必填）——含合法 plugin.json 的插件源码目录" }, "returns": "PluginOperationResult（needs/001 源码直连：建 junction 指向源码目录 + state.json 写 devLink 标记；改源码新会话即生效，无需打包重装）" },
                 "uninstall_local": { "params": { "installPath": "string（必填）", "workspacePath": "string?" }, "returns": "PluginOperationResult" },
                 "uninstall_with_cleanup": { "params": { "installPath": "string（必填）", "pluginId": "string（必填）——用于先停该插件后台服务", "workspacePath": "string?" }, "returns": "PluginOperationResult（先停 PluginServiceManager 服务再杀进程删目录）" },
                 "force_uninstall": { "params": { "installPath": "string（必填）", "workspacePath": "string?" }, "returns": "PluginOperationResult" },
@@ -376,6 +381,25 @@ impl Capability for PluginDiscoveryCapability {
                     serde_json::to_value(result).map_err(|e| e.to_string())
                 })
             }
+            "dev_link" => {
+                // needs/001 源码直连：junction 指向源码目录，不复制文件。
+                // Remote 写动作默认 deny（不在只读放行名单），仅本机开发者通道。
+                let config_dir = self.plugin_config_dir().map_err(map_err)?;
+                let source_path = Self::require_string(&params, "sourcePath")?;
+                let result =
+                    PluginService::dev_link_plugin(&config_dir, Path::new(source_path))
+                        .map_err(map_err)?;
+                if result.success {
+                    let plugin_id = Self::plugin_id_from_path_or_unknown(source_path);
+                    emit_plugin_lifecycle(
+                        ctx,
+                        &plugin_id,
+                        "installed",
+                        Some(json!({ "installPath": source_path, "devLink": true })),
+                    );
+                }
+                serde_json::to_value(result).map_err(|e| e.to_string())
+            }
             "uninstall_local" => {
                 let config_dir = self.plugin_config_dir().map_err(map_err)?;
                 let workspace_path = Self::workspace_path(&params);
@@ -448,10 +472,13 @@ impl Capability for PluginDiscoveryCapability {
                 serde_json::to_value(result).map_err(|e| e.to_string())
             }
             "check_update" => {
+                let config_dir = self.plugin_config_dir().map_err(map_err)?;
                 let install_path = Self::require_string(&params, "installPath")?.to_string();
                 Self::block_on_async(async move {
+                    // dev 插件短路在 service 层（checked=false + skipped=dev-link）
                     serde_json::to_value(
-                        PluginService::check_local_plugin_update(Path::new(&install_path)).await,
+                        PluginService::check_local_plugin_update(&config_dir, Path::new(&install_path))
+                            .await,
                     )
                     .map_err(|e| e.to_string())
                 })
@@ -461,6 +488,15 @@ impl Capability for PluginDiscoveryCapability {
                 let workspace_path = Self::workspace_path(&params);
                 let install_path = Self::require_string(&params, "installPath")?.to_string();
                 let config_dir = config_dir.map_err(map_err)?;
+                // needs/001 硬门：dev 插件在停服务/下载/替换动作之前短路，
+                // 后续任何路径都不会触碰 junction 指向的源码目录
+                if PluginService::read_dev_link(&config_dir, Path::new(&install_path)).is_some() {
+                    return Ok(json!({
+                        "success": true,
+                        "message": "dev 插件为源码直连（dev-link），已跳过更新；在源码目录更新代码后新会话自动生效",
+                        "skipped": "dev-link",
+                    }));
+                }
                 Self::block_on_async(async move {
                     // P1-5（2026-10-24 审计）：更新前先停该插件的全部后台服务——
                     // 此前直接 rename 换目录，Windows 下运行中进程持有旧文件，

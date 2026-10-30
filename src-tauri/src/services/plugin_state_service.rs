@@ -75,6 +75,7 @@ mod tests {
                 mcp_enabled: true,
                 mcp_servers: Default::default(),
                 mcp_tool_gates: Default::default(),
+                dev_link: None,
             },
         );
 

@@ -11,12 +11,14 @@ import {
   BookOpen,
   Copy,
   Check,
+  Link2,
 } from 'lucide-react'
 import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
 import { PluginConfigForm } from './PluginConfigForm'
 import {
   applyPluginUpdate,
   checkPluginUpdate,
+  devLinkPlugin,
   discoverInstalledPlugins,
   forceUninstallPlugin,
   getPluginInstallLocations,
@@ -682,14 +684,20 @@ export function PluginTab() {
 
   const handleUninstallLocalPlugin = useCallback(async (pluginId: string, installPath?: string) => {
     if (!installPath) return
+    // dev-link 直连插件（needs/001）：卸载只移除 junction、源码目录保留（宿主分支保证）
+    const isDev = plugins.find((p) => p.id === pluginId)?.dev != null
     const confirmed = window.confirm(t('plugins.uninstallConfirm', {
-      defaultValue: 'Uninstall plugin {{pluginId}}? This removes its installed directory and kills all associated processes.',
+      defaultValue: isDev
+        ? 'Remove dev plugin {{pluginId}}? Only the link is removed — the source directory is kept untouched.'
+        : 'Uninstall plugin {{pluginId}}? This removes its installed directory and kills all associated processes.',
       pluginId,
     }))
     if (!confirmed) return
 
     setPluginOperationLoading(true)
-    setPluginOperationMessage(t('plugins.uninstalling', { defaultValue: 'Stopping processes and removing plugin...' }))
+    setPluginOperationMessage(isDev
+      ? t('plugins.uninstallingDev', { defaultValue: 'Removing dev link (source directory preserved)...' })
+      : t('plugins.uninstalling', { defaultValue: 'Stopping processes and removing plugin...' }))
 
     try {
       // 使用增强卸载：后端统一处理停服务、杀进程、删目录
@@ -716,7 +724,40 @@ export function PluginTab() {
     } finally {
       setPluginOperationLoading(false)
     }
-  }, [currentWorkspacePath, refreshInstallLocations, refreshInstalledPlugins, resetPluginState, t])
+  }, [currentWorkspacePath, plugins, refreshInstallLocations, refreshInstalledPlugins, resetPluginState, t])
+
+  /** dev-link 注册（needs/001）：选择插件源码目录，宿主建 junction 直连源码，零打包零重装 */
+  const handleDevLinkPlugin = useCallback(async () => {
+    if (!isTauri()) return
+    setPluginOperationMessage(null)
+
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: t('plugins.selectDevPluginDirectory', {
+          defaultValue: '选择插件源码目录（需含 plugin.json）',
+        }),
+      })
+      const sourcePath = Array.isArray(selected) ? selected[0] : selected
+      if (!sourcePath) return
+
+      setPluginOperationLoading(true)
+      const result = await devLinkPlugin(sourcePath)
+      if (!result.success) {
+        setPluginOperationMessage(result.error ?? t('plugins.devLinkFailed', { defaultValue: 'dev-link 注册失败' }))
+        return
+      }
+
+      setPluginOperationMessage(result.message ?? t('plugins.devLinkSucceeded', { defaultValue: 'dev-link 已注册' }))
+      await refreshInstalledPlugins()
+    } catch (error) {
+      setPluginOperationMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPluginOperationLoading(false)
+    }
+  }, [refreshInstalledPlugins, t])
 
   const handleForceUninstallPlugin = useCallback(async (pluginId: string, installPath?: string) => {
     if (!installPath) return
@@ -912,6 +953,18 @@ export function PluginTab() {
           >
             <PackagePlus size={11} />
             {t('plugins.installFromPackage', { defaultValue: 'Install pkg' })}
+          </button>
+          <button
+            type="button"
+            onClick={handleDevLinkPlugin}
+            disabled={pluginOperationLoading || !isTauri()}
+            title={t('plugins.devLinkHint', {
+              defaultValue: '源码直连（开发用）：改 mcp/server.js 等源码后新会话即生效，无需打包重装；卸载仅移除链接、保留源码',
+            })}
+            className="inline-flex items-center gap-1 rounded border border-border-subtle px-2 py-1 text-xs text-text-secondary hover:bg-background-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Link2 size={11} />
+            {t('plugins.devLink', { defaultValue: 'Dev link' })}
           </button>
         </div>
 
@@ -1130,6 +1183,14 @@ function PluginCard({
                   : t('plugins.userInstalled', { defaultValue: 'User' })}
               </span>
             )}
+            {plugin.dev && (
+              <span
+                className="rounded-sm bg-primary/15 px-1 py-px text-[10px] leading-tight text-primary"
+                title={t('plugins.devBadgeHint', { defaultValue: '源码直连：改源码新会话即生效' })}
+              >
+                {t('plugins.devBadge', { defaultValue: 'DEV' })}
+              </span>
+            )}
           </div>
           {plugin.description && (
             <div className="mt-0.5 text-xs text-text-tertiary line-clamp-1">{plugin.description}</div>
@@ -1180,6 +1241,11 @@ function PluginCard({
             <div className="font-mono">{plugin.id}</div>
             {!plugin.builtin && plugin.installPath && (
               <div className="truncate">{plugin.installPath}</div>
+            )}
+            {plugin.dev && (
+              <div className="truncate text-primary/80">
+                {t('plugins.devSourceLabel', { defaultValue: 'dev source' })}: {plugin.dev.sourcePath}
+              </div>
             )}
             {originEntries.length > 0 && (
               <div className="flex flex-wrap gap-x-3">
@@ -1448,7 +1514,7 @@ function PluginCard({
             >
               {t('plugins.reset')}
             </button>
-            {!plugin.builtin && (
+            {!plugin.builtin && !plugin.dev && (
               <>
                 <button
                   type="button"
@@ -1481,13 +1547,27 @@ function PluginCard({
                 </button>
               </>
             )}
+            {/* dev 插件（needs/001）：无更新概念（宿主短路），卸载=仅移除链接、保留源码 */}
+            {!plugin.builtin && plugin.dev && (
+              <button
+                type="button"
+                onClick={() => onUninstall(plugin.id, plugin.installPath)}
+                disabled={operationLoading || !plugin.installPath}
+                className="inline-flex items-center gap-1 rounded border border-danger/30 px-2 py-1 text-[11px] text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 size={10} />
+                {t('plugins.uninstallDev', { defaultValue: '移除（保留源码）' })}
+              </button>
+            )}
           </div>
 
           {/* 更新信息条 */}
           {updateCheck && (
             <div className="flex items-center justify-between gap-2 rounded border border-border-subtle bg-background-elevated px-2.5 py-1.5 text-[11px] text-text-tertiary">
               <div className="min-w-0 truncate">
-                {updateCheck.checked
+                {updateCheck.skipped === 'dev-link'
+                  ? t('plugins.devSkipUpdate', { defaultValue: '源码直连（dev-link），无需检查更新' })
+                  : updateCheck.checked
                   ? updateCheck.updateAvailable
                     ? t('plugins.updateAvailable', {
                       defaultValue: 'Update: {{current}} → {{latest}}',

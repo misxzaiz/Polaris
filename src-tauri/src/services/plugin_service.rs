@@ -12,11 +12,13 @@ use std::process::Command;
 
 use crate::error::{AppError, Result};
 use crate::models::plugin::{
-    Marketplace, MANIFEST_SCHEMA_VERSION, PluginDiscoveryError, PluginDiscoveryResult,
-    PluginInstallLocations, PluginListResult, PluginManifestFile, PluginManifestSource,
-    PluginManifestSourceKind, PluginManifestValidationResult, PluginOperationResult, PluginScope,
-    PluginUpdateCheckResult,
+    Marketplace, MANIFEST_SCHEMA_VERSION, PluginDevLinkMetadata, PluginDiscoveryError,
+    PluginDiscoveryResult, PluginInstallLocations, PluginListResult, PluginManifestFile,
+    PluginManifestSource, PluginManifestSourceKind, PluginManifestValidationResult,
+    PluginOperationResult, PluginScope, PluginUpdateCheckResult,
 };
+use crate::models::plugin_state::PluginState;
+use crate::services::plugin_state_service::PluginStateService;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -327,6 +329,10 @@ impl PluginService {
     ) -> PluginDiscoveryResult {
         let mut result = PluginDiscoveryResult::default();
 
+        // dev-link 直连标记（needs/001）：以 state.json `<id>.devLink` 为唯一权威，
+        // 扫描时回读盖戳到发现产物的 dev 字段
+        let dev_links = Self::load_dev_links(app_config_dir);
+
         Self::scan_plugin_root(
             &app_config_dir.join("plugins"),
             PluginManifestSource {
@@ -335,6 +341,7 @@ impl PluginService {
                 adapter_id: None,
             },
             &mut result,
+            &dev_links,
         );
 
         if let Some(workspace_path) = workspace_path {
@@ -349,11 +356,28 @@ impl PluginService {
                         adapter_id: None,
                     },
                     &mut result,
+                    &dev_links,
                 );
             }
         }
 
         result
+    }
+
+    /// 读取 state.json 中的全部 dev-link 标记（pluginId → devLink 信息）。
+    /// state.json 缺失/损坏时按无 dev 插件处理（发现主流程不被副作用阻塞）。
+    fn load_dev_links(
+        app_config_dir: &Path,
+    ) -> std::collections::BTreeMap<String, PluginDevLinkMetadata> {
+        PluginStateService::new(app_config_dir.to_path_buf())
+            .load()
+            .map(|states| {
+                states
+                    .into_iter()
+                    .filter_map(|(id, state)| state.dev_link.map(|dev| (id, dev)))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn install_locations(
@@ -458,11 +482,257 @@ impl PluginService {
         Self::install_prepared_plugin_source(app_config_dir, workspace_path, &source, scope, false)
     }
 
+    /// dev-link 注册（needs/001 源码直连模式）：在 install_root 建 junction 指向
+    /// 源码目录，不复制任何文件；state.json 写入 devLink 标记（dev 身份唯一权威）。
+    ///
+    /// 边界：仅 user 级（本机开发者通道，显式添加、可枚举可撤销）；
+    /// 同名插件已存在 → 拒绝；源码目录位于安装根内 → 拒绝（防自嵌套，
+    /// 对齐 install_prepared_plugin_source 的既有守卫）。
+    pub fn dev_link_plugin(
+        app_config_dir: &Path,
+        source_path: &Path,
+    ) -> Result<PluginOperationResult> {
+        let source = source_path.canonicalize().map_err(|error| {
+            AppError::InvalidPath(format!(
+                "无法读取插件源码目录 {}: {}",
+                source_path.display(),
+                error
+            ))
+        })?;
+        if !source.is_dir() {
+            return Err(AppError::InvalidPath(format!(
+                "插件来源不是目录: {}",
+                source.display()
+            )));
+        }
+
+        let manifest_path = Self::find_manifest_path(&source).ok_or_else(|| {
+            AppError::ConfigError(
+                "插件目录必须包含 plugin.json 或 .codex-plugin/plugin.json".to_string(),
+            )
+        })?;
+        let validation = Self::validate_manifest_file_path(&manifest_path);
+        if !validation.valid {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some(Self::format_validation_errors(&validation)),
+            });
+        }
+        let manifest = Self::read_manifest(&manifest_path)?;
+
+        let install_root = app_config_dir.join("plugins");
+        std::fs::create_dir_all(&install_root)?;
+
+        let canonical_root = install_root.canonicalize()?;
+        if source.starts_with(&canonical_root) {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some("源码目录已经位于插件安装目录中，无需 dev-link".to_string()),
+            });
+        }
+
+        let target_dir = install_root.join(Self::safe_plugin_dir_name(&manifest.id));
+        if target_dir.exists() {
+            return Ok(PluginOperationResult {
+                success: false,
+                message: None,
+                error: Some(format!(
+                    "插件已存在: {}（同名插件需先卸载再注册 dev-link）",
+                    target_dir.display()
+                )),
+            });
+        }
+
+        Self::create_dir_junction(&target_dir, &source)?;
+
+        // state.json 写 devLink 标记；无既有条目时按发现缺省语义镜像初始值
+        // （enabled=enabledByDefault、ui/mcp=true），保证注册前后开关回退行为完全一致。
+        let state_service = PluginStateService::new(app_config_dir.to_path_buf());
+        let mut states = state_service.load().unwrap_or_default();
+        let entry = states.entry(manifest.id.clone()).or_insert(PluginState {
+            enabled: manifest.enabled_by_default,
+            ui_enabled: true,
+            mcp_enabled: true,
+            mcp_servers: Default::default(),
+            mcp_tool_gates: Default::default(),
+            dev_link: None,
+        });
+        entry.dev_link = Some(PluginDevLinkMetadata {
+            source_path: source.to_string_lossy().to_string(),
+        });
+        state_service.save(&states)?;
+
+        Ok(PluginOperationResult {
+            success: true,
+            message: Some(format!(
+                "已注册开发插件 {}（dev-link）：{} → {}；修改源码后新会话即生效，无需打包重装",
+                manifest.id,
+                target_dir.display(),
+                source.display()
+            )),
+            error: None,
+        })
+    }
+
+    /// 读取插件（install_path 可为 junction 或普通目录）的 dev-link 标记。
+    /// 以 state.json `<pluginId>.devLink` 为唯一权威；manifest 读取失败或无条目 → None。
+    pub fn read_dev_link(
+        app_config_dir: &Path,
+        install_path: &Path,
+    ) -> Option<PluginDevLinkMetadata> {
+        let manifest_path = Self::find_manifest_path(install_path)?;
+        let manifest = Self::read_manifest(&manifest_path).ok()?;
+        let states = PluginStateService::new(app_config_dir.to_path_buf())
+            .load()
+            .ok()?;
+        states.get(&manifest.id)?.dev_link.clone()
+    }
+
+    /// dev 插件卸载：只删链接本体（Windows `remove_dir` 对 junction 只摘 reparse
+    /// point、不跟进目标），源码目录零触碰；随后清除 state.json devLink 标记。
+    ///
+    /// 硬门（spec 风险节）：
+    /// 1. 链接路径必须位于 allowed_roots 之下——用「父目录 canonicalize + 文件名」
+    ///    拼回链接路径，**绝不 canonicalize 链接本身**（那会解析到外部源码目录）；
+    /// 2. 目标必须是链接（symlink/reparse point）：dev 标记与实际形态不一致时
+    ///    宁可失败也绝不 `remove_dir_all` 普通目录。
+    pub fn uninstall_dev_link_plugin(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+        install_path: &Path,
+    ) -> Result<PluginOperationResult> {
+        let file_name = install_path.file_name().ok_or_else(|| {
+            AppError::InvalidPath(format!("非法插件安装路径: {}", install_path.display()))
+        })?;
+        let parent = install_path.parent().ok_or_else(|| {
+            AppError::InvalidPath(format!("非法插件安装路径: {}", install_path.display()))
+        })?;
+
+        let mut allowed_roots = vec![app_config_dir.join("plugins")];
+        if let Some(workspace_path) = workspace_path {
+            allowed_roots.push(workspace_path.join(".polaris").join("plugins"));
+        }
+        let canonical_parent = parent.canonicalize().map_err(|error| {
+            AppError::InvalidPath(format!(
+                "无法读取插件安装目录 {}: {}",
+                parent.display(),
+                error
+            ))
+        })?;
+        let link_path = canonical_parent.join(file_name);
+        let is_allowed = allowed_roots.iter().any(|root| {
+            root.canonicalize()
+                .map(|canonical| link_path.starts_with(&canonical) && link_path != canonical)
+                .unwrap_or(false)
+        });
+        if !is_allowed {
+            return Err(AppError::PermissionDenied(format!(
+                "只能操作已发现插件目录下的插件: {}",
+                link_path.display()
+            )));
+        }
+
+        let link_meta = std::fs::symlink_metadata(&link_path)?;
+        if !link_meta.file_type().is_symlink() {
+            return Err(AppError::ConfigError(format!(
+                "dev 标记异常：{} 不是链接目录，已拒绝删除（请人工核对 state.json 的 devLink 标记）",
+                link_path.display()
+            )));
+        }
+        // 链接目标字符串（兜底清标记用）：junction 经 read_link 返回建链时的目标
+        let link_target = std::fs::read_link(&link_path)
+            .ok()
+            .map(|p| p.to_string_lossy().to_string());
+
+        std::fs::remove_dir(&link_path)?;
+
+        // 清除 dev 标记（保留用户其他开关状态）。manifest 不可读（源码目录已被
+        // 手动删除等）时按链接目标兜底匹配，避免残留悬空 dev 标记。
+        let manifest = Self::find_manifest_path(install_path)
+            .and_then(|path| Self::read_manifest(&path).ok());
+        let state_service = PluginStateService::new(app_config_dir.to_path_buf());
+        if let Ok(mut states) = state_service.load() {
+            for (id, entry) in states.iter_mut() {
+                let hit = manifest.as_ref().map(|m| &m.id == id).unwrap_or(false)
+                    || entry
+                        .dev_link
+                        .as_ref()
+                        .map(|dev| Some(dev.source_path.as_str()) == link_target.as_deref())
+                        .unwrap_or(false);
+                if hit && entry.dev_link.take().is_some() {
+                    tracing::info!("[PluginDevLink] 已清除 dev 标记: {}", id);
+                }
+            }
+            let _ = state_service.save(&states);
+        }
+
+        Ok(PluginOperationResult {
+            success: true,
+            message: Some(format!(
+                "已移除开发插件链接 {}（源码目录未动）",
+                link_path.display()
+            )),
+            error: None,
+        })
+    }
+
+    /// 创建目录链接：Windows 用 junction（`mklink /J`，普通用户即可、无需开发者
+    /// 模式；生产先例 Polaris-dev/plugins/mimo-tts）；Unix 用目录符号链接。
+    fn create_dir_junction(link: &Path, target: &Path) -> Result<()> {
+        #[cfg(windows)]
+        {
+            let output = Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()?;
+            if !output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(AppError::ProcessError(format!(
+                    "创建 dev-link junction 失败（mklink /J）: {}{}",
+                    stdout.trim(),
+                    stderr.trim()
+                )));
+            }
+            Ok(())
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).map_err(|error| {
+                AppError::ProcessError(format!("创建 dev-link 符号链接失败: {}", error))
+            })
+        }
+        #[cfg(not(any(windows, unix)))]
+        {
+            let _ = (link, target);
+            Err(AppError::ProcessError(
+                "当前平台不支持 dev-link 目录链接".to_string(),
+            ))
+        }
+    }
+
     pub async fn apply_local_plugin_update(
         app_config_dir: &Path,
         workspace_path: Option<&Path>,
         install_path: &Path,
     ) -> Result<PluginOperationResult> {
+        // dev-link 直连插件（needs/001）：应用更新短路——canonicalize 会解析到
+        // 源码目录，后续 rename/替换动作会覆盖源码，必须在任何 IO 前拦截。
+        if Self::read_dev_link(app_config_dir, install_path).is_some() {
+            return Ok(PluginOperationResult {
+                success: true,
+                message: Some(
+                    "dev 插件为源码直连（dev-link），已跳过更新；请在源码目录更新代码，新会话自动生效"
+                        .to_string(),
+                ),
+                error: None,
+            });
+        }
+
         let target = Self::canonicalize_allowed_plugin_dir(
             app_config_dir,
             workspace_path,
@@ -605,6 +875,12 @@ impl PluginService {
         workspace_path: Option<&Path>,
         install_path: &Path,
     ) -> Result<PluginOperationResult> {
+        // dev-link 直连插件（needs/001）：只删 junction 本体、源码目录零触碰。
+        // 常规路径的 canonicalize 会解析到外部源码目录而被 allowed_roots 拒绝。
+        if Self::read_dev_link(app_config_dir, install_path).is_some() {
+            return Self::uninstall_dev_link_plugin(app_config_dir, workspace_path, install_path);
+        }
+
         let target = Self::canonicalize_allowed_plugin_dir(
             app_config_dir,
             workspace_path,
@@ -640,6 +916,12 @@ impl PluginService {
         workspace_path: Option<&Path>,
         install_path: &Path,
     ) -> Result<PluginOperationResult> {
+        // dev-link 直连插件（needs/001）：跳过进程清理与目录递归删除，只摘链接本体。
+        // 宿主装配层已先停 PluginServiceManager 服务；MCP 进程随会话退出，无句柄残留。
+        if Self::read_dev_link(app_config_dir, install_path).is_some() {
+            return Self::uninstall_dev_link_plugin(app_config_dir, workspace_path, install_path);
+        }
+
         let target = Self::canonicalize_allowed_plugin_dir(
             app_config_dir,
             workspace_path,
@@ -985,6 +1267,17 @@ impl PluginService {
         workspace_path: Option<&Path>,
         install_path: &Path,
     ) -> PluginOperationResult {
+        // dev-link 直连插件（needs/001）：强制卸载对 dev 插件退化为「摘链接」，
+        // 严禁 rename/remove_dir_all 触达外部源码目录。
+        if Self::read_dev_link(app_config_dir, install_path).is_some() {
+            return Self::uninstall_dev_link_plugin(app_config_dir, workspace_path, install_path)
+                .unwrap_or_else(|error| PluginOperationResult {
+                    success: false,
+                    message: None,
+                    error: Some(error.to_string()),
+                });
+        }
+
         let target = match Self::canonicalize_allowed_plugin_dir(
             app_config_dir,
             workspace_path,
@@ -1053,7 +1346,28 @@ impl PluginService {
         }
     }
 
-    pub async fn check_local_plugin_update(install_path: &Path) -> PluginUpdateCheckResult {
+    pub async fn check_local_plugin_update(
+        app_config_dir: &Path,
+        install_path: &Path,
+    ) -> PluginUpdateCheckResult {
+        // dev-link 直连插件（needs/001）：更新检查短路，永不触碰源码目录。
+        // apply_update 的 canonicalize 会解析到源码目录，任何替换动作都可能
+        // 覆盖源码，因此检查与应用都必须在入口处拦截。
+        if Self::read_dev_link(app_config_dir, install_path).is_some() {
+            let (plugin_id, current_version) = Self::manifest_id_version_best_effort(install_path);
+            return PluginUpdateCheckResult {
+                plugin_id,
+                current_version,
+                latest_version: None,
+                update_available: false,
+                checked: false,
+                source_url: None,
+                download_url: None,
+                skipped: Some("dev-link".to_string()),
+                error: None,
+            };
+        }
+
         let manifest_path = match Self::find_manifest_path(install_path) {
             Some(path) => path,
             None => {
@@ -1065,6 +1379,7 @@ impl PluginService {
                     checked: false,
                     source_url: None,
                     download_url: None,
+                    skipped: None,
                     error: Some("插件目录缺少 plugin.json / .codex-plugin/plugin.json".to_string()),
                 };
             }
@@ -1081,6 +1396,7 @@ impl PluginService {
                     checked: false,
                     source_url: None,
                     download_url: None,
+                    skipped: None,
                     error: Some(error.to_string()),
                 };
             }
@@ -1095,6 +1411,7 @@ impl PluginService {
                 checked: false,
                 source_url: None,
                 download_url: None,
+                skipped: None,
                 error: Some("插件 manifest 未声明 origin.updateUrl，无法检查更新".to_string()),
             };
         };
@@ -1110,6 +1427,7 @@ impl PluginService {
                     checked: false,
                     source_url: Some(update_url),
                     download_url: None,
+                    skipped: None,
                     error: Some(error.to_string()),
                 };
             }
@@ -1131,14 +1449,24 @@ impl PluginService {
             checked: true,
             source_url: Some(update_url),
             download_url,
+            skipped: None,
             error: None,
         }
+    }
+
+    /// 尽力读取 manifest 的 (id, version)（dev 短路结果回填用；失败返回空串）
+    fn manifest_id_version_best_effort(install_path: &Path) -> (String, String) {
+        Self::find_manifest_path(install_path)
+            .and_then(|path| Self::read_manifest(&path).ok())
+            .map(|manifest| (manifest.id, manifest.version))
+            .unwrap_or_default()
     }
 
     fn scan_plugin_root(
         root: &Path,
         source: PluginManifestSource,
         result: &mut PluginDiscoveryResult,
+        dev_links: &std::collections::BTreeMap<String, PluginDevLinkMetadata>,
     ) {
         let entries = match std::fs::read_dir(root) {
             Ok(entries) => entries,
@@ -1188,9 +1516,12 @@ impl PluginService {
                 }
 
                 match Self::read_manifest(&manifest_path) {
-                    Ok(manifest) => result
-                        .plugins
-                        .push(manifest.into_discovered(source.clone(), plugin_dir)),
+                    Ok(manifest) => {
+                        let dev = dev_links.get(&manifest.id).cloned();
+                        let mut discovered = manifest.into_discovered(source.clone(), plugin_dir);
+                        discovered.dev = dev;
+                        result.plugins.push(discovered);
+                    }
                     Err(error) => result.errors.push(PluginDiscoveryError {
                         path: manifest_path.to_string_lossy().to_string(),
                         error: error.to_string(),
@@ -1761,6 +2092,7 @@ impl PluginService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::plugin_state::PluginStateMap;
 
     #[test]
     fn discovers_user_and_project_plugin_manifests() {
@@ -1989,6 +2321,7 @@ mod tests {
 
     #[tokio::test]
     async fn checks_local_plugin_update_manifest() {
+        let app_config = tempfile::tempdir().unwrap();
         let plugin = tempfile::tempdir().unwrap();
         let latest = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(
@@ -2017,7 +2350,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = PluginService::check_local_plugin_update(plugin.path()).await;
+        let result = PluginService::check_local_plugin_update(app_config.path(), plugin.path())
+            .await;
 
         assert!(result.checked);
         assert!(result.update_available);
@@ -2090,5 +2424,109 @@ mod tests {
         let result = PluginService::uninstall_local_plugin(app_config.path(), None, outside.path());
 
         assert!(result.is_err());
+    }
+
+    fn write_minimal_manifest(dir: &Path, id: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.json"),
+            format!(
+                r#"{{ "id": "{id}", "name": "Example Dev", "version": "0.1.0" }}"#
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn dev_links_source_directory_and_uninstall_preserves_source() {
+        let app_config = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        write_minimal_manifest(source.path(), "example.dev");
+
+        // 注册 dev-link：junction 建立 + state.json 写 devLink 标记
+        let linked = PluginService::dev_link_plugin(app_config.path(), source.path()).unwrap();
+        assert!(linked.success, "dev_link 失败: {:?}", linked.error);
+
+        let target_dir = app_config.path().join("plugins").join("example.dev");
+        assert!(target_dir.join("plugin.json").is_file(), "链接应透传读取源码 manifest");
+
+        // 发现产物带 dev 盖戳，source_path 指向源码目录
+        let discovery = PluginService::discover_installed_plugins(app_config.path(), None);
+        assert_eq!(discovery.plugins.len(), 1);
+        let dev = discovery.plugins[0].dev.as_ref().expect("dev 标记缺失");
+        let expected_source = source.path().canonicalize().unwrap();
+        assert_eq!(
+            Path::new(&dev.source_path).canonicalize().unwrap(),
+            expected_source
+        );
+
+        // 卸载：junction 消失，源码目录完好
+        let removed =
+            PluginService::uninstall_local_plugin(app_config.path(), None, &target_dir).unwrap();
+        assert!(removed.success, "卸载失败: {:?}", removed.error);
+        assert!(!target_dir.exists(), "junction 应被移除");
+        assert!(
+            source.path().join("plugin.json").is_file(),
+            "源码目录必须原样保留"
+        );
+
+        // 卸载后发现结果不再带 dev 标记（state 标记已清）
+        let discovery = PluginService::discover_installed_plugins(app_config.path(), None);
+        assert!(discovery.plugins.is_empty());
+    }
+
+    #[tokio::test]
+    async fn dev_plugin_update_paths_short_circuit() {
+        let app_config = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        write_minimal_manifest(source.path(), "example.dev");
+
+        PluginService::dev_link_plugin(app_config.path(), source.path()).unwrap();
+        let target_dir = app_config.path().join("plugins").join("example.dev");
+
+        // 更新检查：checked=false + skipped=dev-link（而非 error）
+        let check = PluginService::check_local_plugin_update(app_config.path(), &target_dir).await;
+        assert!(!check.checked);
+        assert!(!check.update_available);
+        assert_eq!(check.skipped.as_deref(), Some("dev-link"));
+        assert!(check.error.is_none());
+        assert_eq!(check.plugin_id, "example.dev");
+
+        // 应用更新：短路成功且源码 manifest 未被触碰
+        let apply = PluginService::apply_local_plugin_update(app_config.path(), None, &target_dir)
+            .await
+            .unwrap();
+        assert!(apply.success);
+        let manifest = PluginService::read_manifest(&target_dir.join("plugin.json")).unwrap();
+        assert_eq!(manifest.version, "0.1.0");
+    }
+
+    #[test]
+    fn uninstall_dev_link_refuses_non_link_directory() {
+        let app_config = tempfile::tempdir().unwrap();
+        // 普通（真实）目录 + 伪造 dev 标记：硬门必须拒绝删除
+        let fake_target = app_config.path().join("plugins").join("example.dev");
+        write_minimal_manifest(&fake_target, "example.dev");
+
+        let states = PluginStateMap::from([(
+            "example.dev".to_string(),
+            PluginState {
+                enabled: true,
+                ui_enabled: true,
+                mcp_enabled: true,
+                mcp_servers: Default::default(),
+                mcp_tool_gates: Default::default(),
+                dev_link: Some(PluginDevLinkMetadata {
+                    source_path: "D:\\somewhere\\else".to_string(),
+                }),
+            },
+        )]);
+        PluginStateService::new(app_config.path().to_path_buf())
+            .save(&states)
+            .unwrap();
+
+        let result = PluginService::uninstall_local_plugin(app_config.path(), None, &fake_target);
+        assert!(result.is_err(), "dev 标记与实际形态不一致时必须拒绝删除");
+        assert!(fake_target.join("plugin.json").is_file(), "目录不得被删除");
     }
 }

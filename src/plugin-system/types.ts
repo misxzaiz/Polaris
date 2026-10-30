@@ -386,7 +386,15 @@ export interface PolarisPluginManifest {
   permissions: PluginPermissionDeclaration
   origin?: PluginOriginMetadata
   source?: PluginManifestSource
+  /** dev-link 源码直连标记（needs/001）：存在即 dev 插件——更新检查/应用更新被宿主短路，卸载只移除链接、保留源码 */
+  dev?: PluginDevLinkInfo
   installPath?: string
+}
+
+/** dev-link 直连信息（宿主从 state.json devLink 回读盖戳） */
+export interface PluginDevLinkInfo {
+  /** 插件源码目录绝对路径（junction 指向的目标） */
+  sourcePath: string
 }
 
 export type PluginPanelComponent = ComponentType<{

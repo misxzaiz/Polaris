@@ -251,6 +251,7 @@ mod tests {
             enabled,
             mcp_enabled,
             ui_enabled: true,
+            dev_link: None,
             mcp_servers: mcp_servers
                 .into_iter()
                 .map(|(k, v)| {
