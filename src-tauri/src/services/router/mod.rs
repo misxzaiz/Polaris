@@ -14,6 +14,7 @@
 //! - resolve_handle 保持 pub(crate)，防插件旁路直调（契约注释铁律）。
 
 mod ai_chat_capability;
+mod app_autolaunch_capability;
 pub mod audit_sink;
 pub mod bash_capability;
 mod config_capability;
@@ -48,6 +49,7 @@ mod hook_capability;
 mod ui_render_capability;
 
 pub use ai_chat_capability::AiChatCapability;
+pub use app_autolaunch_capability::AppAutolaunchCapability;
 pub use audit_sink::FileAuditSink;
 pub use bash_capability::BashCapability;
 pub(crate) use bash_capability::detect_shell;
@@ -126,7 +128,7 @@ pub struct StreamAck {
 /// - permission: 权限裁决（dispatch 是唯一入口，所有调用统一过 gate）
 /// - storage: 契约 Storage（阶段 A 可 None，阶段 B 置 Some）
 /// - audit: AuditSink（Bootstrap 直管，dispatch 落审计）
-/// 覆盖链槽位（P2-c）：同一 cap id 的覆盖栈——末位为 active handler。
+///   覆盖链槽位（P2-c）：同一 cap id 的覆盖栈——末位为 active handler。
 #[derive(Clone)]
 pub struct OverrideSlot {
     pub cap: Arc<dyn Capability>,
@@ -766,7 +768,7 @@ impl Router for RouterBus {
                 candidates.push((base, ReplaceMode::Override));
 
                 // 依次尝试候选；候选全部失败时取最后一个错误
-                let mut started = std::time::Instant::now();
+                let started = std::time::Instant::now();
                 let mut final_outcome: Option<(
                     Result<Value, String>,
                     Option<crate::contracts::ReplyErrorDetail>,

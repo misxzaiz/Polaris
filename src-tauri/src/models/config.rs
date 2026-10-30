@@ -299,17 +299,14 @@ pub enum ProfileMode {
 /// - `Weighted`：加权随机。按 `weight` 选择，可结合成本/速率。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum RouteStrategy {
+    #[default]
     Failover,
     RoundRobin,
     Weighted,
 }
 
-impl Default for RouteStrategy {
-    fn default() -> Self {
-        Self::Failover
-    }
-}
 
 /// 触发 failover 的错误模式
 ///
@@ -877,22 +874,21 @@ impl Default for FloatingWindowConfig {
 /// 对话显示密度
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ChatDisplayDensity {
     Compact,
+    #[default]
     Comfortable,
     Spacious,
 }
 
-impl Default for ChatDisplayDensity {
-    fn default() -> Self {
-        Self::Comfortable
-    }
-}
 
 /// 对话字体族
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ChatDisplayFontFamily {
+    #[default]
     System,
     Serif,
     Mono,
@@ -901,11 +897,6 @@ pub enum ChatDisplayFontFamily {
 // 过程块折叠模式已移除（2026-10-25）：折叠行为统一，无 auto/legacy 之分，
 // 见 plans/tool-block-collapse-behavior-fix.md；旧配置残留字段由 serde 静默忽略。
 
-impl Default for ChatDisplayFontFamily {
-    fn default() -> Self {
-        Self::System
-    }
-}
 
 /// AI 对话窗口显示设置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1401,6 +1392,12 @@ pub struct Config {
     /// Git 二进制路径 (Windows)
     pub git_bin_path: Option<String>,
 
+    /// 开机自动启动（OS 登录自启宿主进程，最小化启动）。
+    /// 意图真源：写入路径 = 前端设置流（cap.config 透传）；OS 启动项为事实真源，
+    /// 由 cap.app.autolaunch 的 apply/启动 reconcile 对账（plans/autostart-boot-launch-spec.md）。
+    #[serde(default)]
+    pub auto_launch: bool,
+
     /// 悬浮窗配置
     #[serde(default)]
     pub floating_window: FloatingWindowConfig,
@@ -1619,6 +1616,7 @@ impl Default for Config {
             work_dir: None,
             session_dir: None,
             git_bin_path: None,
+            auto_launch: false,
             floating_window: FloatingWindowConfig::default(),
             baidu_translate: None,
             personal_hub: PersonalHubConfig::default(),

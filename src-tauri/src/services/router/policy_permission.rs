@@ -220,6 +220,10 @@ impl PolicyPermission {
             // 作用于本地面板 DOM，远程控制无意义且可被旁路利用。只读的 cap.self.inspect
             // 不受影响（精确前缀不同），仍对 Remote 放行（"看清这台机器"是远程刚需）。
             ("cap.self.mutate", true),
+            // cap.app.autolaunch 远程禁改：开机自启作用于桌面机的 OS 登录行为，
+            // 远程 Web/移动端改它既无意义（OS 事实在桌面机）又是越权面
+            // （plans/autostart-boot-launch-spec.md §3.1）。
+            ("cap.app.autolaunch", true),
         ] {
             rules.push(CompiledRule {
                 capability: cap_prefix.to_string(),

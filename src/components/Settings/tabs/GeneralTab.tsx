@@ -4,6 +4,7 @@
  * （AI 主动提问的启停开关归属 polaris.ask 插件，在插件页管理）
  */
 
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Smartphone, Plug, PlugZap } from 'lucide-react';
 import type { Config } from '@/types';
@@ -12,6 +13,7 @@ import { FocusModeSettings } from './FocusModeSettings';
 import { SystemPromptSection } from './SystemPromptSection';
 import { useMobileConnection } from '@/mobile/MobileConnectionContext';
 import { isMobileTauriRuntime } from '@/mobile/platform';
+import { getAutolaunchStatus } from '@/services/autolaunchService';
 
 interface GeneralTabProps {
   config: Config;
@@ -23,6 +25,21 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
   const { t } = useTranslation('settings');
   const mobileConnection = useMobileConnection();
   const isMobile = isMobileTauriRuntime();
+
+  // 开机自启 supported 探测：隔离环境（POLARIS_DATA_ROOT / test-profile）、web 端
+  // 或旧宿主（cap 不存在）→ false，整段隐藏（plans/autostart-boot-launch-spec.md G4）
+  const [autolaunchSupported, setAutolaunchSupported] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getAutolaunchStatus()
+      .then((s) => {
+        if (!cancelled) setAutolaunchSupported(s.supported);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -105,6 +122,53 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
           </button>
         </div>
       </div>
+
+      {/* 开机自启 — 意图与其它设置同链保存（onConfigChange → 分组保存 → cap.config 透传），
+          OS 事实由 configStore 保存成功后的 cap.app.autolaunch apply 同步
+          （plans/autostart-boot-launch-spec.md）。supported=false（隔离环境/web 端）时隐藏 */}
+      {autolaunchSupported && (
+        <div className="p-4 bg-surface rounded-lg border border-border">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-medium text-text-primary">
+                {t('autolaunch.title', '开机自动启动')}
+              </h3>
+              <p className="text-xs text-text-secondary mt-1">
+                {t('autolaunch.description', '登录系统后自动启动 Polaris（最小化启动，不抢焦点）')}
+              </p>
+              <p className="text-xs text-text-tertiary mt-0.5">
+                {t('autolaunch.hint', '保存后生效；升级/挪目录导致的路径漂移会在下次启动时自动纠正')}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={config.autoLaunch === true}
+              aria-label={config.autoLaunch === true ? '关闭开机自动启动' : '开启开机自动启动'}
+              title={config.autoLaunch ? '关闭' : '开启'}
+              onClick={() => onConfigChange({ ...config, autoLaunch: config.autoLaunch !== true })}
+              disabled={loading}
+              className={`
+                relative inline-flex items-center h-6 w-11 rounded-full shrink-0
+                transition-colors
+                focus:outline-none
+                focus-visible:ring-2 focus-visible:ring-primary
+                focus-visible:ring-offset-2
+                ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                ${config.autoLaunch === true ? 'bg-primary' : 'bg-border'}
+              `}
+            >
+              <span
+                className={`
+                  inline-block h-4 w-4 transform rounded-full bg-white
+                  shadow-sm transition-transform
+                  ${config.autoLaunch === true ? 'translate-x-5' : 'translate-x-1'}
+                `}
+              />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 阅读聚焦模式 — 独立 store，即时生效 */}
       <FocusModeSettings />

@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import i18n from '@/i18n';
 import type { Config, ConfigPatch, HealthStatus, PerformanceFeatures } from '@/types';
 import * as tauri from '@/services/tauri';
+import { applyAutolaunch } from '@/services/autolaunchService';
 import { createLogger } from '@/utils/logger';
 import { currentMode, listen } from '@/services/transport';
 import { storeTokenMd5, md5Hex } from '@/services/transport/auth';
@@ -187,6 +188,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       const prevPerf = get().config?.performance;
       const savedConfig = await tauri.updateConfigPatch(patch);
       await applyConfig(savedConfig);
+      // 开机自启意图落盘后 → 同步 OS 事实（cap.app.autolaunch apply，幂等 ensure）。
+      // 对齐下方 syncPerfHotSwitch 模式：cap.config 写路径不广播 config-changed，
+      // 副作用在保存成功后手动补；失败仅告警不阻塞保存（下次启动 reconcile 兜底纠偏）。
+      if ('autoLaunch' in patch) {
+        applyAutolaunch().catch((err) => {
+          log.warn('开机自启同步 OS 失败（下次启动 reconcile 自愈）', { error: String(err) });
+        });
+      }
       // performance 变更：手动补热切换（cap.config 写路径不广播 config-changed，
       // 与后端事件路径差异化；syncPerfHotSwitch 与事件监听共享 handlePerfSwitch）
       if (perfValue !== undefined) {

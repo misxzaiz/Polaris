@@ -342,6 +342,10 @@ export interface Config {
   sessionDir?: string;
   /** Git 二进制路径（自定义 Git 安装位置时使用） */
   gitBinPath?: string;
+  /** 开机自动启动（OS 登录自启宿主，最小化启动）。
+   *  意图真源：走设置保存流（SettingsPage buildPatch → cap.config 透传）；
+   *  OS 事实由 configStore 保存成功后的 cap.app.autolaunch apply 与启动对账同步 */
+  autoLaunch?: boolean;
   /** 百度翻译配置 */
   baiduTranslate?: BaiduTranslateConfig;
   /** Personal Hub 内部插件配置 */

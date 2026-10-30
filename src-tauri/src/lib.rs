@@ -147,11 +147,11 @@ async fn config_patch_via_bus(
     let reply = state
         .router
         .dispatch(env)
-        .map_err(|e| error::AppError::Unknown(e))?;
+        .map_err(error::AppError::Unknown)?;
 
     let saved = reply
         .result
-        .map_err(|e| error::AppError::Unknown(e))?;
+        .map_err(error::AppError::Unknown)?;
 
     // 反序列化完整 Config（与旧命令返回对齐），成功则触发副作用链
     let saved_config: Config =
@@ -567,6 +567,12 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // 开机自启（plans/autostart-boot-launch-spec.md）：注册值带 --minimized，
+        // 主窗创建时命中该参数则最小化启动（登录场景不抢焦点）。
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
         .manage(state::create_app_state(
             config_store,
             engine_registry_arc,
@@ -718,6 +724,29 @@ pub fn run() {
 
             commands::browser::set_browser_app_handle(app.handle().clone());
 
+            // ── cap.app.autolaunch 装配（开机自启，plans/autostart-boot-launch-spec.md）──
+            // OS 后端注入 + 注册总线，并 spawn 一次启动对账：意图=Config.autoLaunch，
+            // 事实=OS 启动项；升级/挪目录后 Run 键路径漂移经 ensure(current_exe) 自愈。
+            {
+                use crate::contracts::Router as _;
+                use crate::services::autolaunch::{
+                    AutolaunchBackend, AutolaunchIntent, StoreIntent, TauriAutolaunchBackend,
+                };
+                use crate::services::router::AppAutolaunchCapability;
+                let autolaunch_store = state.inner().config_store.clone();
+                let backend: std::sync::Arc<dyn AutolaunchBackend> =
+                    std::sync::Arc::new(TauriAutolaunchBackend::new(app.handle().clone()));
+                crate::services::autolaunch::spawn_reconcile(
+                    autolaunch_store.clone(),
+                    backend.clone(),
+                );
+                let intent: std::sync::Arc<dyn AutolaunchIntent> =
+                    std::sync::Arc::new(StoreIntent(autolaunch_store.clone()));
+                let _ = state
+                    .router
+                    .register_handle(Box::new(AppAutolaunchCapability::new(intent, backend)));
+            }
+
             // ── 主窗口创建 ──────────────────────────────────────────────
             // 历史根因：dev 与 release 共用同一个 WebView2 UserData 目录
             // （%LocalAppData%\com.polaris.app\EBWebView），异常退出后留下脏锁，
@@ -730,6 +759,10 @@ pub fn run() {
             // 同时 additionalBrowserArgs 仅 dev 启用（release 从未传过，是它
             // 从不报错的旁证之一）。
             use tauri::{WebviewUrl, WebviewWindowBuilder};
+            // 开机自启注册值带 --minimized（autostart 插件装配处）：命中则最小化启动，
+            // 登录场景不抢焦点；正常双击/手动启动不带该参数，行为不变。
+            // 注：WebviewWindowBuilder 无 minimized 构建参数，build 成功后对窗口 minimize。
+            let start_minimized = std::env::args().any(|arg| arg == "--minimized");
             let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Polaris")
                 .inner_size(1200.0, 800.0)
@@ -769,7 +802,10 @@ pub fn run() {
 
             // 创建窗口并校验：失败立即退出，杜绝"后台全绿、桌面空白"的半启动状态。
             match builder.build() {
-                Ok(_) => {
+                Ok(main_window) => {
+                    if start_minimized {
+                        let _ = main_window.minimize();
+                    }
                     tracing::info!("[Window] 主窗口创建成功");
                 }
                 Err(e) => {

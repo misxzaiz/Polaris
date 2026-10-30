@@ -140,6 +140,21 @@ fn write_anchor(anchor: &Anchor) -> Result<()> {
 /// 生产构建不设此 env，行为不变。
 const ENV_DATA_ROOT: &str = "POLARIS_DATA_ROOT";
 
+/// 是否处于隔离环境（`POLARIS_DATA_ROOT` env 覆盖 或 `test-profile` 测试包）。
+///
+/// 供「会写入宿主机器全局状态」的功能（开机自启 cap.app.autolaunch 等）做
+/// supported 判定：正式版与测试包 productName 同名，测试包注册开机项会与
+/// 正式版争同一个 OS 启动键——隔离环境一律视为不支持
+/// （plans/autostart-boot-launch-spec.md §1 G4）。
+pub fn is_isolated() -> bool {
+    if cfg!(feature = "test-profile") {
+        return true;
+    }
+    std::env::var(ENV_DATA_ROOT)
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false)
+}
+
 /// 获取默认数据根（无自定义时使用）
 fn default_data_root() -> Result<PathBuf> {
     let base = dirs::config_dir()

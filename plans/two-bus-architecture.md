@@ -82,16 +82,17 @@ cap.context  cap.self.inspect  cap.help  cap.registry
 | **入口限制** | 无限制，可触达全部 cap.* |
 | **设计目的** | 完整能力访问、跨进程通信 |
 
-**全量能力清单（26 个，主进程 RouterBus 注册表实测）：**
+**全量能力清单（27 个，主进程 RouterBus 注册表实测；2026-10-30 增 cap.app.autolaunch）：**
 ```typescript
 const ALL_CAPABILITIES = [
   // AI 会话
   'cap.ai.chat',       // 流式会话（start/continue/interrupt）
   'cap.history',       // 会话历史查询
-  
+
   // 系统管理
   'cap.config',        // 系统配置读写
   'cap.data_root',     // 数据根管理
+  'cap.app.autolaunch', // 开机自启（status/apply 幂等对账；意图走 cap.config，Remote deny）
   'cap.pluginDiscovery',    // 插件发现
   'cap.pluginServiceManager', // 插件服务管理
   
@@ -140,13 +141,14 @@ const ALL_CAPABILITIES = [
 
 ## 3. 能力重叠说明
 
-bus 进程注册表 ⊂ 主进程注册表（26 项中 17 项两边都有）。重叠能力的实现代码在
+bus 进程注册表 ⊂ 主进程注册表（27 项中 17 项两边都有）。重叠能力的实现代码在
 `services/router/` 下**只写一份**，但两条总线各自进程实例化（同代码、不同实例；
 cap.registry / cap.help / cap.self.inspect 各管本进程注册表）。
 
-**仅主进程有的 9 个**：`cap.ai.chat`（流式）、`cap.history`、`cap.ui.render`、
+**仅主进程有的 10 个**：`cap.ai.chat`（流式）、`cap.history`、`cap.ui.render`、
 `cap.mcp`、`cap.voice`、`cap.config`、`cap.stream.echo`、`cap.pluginDiscovery`、
-`cap.pluginServiceManager`——这些依赖主进程状态（会话/事件广播/插件进程池），只能走 `cap_dispatch`。
+`cap.pluginServiceManager`、`cap.app.autolaunch`（需主进程 AppHandle/config store，2026-10-30）——
+这些依赖主进程状态（会话/事件广播/插件进程池），只能走 `cap_dispatch`。
 
 **结论**：重叠能力优先 `bus_dispatch`（独立进程、不依赖主进程状态）；主进程特有能力只能 `cap_dispatch`。
 

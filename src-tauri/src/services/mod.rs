@@ -1,3 +1,4 @@
+pub mod autolaunch;
 pub mod config_store;
 pub mod data_root;
 pub mod legacy_storage_migrate;
