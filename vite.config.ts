@@ -123,6 +123,15 @@ export default defineConfig(async () => ({
       output: {
         // Manual chunk splitting to separate large dependencies
         manualChunks: (id) => {
+          // 【启动性能关键修复】Vite 动态导入预加载助手（\0vite/preload-helper.js）
+          // 会被每一个含 dynamic import 的模块静态依赖。若不显式钉位，Rollup 按
+          // 依赖遍历顺序把它分配进懒加载大 chunk——实测落进 mermaid-core（3MB），
+          // 导致入口 chunk 为拿这个几百字节的助手而静态 import 整个 mermaid-core，
+          // mermaid/cytoscape/d3 全量进首屏解析，冷启动 JS 暴涨 ~3MB。
+          // 钉进 react-vendor（启动必载、被入口静态依赖），懒加载链路恢复纯按需。
+          if (id.includes('vite/preload-helper')) {
+            return 'react-vendor';
+          }
           // React core libraries
           if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
             return 'react-vendor';
@@ -133,16 +142,29 @@ export default defineConfig(async () => ({
           }
           // Mermaid diagram library - 动态加载，使用更精确的匹配
           // 注：mermaid 已排除在 optimizeDeps 之外，确保 rollup 能识别其子模块
-          if (id.includes('node_modules/mermaid')) {
+          //
+          // 【启动性能关键修复②】mermaid 生态依赖必须整体钉进 mermaid chunk 族。
+          // 只匹配 node_modules/mermaid 不够：`@mermaid-js/parser`（mermaid 的
+          // 解析器子包）等传递依赖不匹配任何规则时走 Rollup 默认分配，实测其
+          // 动态导入 facade（0 字节壳）被落进入口 chunk，壳又静态引 mermaid-core
+          // 的 27 个导出 → 入口为此静态 import 整个 3MB mermaid-core（cytoscape/
+          // d3/dagre 全量），mermaid 懒加载完全失效、冷启动暴涨。故把整个生态
+          // （parser/cytoscape/dagre/layout-base/lodash-es，均仅被 mermaid 引用）
+          // 一并钉入 mermaid-core，保证入口对 mermaid 只有动态 import 一条边。
+          if (
+            id.includes('node_modules/mermaid') ||
+            id.includes('@mermaid-js/') ||
+            id.includes('cytoscape') ||
+            id.includes('dagre') ||
+            id.includes('layout-base') ||
+            id.includes('lodash-es')
+          ) {
             // 各类图表渲染器单独拆分
             if (id.includes('diagrams/')) {
               return 'mermaid-diagrams';
             }
             // 核心运行时（解析器、渲染引擎、API）
-            if (id.includes('mermaid/dist/')) {
-              return 'mermaid-core';
-            }
-            return 'mermaid';
+            return 'mermaid-core';
           }
           // KaTeX math library
           if (id.includes('katex')) {
