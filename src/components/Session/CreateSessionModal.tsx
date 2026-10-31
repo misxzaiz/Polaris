@@ -9,9 +9,10 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/utils/cn'
-import { Bot, Check, Zap } from 'lucide-react'
+import { Bot, Check, Zap, ChevronDown } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useConfigStore } from '@/stores/configStore'
+import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager'
 import { Button } from '@/components/Common'
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
@@ -57,7 +58,8 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
 
   // 内部状态
   const [primaryWorkspaceId, setPrimaryWorkspaceId] = useState<string | null>(null)
-  const [contextWorkspaceIds, setContextWorkspaceIds] = useState<string[]>([])
+  // 引擎/供应商模型区默认折叠为一行摘要（spec：plans/create-session-modal-slimdown-spec.md）
+  const [providerExpanded, setProviderExpanded] = useState(false)
   const [engineId, setEngineId] = useState<EngineId>(defaultEngineId)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -126,6 +128,9 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
     setEngineId(defaultEngineId)
   }, [defaultEngineId])
 
+  // 模型 Profile 列表（折叠摘要行显示所选供应商名用）
+  const profiles = useModelProfileStore(s => s.profiles)
+
   const engineMetadatas = useEngineMetadataStore(s => s.metadatas)
   const engineOptions = useMemo(() => {
     if (engineMetadatas.length > 0) {
@@ -140,6 +145,23 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
       { id: 'simple-ai' as EngineId, label: 'Simple', Icon: Zap },
     ]
   }, [engineMetadatas])
+
+  // 记住的引擎已不可用（被移除/插件卸载）时回退全局默认（与 NewSessionButton 同款护栏）
+  useEffect(() => {
+    if (!engineOptions.some(o => o.id === engineId)) {
+      setEngineId(defaultEngineId)
+    }
+  }, [engineOptions, engineId, defaultEngineId])
+
+  // 折叠摘要行文案：引擎名 · 供应商（官方/Profile 名）· 模型
+  const engineLabel = engineOptions.find(o => o.id === engineId)?.label ?? engineId
+  const providerSummary = (() => {
+    const mode = providerConfig.profileMode ?? 'profile'
+    if (mode === 'official') return '官方接口'
+    const profile = profiles.find(p => p.id === providerConfig.modelProfileId)
+    const pName = profile?.name ?? (providerConfig.modelProfileId ? '未知供应商' : '未选择供应商')
+    return providerConfig.model ? `${pName} · ${providerConfig.model}` : pName
+  })()
 
   // 点击外部关闭
   const modalRef = useRef<HTMLDivElement>(null)
@@ -169,15 +191,6 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
-
-  // 切换关联工作区
-  const handleToggleContextWorkspace = (workspaceId: string) => {
-    if (contextWorkspaceIds.includes(workspaceId)) {
-      setContextWorkspaceIds(prev => prev.filter(id => id !== workspaceId))
-    } else {
-      setContextWorkspaceIds(prev => [...prev, workspaceId])
-    }
-  }
 
   // 创建会话
   const handleCreate = async () => {
@@ -221,14 +234,16 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
           : {
               type: 'project',
               workspaceId: primaryWorkspaceId,
-              contextWorkspaceIds,
+              // 关联工作区已从本弹窗移除（spec：create-session-modal-slimdown-spec.md）：
+              // 管理入口收敛在 QuickSwitch 面板/会话内，不在创建时设置
+              contextWorkspaceIds: [],
               workspaceLocked: true, // 创建时锁定主工作区
               engineId,
               ...providerOverride,
             }
       )
 
-      log.info('创建会话成功', { sessionId, primaryWorkspaceId, isFreeMode, contextWorkspaceIds, engineId })
+      log.info('创建会话成功', { sessionId, primaryWorkspaceId, isFreeMode, engineId })
       onCreated?.(sessionId)
       onClose()
     } catch (err) {
@@ -251,88 +266,47 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
       <div
         ref={modalRef}
         data-modal="create-session"
-        className="bg-background-elevated rounded-xl p-4 sm:p-6 w-full max-w-lg border border-border shadow-glow"
+        className="bg-background-elevated rounded-xl p-4 sm:p-6 w-full max-w-md max-h-[85vh] flex flex-col border border-border shadow-glow"
       >
         {/* 标题 */}
-        <h2 className="text-lg font-semibold text-text-primary mb-4">
+        <h2 className="shrink-0 text-lg font-semibold text-text-primary mb-4">
           {t('createSessionModal.title')}
         </h2>
 
-        {/* 错误提示 */}
-        {error && (
-          <div className="mb-4 p-3 bg-danger-faint text-danger rounded-lg text-sm">
-            {error}
-          </div>
-        )}
-
-        {/* 无工作区时的提示 */}
-        {sortedWorkspaces.length === 0 ? (
-          <div className="py-6 text-center space-y-3">
-            <p className="text-text-secondary">{t('createSessionModal.noWorkspace')}</p>
-            {/* 自由会话：即使无工作区也可创建 */}
-            <button
-              type="button"
-              onClick={() => setPrimaryWorkspaceId('')}
-              className={cn(
-                'w-full max-w-xs mx-auto flex items-center justify-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors',
-                primaryWorkspaceId === ''
-                  ? 'bg-primary/10 text-primary border-primary/30'
-                  : 'text-text-secondary border-border-subtle hover:text-text-primary hover:bg-background-hover'
-              )}
-            >
-              <Bot className="w-4 h-4" />
-              自由会话（不绑定工作区）
-            </button>
-            <div className="text-xs text-text-tertiary">或先创建专属工作区</div>
-            <Button variant="primary" onClick={() => setShowCreateWorkspaceModal(true)}>
-              {t('createSessionModal.createWorkspaceFirst')}
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* AI 引擎选择区 */}
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
-                AI 引擎
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {engineOptions.map(({ id, label, Icon }) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setEngineId(id)}
-                    disabled={isLoading}
-                    title={getEngineFullName(id)}
-                    className={cn(
-                      'flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors',
-                      engineId === id
-                        ? 'bg-primary/10 text-primary border-primary/30'
-                        : 'text-text-secondary border-border-subtle hover:text-text-primary hover:bg-background-hover'
-                    )}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span>{label}</span>
-                  </button>
-                ))}
-              </div>
+        {/* 滚动内容区：矮窗口防裁切（标题/底部按钮常驻，中间内容滚动）
+            —— 根因与布局取舍见 plans/create-session-modal-slimdown-spec.md */}
+        <div className="min-h-0 overflow-y-auto">
+          {/* 错误提示 */}
+          {error && (
+            <div className="mb-4 p-3 bg-danger-faint text-danger rounded-lg text-sm">
+              {error}
             </div>
+          )}
 
-            {/* 模型供应商 + 模型（按当前待选引擎过滤 Profile；面板内选择，不写回当前会话） */}
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
-                模型供应商 / 模型
-              </label>
-              <SessionConfigSelector
-                config={providerConfig}
-                onChange={setProviderConfig}
-                visibleTypes={['profile', 'model']}
-                variant="panel"
-                engineOverride={engineId}
-                writeThroughToSession={false}
-              />
+          {/* 主工作区选择区（无工作区时降级为引导） */}
+          {sortedWorkspaces.length === 0 ? (
+            <div className="py-4 text-center space-y-3">
+              <p className="text-text-secondary">{t('createSessionModal.noWorkspace')}</p>
+              {/* 自由会话：即使无工作区也可创建 */}
+              <button
+                type="button"
+                onClick={() => setPrimaryWorkspaceId('')}
+                className={cn(
+                  'w-full max-w-xs mx-auto flex items-center justify-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors',
+                  primaryWorkspaceId === ''
+                    ? 'bg-primary/10 text-primary border-primary/30'
+                    : 'text-text-secondary border-border-subtle hover:text-text-primary hover:bg-background-hover'
+                )}
+              >
+                <Bot className="w-4 h-4" />
+                自由会话（不绑定工作区）
+              </button>
+              <div className="text-xs text-text-tertiary">或先创建专属工作区</div>
+              <Button variant="primary" onClick={() => setShowCreateWorkspaceModal(true)}>
+                {t('createSessionModal.createWorkspaceFirst')}
+              </Button>
             </div>
-
-            {/* 主工作区选择区 */}
+          ) : (
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
                 {t('createSessionModal.primaryWorkspaceLabel')} *
@@ -405,61 +379,67 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
                 + {t('createSessionModal.addWorkspace')}
               </button>
             </div>
+          )}
 
-            {/* 关联工作区选择区（可选，有多个工作区且非自由会话时显示） */}
-            {sortedWorkspaces.length > 1 && primaryWorkspaceId !== '' && (
-              <div className="pt-4 border-t border-border-subtle">
-                <label className="block text-sm font-medium text-text-secondary mb-2">
-                  {t('createSessionModal.contextWorkspaceLabel')}
-                  <span className="text-xs text-text-tertiary ml-1">
-                    ({t('createSessionModal.optional')})
-                  </span>
-                </label>
-                <div className="max-h-32 overflow-y-auto border border-border rounded-lg">
-                  {filteredWorkspaces
-                    .filter(w => w.id !== primaryWorkspaceId)
-                    .map((workspace, index, arr) => {
-                      const isContext = contextWorkspaceIds.includes(workspace.id)
-                      return (
-                        <label
-                          key={workspace.id}
-                          className={cn(
-                            'flex items-start px-3 py-2 text-sm cursor-pointer',
-                            'hover:bg-background-hover transition-colors',
-                            index !== arr.length - 1 && 'border-b border-border-subtle',
-                            isContext && 'bg-primary/5'
-                          )}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isContext}
-                            onChange={() => handleToggleContextWorkspace(workspace.id)}
-                            className="w-4 h-4 mt-0.5 rounded border-border text-primary focus:ring-primary shrink-0"
-                          />
-                          <div className="ml-2 min-w-0 flex-1">
-                            <div className={cn('truncate', isContext ? 'text-primary' : 'text-text-secondary')}>
-                              {workspace.name}
-                            </div>
-                            <div className="text-xs truncate text-text-tertiary mt-0.5">
-                              {workspace.path}
-                            </div>
-                          </div>
-                        </label>
-                      )
-                    })}
+          {/* 引擎 + 模型供应商/模型：默认折叠为一行摘要（cap.kv 记忆通常已对，点开才改）。
+              置于主工作区之后：SessionConfigSelector 下拉向上弹（bottom-full），
+              靠底展开才有足够头部空间，避免被本滚动容器裁切。 */}
+          <div className="mt-4 pt-3 border-t border-border-subtle">
+            <button
+              type="button"
+              onClick={() => setProviderExpanded(v => !v)}
+              aria-expanded={providerExpanded}
+              title="点击展开修改引擎 / 供应商 / 模型"
+              className="w-full flex items-center gap-2 px-1 py-1.5 text-xs rounded transition-colors hover:bg-background-hover"
+            >
+              <Bot className="w-3.5 h-3.5 shrink-0 text-text-muted" />
+              <span className="font-medium text-text-secondary shrink-0">{engineLabel}</span>
+              <span className="truncate text-text-tertiary">{providerSummary}</span>
+              <ChevronDown className={cn(
+                'w-3.5 h-3.5 ml-auto shrink-0 text-text-muted transition-transform',
+                providerExpanded && 'rotate-180'
+              )} />
+            </button>
+            {providerExpanded && (
+              <div className="mt-2 space-y-3">
+                {/* AI 引擎选择 */}
+                <div className="grid grid-cols-2 gap-2">
+                  {engineOptions.map(({ id, label, Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setEngineId(id)}
+                      disabled={isLoading}
+                      title={getEngineFullName(id)}
+                      className={cn(
+                        'flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors',
+                        engineId === id
+                          ? 'bg-primary/10 text-primary border-primary/30'
+                          : 'text-text-secondary border-border-subtle hover:text-text-primary hover:bg-background-hover'
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{label}</span>
+                    </button>
+                  ))}
                 </div>
-                {contextWorkspaceIds.length > 0 && (
-                  <p className="mt-2 text-xs text-text-tertiary">
-                    {t('createSessionModal.contextHint')}
-                  </p>
-                )}
+
+                {/* 模型供应商 + 模型（按当前待选引擎过滤 Profile；面板内选择，不写回当前会话） */}
+                <SessionConfigSelector
+                  config={providerConfig}
+                  onChange={setProviderConfig}
+                  visibleTypes={['profile', 'model']}
+                  variant="panel"
+                  engineOverride={engineId}
+                  writeThroughToSession={false}
+                />
               </div>
             )}
           </div>
-        )}
+        </div>
 
         {/* 底部按钮 */}
-        <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-border-subtle">
+        <div className="shrink-0 flex justify-end gap-2 pt-4 mt-4 border-t border-border-subtle">
           <Button variant="ghost" onClick={onClose} disabled={isLoading}>
             {t('common:buttons.cancel')}
           </Button>

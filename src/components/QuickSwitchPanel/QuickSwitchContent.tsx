@@ -322,7 +322,7 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
       <div className="px-2 pb-2 pt-1 border-t border-border-subtle/20">
         {/* 新建会话 */}
         <button
-          onClick={onCreateSession}
+          onClick={() => onCreateSession()}
           className={cn(
             'w-full px-2 py-1.5 rounded-lg',
             'border border-dashed border-border-subtle/50',

@@ -424,7 +424,8 @@ function App() {
           </Suspense>
         )}
 
-        {/* Ctrl/Cmd+Shift+'+' 唤出：选择主工作区/关联工作区新建会话 */}
+        {/* Ctrl/Cmd+Shift+'+' 唤出：选择主工作区新建会话（引擎/供应商模型默认折叠，
+            关联工作区在 QuickSwitch 面板/会话内管理，见 plans/create-session-modal-slimdown-spec.md） */}
         {showCreateSession && (
           <Suspense fallback={null}>
             <CreateSessionModal

@@ -9,7 +9,7 @@ import { memo, useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { cn } from '@/utils/cn'
 import { QuickSwitchTrigger } from './QuickSwitchTrigger'
 import { QuickSwitchContent } from './QuickSwitchContent'
-import { CreateSessionModal } from '@/components/Session/CreateSessionModal'
+import { NewSessionPanel } from '@/components/Chat/session/NewSessionPanel'
 import type { QuickSwitchPanelProps, QuickSessionInfo, QuickWorkspaceInfo } from './types'
 import type { SessionStatus } from '@/types/session'
 import {
@@ -62,8 +62,9 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
   // 钉住状态（从 localStorage 初始化）
   const [isPinned, setIsPinned] = useState(getPinnedState)
 
-  // 新建会话弹窗状态
-  const [showCreateModal, setShowCreateModal] = useState(false)
+  // 新建会话面板开关（复用状态栏 + 号共享面板 NewSessionPanel，视口居中模式；
+  // spec：create-session-modal-slimdown-spec.md——锚点在屏幕中部时向上展开会越出应用上缘）
+  const [isNewSessionOpen, setIsNewSessionOpen] = useState(false)
 
   // 工作区下拉是否打开的 ref（同步更新，避免面板关闭）
   const workspaceDropdownOpenRef = useRef(false)
@@ -187,9 +188,10 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
     }
   }, [])
 
-  // 新建会话 - 打开弹窗
+  // 新建会话 - 打开共享面板（视口居中；快速面板随即收起，避免双层浮层叠置）
   const handleCreateSession = useCallback(() => {
-    setShowCreateModal(true)
+    setIsNewSessionOpen(true)
+    setIsPanelVisible(false)
   }, [])
 
   // 切换钉住状态
@@ -353,9 +355,12 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
           </div>
         )}
       </div>
-{/* 新建会话弹窗 */}
-      {showCreateModal && (
-        <CreateSessionModal onClose={() => setShowCreateModal(false)} />
+      {/* 新建会话面板（与状态栏 + 号同源，视口居中；根容器 pointer-events-none，面板自带 auto） */}
+      {isNewSessionOpen && (
+        <NewSessionPanel
+          placement="center"
+          onClose={() => setIsNewSessionOpen(false)}
+        />
       )}
     </div>
   )
