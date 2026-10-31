@@ -2,7 +2,9 @@
 //!
 //! 对应 `dev/docs/sky/step3-dispatch.md`：
 //! - 阶段 A（mod.rs 主体）：RouterBus 实现契约 `Router` trait，dispatch 全链路
-//!   （广播 dispatch.start → 权限 gate → 找句柄 → invoke → 广播 dispatch.end）
+//!   （广播 dispatch.start → 权限 gate → 找句柄 → invoke → 广播 dispatch.end；
+//!   其中 start/ok end 广播默认门控关闭——仅 deny/error 终态广播，或
+//!   POLARIS_DISPATCH_TRACE=1 恢复全量，见 `dispatch_trace_enabled` 字段文档）
 //! - 阶段 B（event_adapter / demo_capability）：事件适配层（契约 `Event` ↔ 现有
 //!   广播器字符串格式）+ demo capability（cap.echo）
 //!
@@ -347,9 +349,11 @@ impl RouterBus {
 
     /// 流式 dispatch（第六步：事件经 EventAdapter 推送，立即返回 StreamAck）
     ///
-    /// 全链路：广播 dispatch.start(stream) → 权限 gate → 查流式平行表 →
+    /// 全链路：广播 dispatch.start(stream)（门控：默认降级 tracing::debug，
+    /// 开关开才广播）→ 权限 gate → 查流式平行表 →
     /// invoke_stream 拿 Receiver → spawn 泵任务逐 Event 转播（trace 覆写为
-    /// env.trace）→ sender 关闭后广播 dispatch.end(stream) → 立即返回 StreamAck。
+    /// env.trace）→ sender 关闭后广播 dispatch.end(stream)（ok 门控 / error
+    /// 保留，与同步 end 同一分级）→ 立即返回 StreamAck。
     ///
     /// 泵任务要求调用方处于 tokio 运行时（Tauri 命令 / axum handler 均满足）。
     pub fn dispatch_stream(&self, env: Envelope) -> Result<StreamAck, String> {
