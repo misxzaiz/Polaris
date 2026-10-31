@@ -18,7 +18,8 @@ use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 /// 审计链起始哈希（空链的 prev_hash）
 pub const GENESIS_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -123,21 +124,35 @@ const TAIL_SCAN_BYTES: u64 = 64 * 1024;
 ///
 /// 单文件无轮转的历史布局已证明会无限增长（13.9 万条/天）。打开 sink 前
 /// 把超过 `max_bytes` 的文件整体改名进同级 `archive/`（保留可回溯），
-/// 当前路径从空文件重新起链。返回归档目标路径；文件不存在/未超限/改名
-/// 失败（多实例占用等）一律返回 None——绝不阻塞启动，尾读续链本身已 O(1)。
-pub fn archive_oversized_legacy(path: &Path, max_bytes: u64) -> Option<PathBuf> {
-    let meta = fs::metadata(path).ok()?;
+/// 当前路径从空文件重新起链。
+///
+/// 加固 H-5：返回 `ArchiveOutcome` 区分三种状态——归档成功 / 未超限 / 改名失败，
+/// 让调用方能落可区分的日志（多实例并发归档时 rename 失败与未超限不再同返 None，
+/// 归档成功率/竞态可观测）。绝不阻塞启动，尾读续链本身已 O(1)。
+pub fn archive_oversized_legacy(path: &Path, max_bytes: u64) -> ArchiveOutcome {
+    let Ok(meta) = fs::metadata(path) else {
+        return ArchiveOutcome::NotOversized; // 文件不存在视为未超限
+    };
     if !meta.is_file() || meta.len() <= max_bytes {
-        return None;
+        return ArchiveOutcome::NotOversized;
     }
-    let parent = path.parent()?;
+    let Some(parent) = path.parent() else {
+        return ArchiveOutcome::RenameFailed;
+    };
     let dir = parent.join("archive");
-    fs::create_dir_all(&dir).ok()?;
+    if fs::create_dir_all(&dir).is_err() {
+        return ArchiveOutcome::RenameFailed;
+    }
     // 目标名：dispatch-<mtime YYYYMMDD-HHMMSS>.<ext>，撞名追加序号
-    let stamp = chrono::DateTime::<chrono::Utc>::from(meta.modified().ok()?)
-        .format("%Y%m%d-%H%M%S")
-        .to_string();
-    let stem = path.file_stem()?.to_str()?;
+    let stamp = match meta.modified() {
+        Ok(m) => chrono::DateTime::<chrono::Utc>::from(m)
+            .format("%Y%m%d-%H%M%S")
+            .to_string(),
+        Err(_) => return ArchiveOutcome::RenameFailed,
+    };
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return ArchiveOutcome::RenameFailed;
+    };
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("jsonl");
     let mut target = dir.join(format!("{}-{}.{}", stem, stamp, ext));
     let mut n = 2;
@@ -146,11 +161,22 @@ pub fn archive_oversized_legacy(path: &Path, max_bytes: u64) -> Option<PathBuf> 
         n += 1;
     }
     match fs::rename(path, &target) {
-        Ok(()) => Some(target),
+        Ok(()) => ArchiveOutcome::Archived(target),
         // 被其他实例占用（Windows 改名打开中的文件可能成功也可能失败）：
         // 失败即放弃本次归档，下次启动再试
-        Err(_) => None,
+        Err(_) => ArchiveOutcome::RenameFailed,
     }
+}
+
+/// 归档结果（加固 H-5）：让调用方按状态落可区分日志。
+#[derive(Debug)]
+pub enum ArchiveOutcome {
+    /// 已归档到 archive/（携带目标路径）
+    Archived(PathBuf),
+    /// 未超限 / 文件不存在 → 不动
+    NotOversized,
+    /// rename 失败（多实例占用、权限等）→ 静默跳过，下次再试
+    RenameFailed,
 }
 
 /// 从文件尾部 `window` 字节窗口扫描最后一条有效记录的 `record_hash`。
@@ -243,7 +269,11 @@ impl FileAuditSink {
     }
 
     /// 已追加条数（打开时尾读窗口内的行数 + 本次追加数）。
-    /// 不再等于历史总条数（O(1) 启动的代价，总条数按需走 `verify_chain`）。
+    ///
+    /// **语义变更（P0-1）**：不再等于历史总条数——O(1) 启动的代价是只扫尾部
+    /// `TAIL_SCAN_BYTES` 窗口。历史总量按需走 `verify_chain`（全量扫描）或
+    /// `tail_lines`（audit_tail 命令独立全量读，返回自己的 total）。
+    /// 唯一生产侧消费者是 `state.rs` 启动日志（打印一次），不作为总量展示。
     pub fn count(&self) -> u64 {
         self.inner.lock().unwrap().count
     }
@@ -285,23 +315,53 @@ impl FileAuditSink {
 
 impl AuditSink for FileAuditSink {
     fn append(&self, entry: &AuditEntry) -> Result<(), String> {
-        let started = std::time::Instant::now();
+        let started = Instant::now();
         let result = self.append_inner(entry);
         // 慢追加观测（2026-10-31 楔死取证）：append 是每条 dispatch 的必经点，
         // 若文件写被外部因素拖慢（杀软实时扫描/磁盘停顿），所有 dispatch 会
         // 在此排队——生产楔死时 watchdog 点名 cap.kv 但 sqlite 慢操作为零，
         // 本观测点用于二值定位「storage 慢 vs audit 慢」。
+        //
+        // 加固 H-3：>500ms warn 进程级 10s 去重——cap.kv 高频期若 append 卡住，
+        // 原实现每秒落 60 条 warn 反向制造洪水。窗口内重复降 debug。
         let elapsed = started.elapsed();
-        if elapsed >= std::time::Duration::from_millis(500) {
-            tracing::warn!(
-                capability = %entry.capability.0,
-                elapsed_ms = elapsed.as_millis() as u64,
-                "[AuditSink] 慢追加（>500ms），dispatch 排队元候"
-            );
+        if elapsed >= Duration::from_millis(500) {
+            observe_slow_append(&entry.capability.0, elapsed);
         }
         result
     }
 
+}
+
+/// 慢追加告警去重（加固 H-3）：进程级 10s 窗口，每 capability 最多 1 条 warn。
+fn observe_slow_append(capability: &str, elapsed: Duration) {
+    static LAST_WARN: OnceLock<Mutex<std::collections::HashMap<String, Instant>>> = OnceLock::new();
+    let last = LAST_WARN.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+
+    let now = Instant::now();
+    let should_warn = {
+        let mut guard = last.lock().unwrap();
+        match guard.get(capability) {
+            Some(t) if now.duration_since(*t) < Duration::from_secs(10) => false,
+            _ => {
+                guard.insert(capability.to_string(), now);
+                true
+            }
+        }
+    };
+    if should_warn {
+        tracing::warn!(
+            capability = %capability,
+            elapsed_ms = elapsed.as_millis() as u64,
+            "[AuditSink] 慢追加（>500ms），dispatch 排队元候（10s 去重）"
+        );
+    } else {
+        tracing::debug!(
+            capability = %capability,
+            elapsed_ms = elapsed.as_millis() as u64,
+            "[AuditSink] 慢追加（10s 窗口内已 warn，本次降 debug）"
+        );
+    }
 }
 
 /// 读取审计文件尾部 N 行 + 总条数（`audit_tail` 命令用）
@@ -518,18 +578,24 @@ mod tests {
     }
 
     /// P0-1：超大文件被归档（保留在 archive/），当前路径重新起链；
-    /// 未超限文件不归档。
+    /// 未超限文件不归档；rename 失败状态可区分（加固 H-5）。
     #[test]
     fn archive_oversized_legacy_moves_and_restarts_chain() {
         let path = tmp_path("archive");
         fs::write(&path, "x".repeat(4096)).unwrap();
 
-        // 未超限 → 不动
-        assert!(archive_oversized_legacy(&path, 8192).is_none());
+        // 未超限 → NotOversized（不动）
+        assert!(matches!(
+            archive_oversized_legacy(&path, 8192),
+            ArchiveOutcome::NotOversized
+        ));
         assert!(path.exists(), "未超限文件应保留原位");
 
-        // 超限 → 归档，原路径消失，重开从 GENESIS 起链
-        let archived = archive_oversized_legacy(&path, 1024).expect("超限文件应被归档");
+        // 超限 → Archived（携带目标路径），原路径消失，重开从 GENESIS 起链
+        let archived = match archive_oversized_legacy(&path, 1024) {
+            ArchiveOutcome::Archived(p) => p,
+            other => panic!("超限文件应被归档，实际 {:?}", other),
+        };
         assert!(archived.parent().unwrap().ends_with("archive"));
         assert!(archived.exists());
         assert!(!path.exists(), "归档后原路径应不存在");

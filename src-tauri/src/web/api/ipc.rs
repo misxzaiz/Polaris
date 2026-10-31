@@ -2888,29 +2888,26 @@ async fn dispatch_router_dispatch(state: &AppState, args: &Value) -> Result<Json
     // X5 护栏：DISPATCH_SYNC_TIMEOUT 兜「能力 handler 未返回」的挂死——
     // 只解除调用方阻塞（blocking 线程无法强取消，由能力自行完成）。
     // 楔死取证（2026-10-31）：10s 未返回即点名 target（与 commands/router.rs 同款）。
+    // 加固 H-4：select! 包 dispatch + 10s sleep，快路径立即结束 sleep 分支，
+    // 不再每条 dispatch 留一个睡 10s 的 task。
     let router = state.router.clone();
-    let watchdog_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    {
-        let done2 = std::sync::Arc::clone(&watchdog_done);
-        let watchdog_target = env.target.0.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-            if !done2.load(std::sync::atomic::Ordering::Relaxed) {
-                tracing::warn!(
-                    target = %watchdog_target,
-                    "dispatch 10s 未返回（楔死取证：此能力挂住，blocking 池将被占满）"
-                );
-            }
-        });
-    }
-    let done_store = std::sync::Arc::clone(&watchdog_done);
+    let watchdog_target = env.target.0.clone();
+    let dispatch = tokio::task::spawn_blocking(move || router.dispatch(env));
+    tokio::pin!(dispatch);
     let reply = match tokio::time::timeout(
         crate::services::router::DISPATCH_SYNC_TIMEOUT,
-        tokio::task::spawn_blocking(move || {
-            let out = router.dispatch(env);
-            done_store.store(true, std::sync::atomic::Ordering::Relaxed);
-            out
-        }),
+        async {
+            tokio::select! {
+                r = &mut dispatch => r,
+                _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
+                    tracing::warn!(
+                        target = %watchdog_target,
+                        "dispatch 10s 未返回（楔死取证：此能力挂住，blocking 池将被占满）"
+                    );
+                    (&mut dispatch).await
+                }
+            }
+        },
     )
     .await
     {

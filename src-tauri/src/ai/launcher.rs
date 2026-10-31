@@ -51,15 +51,50 @@ pub struct McpConfigParams<'a> {
 /// 读取 config.json 的 `mcp.sessionDefaults`（会话级 MCP 白名单）。
 ///
 /// 缺省 / null / 非字符串数组 → `None`（全量可用，保持现行为，容错不炸）。
+///
+/// 加固 H-2（spec audit-startup-hardening §H-2）：mtime 守卫的进程级缓存。
+/// `prepare_mcp_config` 在 ClaudeCode stream-json 单发模式下每条消息调一次，
+/// 原实现每次 `read_to_string`+`serde_json::from_str` 同步读盘解析——与首响
+/// 优化主题相悖。现改为：命中 `config.json` 的 `modified()` 未变即返回缓存值，
+/// 每条消息只一次 `metadata()`（微秒级 stat），不读不解析。config 被设置页改动
+/// 后 mtime 变化 → 自动重读。
 fn load_session_mcp_whitelist(config_dir: &Path) -> Option<Vec<String>> {
-    let content = std::fs::read_to_string(config_dir.join("config.json")).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&content).ok()?;
-    let list = value.get("mcp")?.get("sessionDefaults")?.as_array()?;
-    Some(
-        list.iter()
-            .filter_map(|v| v.as_str().map(str::to_string))
-            .collect(),
-    )
+    use std::sync::{Mutex, OnceLock};
+    use std::time::SystemTime;
+
+    static CACHE: OnceLock<Mutex<Option<(SystemTime, Option<Vec<String>>)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(None));
+
+    let config_path = config_dir.join("config.json");
+    // mtime 为缓存键：拿不到 mtime（文件不存在等）直接走 None 分支，
+    // 不污染缓存（下次再试）。
+    let current_mtime = std::fs::metadata(&config_path)
+        .and_then(|m| m.modified())
+        .ok()?;
+
+    {
+        let guard = cache.lock().unwrap();
+        if let Some((cached_mtime, cached_value)) = guard.as_ref() {
+            if *cached_mtime == current_mtime {
+                return cached_value.clone();
+            }
+        }
+    }
+
+    // mtime 变了（或首次）：重读重解析
+    let parsed = (|| {
+        let content = std::fs::read_to_string(&config_path).ok()?;
+        let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+        let list = value.get("mcp")?.get("sessionDefaults")?.as_array()?;
+        Some(
+            list.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect(),
+        )
+    })();
+
+    *cache.lock().unwrap() = Some((current_mtime, parsed.clone()));
+    parsed
 }
 
 /// 统一 MCP 配置准备入口。
@@ -226,5 +261,65 @@ pub fn inject_mcp_into_session_opts(
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::SystemTime;
+
+    /// H-2：白名单 mtime 缓存命中——两次调用间不改 config.json，第二次走缓存
+    /// （不重读重解析）。验证：返回值一致 + mtime 守卫生效。
+    #[test]
+    fn session_mcp_whitelist_caches_until_mtime_change() {
+        let dir = std::env::temp_dir().join(format!(
+            "polaris-launcher-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let config_path = dir.join("config.json");
+        fs::write(
+            &config_path,
+            r#"{"mcp":{"sessionDefaults":["server-a","server-b"]}}"#,
+        )
+        .unwrap();
+
+        // 首次：读盘解析
+        let first = load_session_mcp_whitelist(&dir).unwrap();
+        assert_eq!(first, vec!["server-a".to_string(), "server-b".to_string()]);
+
+        // 第二次：mtime 未变 → 命中缓存（返回值一致）
+        let second = load_session_mcp_whitelist(&dir).unwrap();
+        assert_eq!(second, first, "mtime 未变应命中缓存返回同值");
+
+        // 改 config.json（内容变，mtime 通常也会变）→ 缓存失效重读
+        // 注：同秒内改文件 mtime 精度可能不变，强制等 1.1s 确保 mtime 推进
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        fs::write(
+            &config_path,
+            r#"{"mcp":{"sessionDefaults":["server-c"]}}"#,
+        )
+        .unwrap();
+        let third = load_session_mcp_whitelist(&dir).unwrap();
+        assert_eq!(third, vec!["server-c".to_string()], "mtime 变化应重读");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// H-2：缺省/null/非数组 → None（保持现行为，容错不炸）。
+    #[test]
+    fn session_mcp_whitelist_absent_returns_none() {
+        let dir = std::env::temp_dir().join(format!(
+            "polaris-launcher-test-none-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&dir.join("config.json"), r#"{"other":"field"}"#).unwrap();
+        assert!(load_session_mcp_whitelist(&dir).is_none());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -976,6 +976,11 @@ pub fn run() {
                 }
             });
 
+            // 加固 H-1（spec audit-startup-hardening §H-1）：标记宿主 setup 完成，
+            // 插件服务 BOOT_GRACE 宽限从此刻起算（而非 PluginServiceManager 构造时刻，
+            // 后者早于窗口创建/discover 10-15s，会让宽限提前耗尽）。幂等：首次写入生效。
+            state.plugin_service_manager.mark_setup_done();
+
             Ok(())
         })
         .on_window_event(|window, event| {

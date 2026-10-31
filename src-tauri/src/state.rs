@@ -436,10 +436,17 @@ pub fn create_app_state(
             // P0-1（spec audit-startup-firsttoken-root-cure §A.2）：超大旧式单文件
             // 先归档再打开——3GB 全量扫描曾是启动 16s 空洞的根源；改名失败
             // （被其他实例占用等）静默跳过，尾读续链本身已 O(1)。
-            if let Some(dst) =
-                audit_sink::archive_oversized_legacy(&audit_path, 64 * 1024 * 1024)
-            {
-                tracing::info!("[AuditSink] 超大旧式审计文件已归档: {}", dst.display());
+            // 加固 H-5：按 ArchiveOutcome 落可区分日志（归档成功/未超限/rename 失败）。
+            match audit_sink::archive_oversized_legacy(&audit_path, 64 * 1024 * 1024) {
+                audit_sink::ArchiveOutcome::Archived(dst) => {
+                    tracing::info!("[AuditSink] 超大旧式审计文件已归档: {}", dst.display());
+                }
+                audit_sink::ArchiveOutcome::RenameFailed => {
+                    tracing::warn!(
+                        "[AuditSink] 超大旧式审计文件归档失败（多实例占用/权限），本次跳过，下次启动再试"
+                    );
+                }
+                audit_sink::ArchiveOutcome::NotOversized => {}
             }
             match FileAuditSink::open(&audit_path) {
                 Ok(sink) => {

@@ -15,7 +15,6 @@
 use crate::contracts::{CapabilityId, Envelope, MsgId, Source, TraceId};
 use crate::error::{AppError, Result};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use crate::contracts::{PermissionPromptSink as _, Router as _}; // dispatch / subscribe / register_handle / resolve
 
 /// 主窗口 label（本地信任域；tauri.conf.json 主窗口配置）
@@ -91,29 +90,30 @@ pub async fn router_dispatch(
     // 只解除调用方阻塞（blocking 线程无法强取消，由能力自行完成）。
     // 楔死取证（2026-10-31）：10s 未返回即点名 target——900s 才报太晚且不带
     // 名字，生产曾整实例 dispatch 楔死 50+ 分钟无法归因。
+    //
+    // 加固 H-4：watchdog 用 select! 包 dispatch + 10s sleep——快路径（dispatch
+    // 100ms 返回）立即结束 sleep 分支，不再每条 dispatch 留一个睡 10s 的 task
+    // （cap.kv 60 条/秒原会留下 600 个睡着的 task）。慢路径落 warn 点名 target
+    // 后仍继续 poll 同一 dispatch future（不能丢回复），由外层 timeout 兜底。
     let router = state.router.clone();
-    let watchdog_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    {
-        let done2 = Arc::clone(&watchdog_done);
-        let watchdog_target = env.target.0.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-            if !done2.load(std::sync::atomic::Ordering::Relaxed) {
-                tracing::warn!(
-                    target = %watchdog_target,
-                    "dispatch 10s 未返回（楔死取证：此能力挂住，blocking 池将被占满）"
-                );
-            }
-        });
-    }
-    let done_store = Arc::clone(&watchdog_done);
+    let watchdog_target = env.target.0.clone();
+    let dispatch = tokio::task::spawn_blocking(move || router.dispatch(env));
+    tokio::pin!(dispatch);
     let reply = match tokio::time::timeout(
         crate::services::router::DISPATCH_SYNC_TIMEOUT,
-        tokio::task::spawn_blocking(move || {
-            let out = router.dispatch(env);
-            done_store.store(true, std::sync::atomic::Ordering::Relaxed);
-            out
-        }),
+        async {
+            tokio::select! {
+                r = &mut dispatch => r,
+                _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
+                    tracing::warn!(
+                        target = %watchdog_target,
+                        "dispatch 10s 未返回（楔死取证：此能力挂住，blocking 池将被占满）"
+                    );
+                    // 报警后仍继续等 dispatch 完成（不能丢回复）
+                    (&mut dispatch).await
+                }
+            }
+        },
     )
     .await
     {

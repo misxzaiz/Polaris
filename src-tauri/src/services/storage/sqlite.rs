@@ -33,7 +33,7 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// 每域建表 SQL（items + domain_audit 内嵌同库）
@@ -111,6 +111,10 @@ impl SqliteStorage {
     /// 外层锁只护 map（微秒级）；连接操作在域级内锁执行——单域挂死不拖死
     /// 其他域。慢操作（>1s）落 warn：楔死前兆（如 WAL 膨胀后 checkpoint
     /// 爬行）从「224s 排队后爆发」变为秒级可见。
+    ///
+    /// 加固 H-3：warn 域级 10s 去重——kv 60 条/秒若某域卡在 1s+，原实现每秒
+    /// 落 60 条 warn 反向制造日志洪水（与治理日志洪水的目标相悖）。窗口内
+    /// 重复的慢操作只在 debug 落计数，不 warn。
     fn with_conn<F, R>(&self, domain: &str, f: F) -> Result<R, String>
     where
         F: FnOnce(&Connection) -> Result<R, String>,
@@ -137,13 +141,43 @@ impl SqliteStorage {
         let out = f(&conn);
         let elapsed = started.elapsed();
         if elapsed >= Duration::from_secs(1) {
+            self.observe_slow(domain, elapsed);
+        }
+        out
+    }
+
+    /// 慢操作告警去重（加固 H-3）：每域 10s 窗口内最多 1 条 warn。
+    /// 窗口内重复的慢操作落 debug（带计数可见性，不刷屏）。
+    fn observe_slow(&self, domain: &str, elapsed: Duration) {
+        const SLOW_WARN_WINDOW: Duration = Duration::from_secs(10);
+        // 进程级去重表：kv 等高频域的慢操作聚到一条 warn/10s
+        static LAST_WARN: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+        let last = LAST_WARN.get_or_init(|| Mutex::new(HashMap::new()));
+
+        let now = Instant::now();
+        let should_warn = {
+            let mut guard = last.lock().unwrap();
+            match guard.get(domain) {
+                Some(t) if now.duration_since(*t) < SLOW_WARN_WINDOW => false,
+                _ => {
+                    guard.insert(domain.to_string(), now);
+                    true
+                }
+            }
+        };
+        if should_warn {
             tracing::warn!(
                 domain = %domain,
                 elapsed_ms = elapsed.as_millis() as u64,
-                "[SqliteStorage] 慢操作（>1s），楔死前兆观测点"
+                "[SqliteStorage] 慢操作（>1s），楔死前兆观测点（10s 去重）"
+            );
+        } else {
+            tracing::debug!(
+                domain = %domain,
+                elapsed_ms = elapsed.as_millis() as u64,
+                "[SqliteStorage] 慢操作（10s 窗口内已 warn，本次降 debug）"
             );
         }
-        out
     }
 
     /// 把 `q.filter` 解析成真实 WHERE 子句与 SQL 参数。

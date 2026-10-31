@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -140,8 +140,14 @@ pub struct PluginServiceManager {
     /// 服务状态变更流（前端回推：UI 长期陈旧问题的修复通道，审计 P1-3）。
     /// 无订阅者时 send 的 Err 被忽略。
     status_events: broadcast::Sender<ServiceStatus>,
-    /// 管理器构造时刻（≈宿主 setup 起点），启动宽限期起算锚点（spec §D.2）
+    /// 管理器构造时刻（≈ `create_app_state` 起点）。
+    /// spec §D.2 要求宽限从「宿主 setup 完成」起算，但构造点早于窗口创建/插件
+    /// discover 10-15s——单用此值会让宽限提前耗尽。故仅作 setup 未标记时的兜底。
     booted_at: Instant,
+    /// 宿主 setup 完成时刻（lib.rs setup 闭包末尾 `mark_setup_done()` 写入）。
+    /// `boot_grace_remaining()` 优先以此为准；None（setup 异常未标记）回退 `booted_at`，
+    /// 防御性保证宽限不丢失。加固 spec H-1。
+    setup_done_at: OnceLock<Instant>,
 }
 
 impl PluginServiceManager {
@@ -159,12 +165,21 @@ impl PluginServiceManager {
             reserved_host_ports,
             status_events,
             booted_at: Instant::now(),
+            setup_done_at: OnceLock::new(),
         }
     }
 
-    /// 启动宽限剩余时长（None = 已过宽限期，spec §D.2）
+    /// 标记宿主 setup 完成（宽限期真正起算点，spec §D.2 / 加固 H-1）。
+    /// lib.rs setup 闭包末尾调用；重复调用以首次为准（幂等）。
+    pub fn mark_setup_done(&self) {
+        let _ = self.setup_done_at.set(Instant::now());
+    }
+
+    /// 启动宽限剩余时长（None = 已过宽限期，spec §D.2）。
+    /// 优先用 `setup_done_at`，未标记时回退 `booted_at`（防御性兜底）。
     fn boot_grace_remaining(&self) -> Option<Duration> {
-        let elapsed = self.booted_at.elapsed();
+        let anchor = self.setup_done_at.get().unwrap_or(&self.booted_at);
+        let elapsed = anchor.elapsed();
         if elapsed < BOOT_GRACE {
             Some(BOOT_GRACE - elapsed)
         } else {
@@ -999,4 +1014,61 @@ fn build_args(
                 .replace("{{appConfigDir}}", &config_dir)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// H-1：mark_setup_done 后，宽限从标记时刻起算（非构造时刻）。
+    /// 构造后立即 mark，剩余应接近完整 BOOT_GRACE（允许少量调度抖动）。
+    #[test]
+    fn boot_grace_anchors_to_setup_done_marker() {
+        let mgr = PluginServiceManager::new();
+
+        // 未标记前：宽限从 booted_at（构造时刻）起算，剩余 ≤ BOOT_GRACE
+        let before = mgr.boot_grace_remaining();
+        assert!(before.is_some(), "构造后未过宽限应有剩余");
+        assert!(
+            before.unwrap() <= BOOT_GRACE,
+            "剩余不应超过完整宽限"
+        );
+
+        // 标记 setup 完成
+        mgr.mark_setup_done();
+
+        // 标记后：剩余应基于 mark 时刻，接近完整 BOOT_GRACE
+        let after = mgr.boot_grace_remaining().expect("标记后仍在宽限内");
+        assert!(
+            after > before.unwrap(),
+            "mark 后剩余应大于未标记时（anchor 推迟到 mark 时刻）"
+        );
+        // 容忍 ~50ms 抖动
+        let lower_bound = BOOT_GRACE.checked_sub(Duration::from_millis(50)).unwrap();
+        assert!(
+            after >= lower_bound,
+            "标记后剩余应接近完整 BOOT_GRACE（实际 {:?}，下界 {:?}）",
+            after,
+            lower_bound
+        );
+    }
+
+    /// H-1：mark_setup_done 幂等——重复调用以首次为准。
+    #[test]
+    fn mark_setup_done_is_idempotent() {
+        let mgr = PluginServiceManager::new();
+        mgr.mark_setup_done();
+        let first = mgr.boot_grace_remaining();
+
+        // 推进一点时间
+        std::thread::sleep(Duration::from_millis(20));
+        mgr.mark_setup_done(); // 二次标记，应被忽略
+        let second = mgr.boot_grace_remaining();
+
+        // 二次标记后 anchor 不变 → 剩余应比首次略小（时间推进了）
+        assert!(
+            second < first,
+            "二次 mark 应被忽略，anchor 不变，剩余应随时间递减"
+        );
+    }
 }
