@@ -2,7 +2,9 @@
 //!
 //! 对应 `dev/docs/sky/step3-dispatch.md`：
 //! - 阶段 A（mod.rs 主体）：RouterBus 实现契约 `Router` trait，dispatch 全链路
-//!   （广播 dispatch.start → 权限 gate → 找句柄 → invoke → 广播 dispatch.end）
+//!   （广播 dispatch.start → 权限 gate → 找句柄 → invoke → 广播 dispatch.end；
+//!   其中 start/ok end 广播默认门控关闭——仅 deny/error 终态广播，或
+//!   POLARIS_DISPATCH_TRACE=1 恢复全量，见 `dispatch_trace_enabled` 字段文档）
 //! - 阶段 B（event_adapter / demo_capability）：事件适配层（契约 `Event` ↔ 现有
 //!   广播器字符串格式）+ demo capability（cap.echo）
 //!
@@ -151,6 +153,14 @@ pub struct RouterBus {
     overrides: RwLock<HashMap<CapabilityId, Vec<OverrideSlot>>>,
     /// L2 级覆盖白名单（config.capOverride.allow；装配注入）
     override_allowlist: RwLock<std::collections::HashSet<String>>,
+    /// dispatch 生命周期全量广播诊断开关（POLARIS_DISPATCH_TRACE=1 开启）。
+    ///
+    /// 默认关：每条 dispatch 无条件广播 start/end 在 kv 轮询（~60 dispatch/s）
+    /// 场景下每秒 ~120 条纯噪声污染事件总线与断线重连重放缓冲
+    /// （plans/perf-max-benefit-plan.md §2.2）；仓内/插件仓零消费（§2.3）。
+    /// 用于 WS 侧调试排障与兼容未知外部 WS 消费者；契约测试面板轨迹来自
+    /// 审计链，与本开关无关。
+    pub(crate) dispatch_trace_enabled: bool,
 }
 
 impl RouterBus {
@@ -178,6 +188,12 @@ impl RouterBus {
             prompt_sink: RwLock::new(None),
             overrides: RwLock::new(HashMap::new()),
             override_allowlist: RwLock::new(std::collections::HashSet::new()),
+            // 从 env 读一次（命名对齐 POLARIS_DATA_ROOT 范式）。选字段而非
+            // OnceLock 全局：单测需要逐测试控制开关（OnceLock 进程级一次
+            // 初始化不可控）。
+            dispatch_trace_enabled: std::env::var("POLARIS_DISPATCH_TRACE")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
         }
     }
 
@@ -333,24 +349,33 @@ impl RouterBus {
 
     /// 流式 dispatch（第六步：事件经 EventAdapter 推送，立即返回 StreamAck）
     ///
-    /// 全链路：广播 dispatch.start(stream) → 权限 gate → 查流式平行表 →
+    /// 全链路：广播 dispatch.start(stream)（门控：默认降级 tracing::debug，
+    /// 开关开才广播）→ 权限 gate → 查流式平行表 →
     /// invoke_stream 拿 Receiver → spawn 泵任务逐 Event 转播（trace 覆写为
-    /// env.trace）→ sender 关闭后广播 dispatch.end(stream) → 立即返回 StreamAck。
+    /// env.trace）→ sender 关闭后广播 dispatch.end(stream)（ok 门控 / error
+    /// 保留，与同步 end 同一分级）→ 立即返回 StreamAck。
     ///
     /// 泵任务要求调用方处于 tokio 运行时（Tauri 命令 / axum handler 均满足）。
     pub fn dispatch_stream(&self, env: Envelope) -> Result<StreamAck, String> {
-        // 0. 广播 dispatch.start（stream 标记）
-        self.broadcaster.broadcast(Event {
-            seq: 0,
-            kind: "dispatch.start".into(),
-            payload: serde_json::json!({
-                "msg_id": env.id.0,
-                "target": env.target.0,
-                "source": format!("{:?}", env.source),
-                "stream": true,
-            }),
-            trace: env.trace.clone(),
-        });
+        // 0. dispatch.start（stream 标记）。分级门控（性能治理，
+        // plans/perf-max-benefit-plan.md）：与同步入口同一处置——开关关时
+        // 降级为 tracing::debug，POLARIS_DISPATCH_TRACE=1 恢复广播；
+        // json! 构造移入 if 分支，关闸不白付构造成本。
+        if self.dispatch_trace_enabled {
+            self.broadcaster.broadcast(Event {
+                seq: 0,
+                kind: "dispatch.start".into(),
+                payload: serde_json::json!({
+                    "msg_id": env.id.0,
+                    "target": env.target.0,
+                    "source": format!("{:?}", env.source),
+                    "stream": true,
+                }),
+                trace: env.trace.clone(),
+            });
+        } else {
+            tracing::debug!(target = %env.target.0, msg_id = %env.id.0, source = ?env.source, "dispatch start (stream)");
+        }
 
         // 1. 权限裁决（与同步 dispatch 同一 gate）
         let perm_req = PermissionRequest {
@@ -443,6 +468,8 @@ impl RouterBus {
         let msg_id = env.id.clone();
         let target = env.target.0.clone();
         let audit = self.audit.clone();
+        // 泵任务闭包无法引用 self，开关值在此捕获（bool Copy）
+        let dispatch_trace_enabled = self.dispatch_trace_enabled;
         tokio::spawn(async move {
             loop {
                 let recv = tokio::time::timeout(STREAM_IDLE_TIMEOUT, rx.recv()).await;
@@ -493,17 +520,24 @@ impl RouterBus {
                     }
                 }
             }
-            adapter.broadcast(Event {
-                seq: 0,
-                kind: "dispatch.end".into(),
-                payload: serde_json::json!({
-                    "msg_id": msg_id.0,
-                    "target": target,
-                    "status": "ok",
-                    "stream": true,
-                }),
-                trace,
-            });
+            // 正常收尾：ok 终态分级门控（性能治理，plans/perf-max-benefit-plan.md）
+            // ——开关关时降级为 tracing::debug，POLARIS_DISPATCH_TRACE=1 恢复
+            // 广播；error 终态（上方 idle 超时分支）不受门控影响，原样保留。
+            if dispatch_trace_enabled {
+                adapter.broadcast(Event {
+                    seq: 0,
+                    kind: "dispatch.end".into(),
+                    payload: serde_json::json!({
+                        "msg_id": msg_id.0,
+                        "target": target,
+                        "status": "ok",
+                        "stream": true,
+                    }),
+                    trace,
+                });
+            } else {
+                tracing::debug!(target = %target, msg_id = %msg_id.0, "dispatch ok (stream)");
+            }
         });
 
         Ok(StreamAck {
@@ -617,17 +651,25 @@ impl RouterBus {
 /// 实现契约 `Router` trait
 impl Router for RouterBus {
     fn dispatch(&self, env: Envelope) -> Result<Reply, String> {
-        // 0. 广播 dispatch.start 追踪事件（全链路可观测）
-        self.broadcaster.broadcast(Event {
-            seq: 0,
-            kind: "dispatch.start".into(),
-            payload: serde_json::json!({
-                "msg_id": env.id.0,
-                "target": env.target.0,
-                "source": format!("{:?}", env.source),
-            }),
-            trace: env.trace.clone(),
-        });
+        // 0. dispatch.start 追踪事件。分级门控（性能治理，
+        // plans/perf-max-benefit-plan.md）：正常快路径默认降级为
+        // tracing::debug（不进 EventBroadcaster/重放缓冲），消除 kv 轮询
+        // （~60 dispatch/s）洪水；POLARIS_DISPATCH_TRACE=1 恢复广播。
+        // json! 构造移入 if 分支，关闸不白付构造成本。
+        if self.dispatch_trace_enabled {
+            self.broadcaster.broadcast(Event {
+                seq: 0,
+                kind: "dispatch.start".into(),
+                payload: serde_json::json!({
+                    "msg_id": env.id.0,
+                    "target": env.target.0,
+                    "source": format!("{:?}", env.source),
+                }),
+                trace: env.trace.clone(),
+            });
+        } else {
+            tracing::debug!(target = %env.target.0, msg_id = %env.id.0, source = ?env.source, "dispatch start");
+        }
 
         // 1. 权限裁决（dispatch 是唯一入口，所有调用都过 gate）
         let perm_req = PermissionRequest {
@@ -804,26 +846,35 @@ impl Router for RouterBus {
                     final_outcome.expect("候选链非空（base handler 恒在）");
                 let duration_ms = started.elapsed().as_millis() as u64;
 
-                // 4. 广播 dispatch.end 追踪事件（一次 dispatch 恰一个终态）
-                let end_payload = match &result {
-                    Ok(_) => serde_json::json!({
-                        "msg_id": env.id.0,
-                        "target": env.target.0,
-                        "status": "ok",
-                    }),
-                    Err(e) => serde_json::json!({
-                        "msg_id": env.id.0,
-                        "target": env.target.0,
-                        "status": "error",
-                        "error": e,
-                    }),
-                };
-                self.broadcaster.broadcast(Event {
-                    seq: 0,
-                    kind: "dispatch.end".into(),
-                    payload: end_payload,
-                    trace: env.trace.clone(),
-                });
+                // 4. 广播 dispatch.end 终态（一次 dispatch 恰一个终态）。
+                // 分级门控（性能治理，plans/perf-max-benefit-plan.md）：
+                // error 终态低频高价值，原样广播；ok 终态是 kv 轮询
+                // （~60 dispatch/s）洪水主体，开关关时降级为 tracing::debug
+                // （不进 EventBroadcaster/重放缓冲），POLARIS_DISPATCH_TRACE=1
+                // 恢复广播。json! 构造在 if 分支内，关闸不白付构造成本。
+                if result.is_err() || self.dispatch_trace_enabled {
+                    let end_payload = match &result {
+                        Ok(_) => serde_json::json!({
+                            "msg_id": env.id.0,
+                            "target": env.target.0,
+                            "status": "ok",
+                        }),
+                        Err(e) => serde_json::json!({
+                            "msg_id": env.id.0,
+                            "target": env.target.0,
+                            "status": "error",
+                            "error": e,
+                        }),
+                    };
+                    self.broadcaster.broadcast(Event {
+                        seq: 0,
+                        kind: "dispatch.end".into(),
+                        payload: end_payload,
+                        trace: env.trace.clone(),
+                    });
+                } else {
+                    tracing::debug!(target = %env.target.0, msg_id = %env.id.0, duration_ms, "dispatch ok");
+                }
 
                 // 审计（X4：成败分别记 action；detail 记动作名，不落参数明文）。
                 // 降噪闸：kv 只读动作的 dispatch.ok 不入链（洪水治理，见闸注释）
@@ -909,17 +960,30 @@ impl Router for RouterBus {
                             );
                         }
                     }
-                    self.broadcaster.broadcast(Event {
-                        seq: 0,
-                        kind: "dispatch.end".into(),
-                        payload: serde_json::json!({
-                            "msg_id": env.id.0,
-                            "target": env.target.0,
-                            "status": if result.is_ok() { "ok" } else { "error" },
-                            "sync": true,
-                        }),
-                        trace: env.trace.clone(),
-                    });
+                    // 分级门控（性能治理，plans/perf-max-benefit-plan.md）：
+                    // 与同步主分支终态同一处置——error 终态保留广播；ok 终态
+                    // 开关关时降级为 tracing::debug，POLARIS_DISPATCH_TRACE=1
+                    // 恢复广播（payload 带 sync:true，构造在 if 分支内）。
+                    if result.is_err() || self.dispatch_trace_enabled {
+                        self.broadcaster.broadcast(Event {
+                            seq: 0,
+                            kind: "dispatch.end".into(),
+                            payload: serde_json::json!({
+                                "msg_id": env.id.0,
+                                "target": env.target.0,
+                                "status": if result.is_ok() { "ok" } else { "error" },
+                                "sync": true,
+                            }),
+                            trace: env.trace.clone(),
+                        });
+                    } else {
+                        tracing::debug!(
+                            target = %env.target.0,
+                            msg_id = %env.id.0,
+                            duration_ms = started.elapsed().as_millis() as u64,
+                            "dispatch ok (sync fallback)"
+                        );
+                    }
                     return Ok(Reply {
                         msg_id: env.id,
                         result,
@@ -1171,7 +1235,7 @@ impl Context for RealContext {
 mod tests {
     use super::*;
     use crate::services::router::event_adapter::tests_support::{DenyRemotePermission, RecordingAudit};
-    use crate::services::router::demo_capability::EchoCapability;
+    use crate::services::router::demo_capability::{EchoCapability, FaultyCapability};
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
@@ -1415,10 +1479,15 @@ mod tests {
         );
     }
 
-    /// 验证 dispatch 广播了 dispatch.start / dispatch.end（trace 匹配）
+    /// dispatch 生命周期广播门控（性能治理，plans/perf-max-benefit-plan.md）：
+    /// 正常路径广播降级为 debug（POLARIS_DISPATCH_TRACE 门控）；
+    /// error/deny 终态保留广播（error 见 dispatch_end_error_broadcast_survives_gating）。
+    ///
+    /// 分段语义：开关关 + 正常 ok dispatch → 事件流不含 dispatch.start /
+    /// ok dispatch.end；开关开 → start + end 均在（保留原断言语义）。
     #[test]
     fn dispatch_broadcasts_start_and_end() {
-        let (router, broadcaster) = make_router(Arc::new(AllowAllPermission), None);
+        let (mut router, broadcaster) = make_router(Arc::new(AllowAllPermission), None);
         router.register_handle(Box::new(EchoCapability)).unwrap();
 
         let mut rx = broadcaster.subscribe(Filter {
@@ -1426,6 +1495,9 @@ mod tests {
             trace: None,
         });
 
+        // —— 分段一：开关关（默认）——正常 ok dispatch 不广播 start/end。
+        // EventAdapter::broadcast 对 in-proc 订阅者同步 try_send，dispatch
+        // 返回后事件（若有）已在 channel；短暂 sleep 后清空队列断言。
         let env = Envelope {
             id: MsgId("m7".into()),
             source: Source::Bootstrap,
@@ -1435,22 +1507,104 @@ mod tests {
         };
         let _ = router.dispatch(env).unwrap();
 
-        // 应收到 dispatch.start 和 dispatch.end（其他事件按序）
+        std::thread::sleep(std::time::Duration::from_millis(100));
         let mut kinds = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if ev.kind.starts_with("dispatch.") {
+                kinds.push(ev.kind.clone());
+            }
+        }
+        assert!(
+            !kinds.contains(&"dispatch.start".to_string()),
+            "开关关时正常 ok dispatch 不应广播 dispatch.start，实际: {:?}",
+            kinds
+        );
+        assert!(
+            !kinds.contains(&"dispatch.end".to_string()),
+            "开关关时正常 ok dispatch 不应广播 ok dispatch.end，实际: {:?}",
+            kinds
+        );
+
+        // —— 分段二：开关开——恢复全量广播（start + end 均在）。
+        // make_router 返回的 Arc 引用计数为 1（EventAdapter 不持 router 引用），
+        // 可用 get_mut 置位诊断开关
+        Arc::get_mut(&mut router).unwrap().dispatch_trace_enabled = true;
+        let env2 = Envelope {
+            id: MsgId("m8".into()),
+            source: Source::Bootstrap,
+            target: CapabilityId("cap.echo".into()),
+            payload: Value::Null,
+            trace: TraceId("trace-xyz".into()),
+        };
+        let _ = router.dispatch(env2).unwrap();
+
+        // 应收到 dispatch.start 和 dispatch.end（其他事件按序）
+        let mut kinds2 = Vec::new();
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
-        while kinds.len() < 2 && std::time::Instant::now() < deadline {
+        while kinds2.len() < 2 && std::time::Instant::now() < deadline {
             // mpsc recv 需要 async；用 try_recv 轮询（同步测试）
             match rx.try_recv() {
                 Ok(ev) => {
                     if ev.kind.starts_with("dispatch.") {
-                        kinds.push(ev.kind.clone());
+                        kinds2.push(ev.kind.clone());
                     }
                 }
                 Err(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
             }
         }
-        assert!(kinds.contains(&"dispatch.start".to_string()));
-        assert!(kinds.contains(&"dispatch.end".to_string()));
+        assert!(kinds2.contains(&"dispatch.start".to_string()));
+        assert!(kinds2.contains(&"dispatch.end".to_string()));
+    }
+
+    /// error 终态不受门控影响：开关关（默认）时 dispatch.end(status:error)
+    /// 仍应广播。
+    ///
+    /// 用测试夹具 FaultyCapability（demo_capability.rs，仅 #[cfg(test)] 装配，
+    /// 生产未注册）驱动 Some(h) 分支 handler Err；**不可**用未注册能力驱动
+    /// ——None 分支本就不广播任何 dispatch.end（plans/perf-max-benefit-plan.md
+    /// §2.1 注）。根因与依据：正常路径广播降级为 debug（性能治理）；
+    /// error/deny 终态保留广播。
+    #[test]
+    fn dispatch_end_error_broadcast_survives_gating() {
+        let (router, broadcaster) = make_router(Arc::new(AllowAllPermission), None);
+        router.register_handle(Box::new(FaultyCapability)).unwrap();
+
+        let mut rx = broadcaster.subscribe(Filter {
+            kind: None,
+            trace: None,
+        });
+
+        let env = Envelope {
+            id: MsgId("m9".into()),
+            source: Source::Bootstrap,
+            target: CapabilityId("cap.faulty".into()),
+            payload: Value::Null,
+            trace: TraceId("trace-err".into()),
+        };
+        let reply = router.dispatch(env).unwrap();
+        assert!(reply.result.is_err());
+
+        // 开关保持默认（关）——error 终态仍应广播
+        let mut got_end = false;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        while !got_end && std::time::Instant::now() < deadline {
+            match rx.try_recv() {
+                Ok(ev) => {
+                    if ev.kind == "dispatch.end" {
+                        assert_eq!(
+                            ev.payload["status"], "error",
+                            "FaultyCapability 应产生 error 终态广播"
+                        );
+                        got_end = true;
+                    }
+                }
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
+            }
+        }
+        assert!(
+            got_end,
+            "开关关时 error 终态 dispatch.end 仍应广播（门控只降级 ok 终态）"
+        );
     }
 
     /// 验证 subscribe(filter) 只收到匹配 kind 的事件（契约测试）
@@ -1502,7 +1656,14 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_stream_pumps_events_and_ends() {
-        let (router, broadcaster) = make_router(Arc::new(AllowAllPermission), None);
+        let (mut router, broadcaster) = make_router(Arc::new(AllowAllPermission), None);
+        // 开闸（最小改动）：本测试验证泵转发与 start/end 广播全链路语义；
+        // 门控降级（性能治理，plans/perf-max-benefit-plan.md）后默认不广播，
+        // 置位诊断开关保持原断言有效。make_router 返回的 Arc 引用计数为 1，
+        // 可用 get_mut 置位。
+        Arc::get_mut(&mut router)
+            .unwrap()
+            .dispatch_trace_enabled = true;
         router
             .register_streaming(Arc::new(StreamEchoCapability))
             .unwrap();
