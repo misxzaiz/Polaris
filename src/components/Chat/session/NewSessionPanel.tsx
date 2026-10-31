@@ -1,4 +1,5 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Folder, Check, Bot, Search, Zap, Link, Plus } from 'lucide-react';
@@ -45,10 +46,10 @@ export const NewSessionPanel = memo(function NewSessionPanel({
   /**
    * 定位模式：
    * - anchor：锚点上方展开（状态栏 + 号，按钮贴视口底部，上方整屏空间）
-   * - center：视口居中（QuickSwitch「New Session」，锚点在屏幕中部，
-   *   向上展开时 ~550px 面板顶会越出应用上缘，见 plans/create-session-modal-slimdown-spec.md）
+   * - right-center：贴右缘 + 垂直居中（QuickSwitch「New Session」，ChatNavigator 面板同款范式；
+   *   视口正中观感突兀、锚点上方展开会越出应用上缘，见 plans/create-session-modal-slimdown-spec.md）
    */
-  placement?: 'anchor' | 'center';
+  placement?: 'anchor' | 'right-center';
 }) {
   const { t } = useTranslation('chat');
   const { createSession, switchSession } = useSessionManagerActions();
@@ -111,7 +112,7 @@ export const NewSessionPanel = memo(function NewSessionPanel({
 
   // fixed 定位坐标（仅 anchor 模式）：锚点 rect + 视口钳制（窄屏/窄聊天面板下防越出右缘被裁剪）。
   // 参照 DispatchCenter 范式：按钮 rect + 视口钳制的 fixed 定位
-  const isCenter = placement === 'center';
+  const isRightCenter = placement === 'right-center';
   const [panelPos, setPanelPos] = useState<{ left: number; bottom: number } | null>(null);
 
   const PANEL_WIDTH = 288; // 对应 w-72
@@ -128,11 +129,11 @@ export const NewSessionPanel = memo(function NewSessionPanel({
   }, [getAnchorRect]);
 
   useEffect(() => {
-    if (isCenter) return; // 视口居中不依赖锚点
+    if (isRightCenter) return; // 右缘垂直居中不依赖锚点
     updatePanelPos();
     window.addEventListener('resize', updatePanelPos);
     return () => window.removeEventListener('resize', updatePanelPos);
-  }, [isCenter, updatePanelPos]);
+  }, [isRightCenter, updatePanelPos]);
 
   // 搜索过滤
   const showSearch = sortedWorkspaces.length > 3;
@@ -269,15 +270,23 @@ export const NewSessionPanel = memo(function NewSessionPanel({
     }
   }, [pendingPrimaryId, handleCreateWithWorkspace]);
 
-  if (!isCenter && !panelPos) return null;
+  if (!isRightCenter && !panelPos) return null;
 
-  const panelStyle = isCenter
-    ? { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' as const }
+  const panelStyle = isRightCenter
+    ? // 贴右缘 + 垂直居中（ChatNavigator 面板同款观感）。
+      // 刻意不用 translateY(-50%)：transform 会把本面板变成 fixed 后代的包含块，
+      // SessionConfigSelector 的自定义输入浮层（fixed inset-0 z-modal）会被困在面板内；
+      // top/bottom 双 0 + margin auto + fit-content 是无 transform 的等价居中
+      { right: 12, top: 0, bottom: 0, height: 'fit-content', marginTop: 'auto', marginBottom: 'auto' }
     : panelPos
       ? { left: panelPos.left, bottom: panelPos.bottom }
       : undefined;
 
-  return (
+  // portal 到 body：QuickSwitch 的渲染点在 z-20 根容器内（RightPanel aside 首个子元素），
+  // 面板的 z-dropdown 在该 stacking context 内被封顶 20，会被聊天区 ChatNavigator 圆点
+  // 容器（z-dropdown 同值、DOM 靠后）盖住；portal 出来后以 body 末位 DOM + z-dropdown 参赛，
+  // 高于聊天内容、低于 modal(70)/toast(90)，与 CreateSessionModal 同款做法。
+  return createPortal(
     <div
       ref={dropdownRef}
       onKeyDown={handleKeyDown}
@@ -466,6 +475,7 @@ export const NewSessionPanel = memo(function NewSessionPanel({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 });

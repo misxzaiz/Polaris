@@ -62,8 +62,8 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
   // 钉住状态（从 localStorage 初始化）
   const [isPinned, setIsPinned] = useState(getPinnedState)
 
-  // 新建会话面板开关（复用状态栏 + 号共享面板 NewSessionPanel，视口居中模式；
-  // spec：create-session-modal-slimdown-spec.md——锚点在屏幕中部时向上展开会越出应用上缘）
+  // 新建会话面板开关（复用状态栏 + 号共享面板 NewSessionPanel，贴右缘垂直居中；
+  // spec：create-session-modal-slimdown-spec.md——锚点上方展开会越出应用上缘，视口正中观感突兀）
   const [isNewSessionOpen, setIsNewSessionOpen] = useState(false)
 
   // 工作区下拉是否打开的 ref（同步更新，避免面板关闭）
@@ -355,10 +355,10 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
           </div>
         )}
       </div>
-      {/* 新建会话面板（与状态栏 + 号同源，视口居中；根容器 pointer-events-none，面板自带 auto） */}
+      {/* 新建会话面板（与状态栏 + 号同源，贴右缘垂直居中；portal 到 body 避开本容器 z-20 天花板） */}
       {isNewSessionOpen && (
         <NewSessionPanel
-          placement="center"
+          placement="right-center"
           onClose={() => setIsNewSessionOpen(false)}
         />
       )}

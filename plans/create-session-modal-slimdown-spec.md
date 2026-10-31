@@ -68,3 +68,17 @@ QuickSwitch 面板里本就可改）。
 - 双模式共用保险：根 `max-h-[calc(100vh-16px)]` + flex 收缩链——头部/自由会话行/搜索/
   底条 `shrink-0`，工作区列表 `min-h-0 shrink` 是唯一收缩项（内部滚动）。
   根不加 overflow：头部 SessionConfigSelector 下拉向上弹（bottom-full），根滚动容器会裁它。
+
+### 2026-11-01 用户反馈二：视口正中观感突兀 → 改贴右缘垂直居中；导航圆点盖住面板 → portal
+
+- 定位：`placement` 的 center 改为 **right-center**（`right:12px + top:50% + translateY(-50%)`，
+  ChatNavigator 面板同款范式）；水平天然不越界，垂直由 max-h 保险兜底。
+- 层级根因：QuickSwitchPanel 根容器 `z-20` 是 stacking context，面板的 z-dropdown(=20)
+  在其中被封顶 20；RightPanel aside 内 QuickSwitchPanel 在前、聊天内容在后，
+  ChatNavigator 圆点容器（z-dropdown 同值、DOM 靠后）打平胜出 → 圆点画在面板上。
+- 修法：**NewSessionPanel 改 createPortal 到 document.body**——以 body 末位 DOM + z-dropdown
+  参赛，高于聊天内容、低于 modal(70)/toast(90)；+ 号入口（anchor 模式）一并受益，行为不变。
+  否决「抬根容器 z」：影响面为根下全部浮层与其他 z-20~40 层的相对关系，爆炸半径大。
+- 居中实现刻意不用 translateY(-50%)：transform 会把面板根变成 fixed 后代包含块，
+  SessionConfigSelector 的自定义输入浮层（fixed inset-0 z-modal）会被困在面板内；
+  改用 top/bottom 双 0 + margin-block auto + height fit-content 的无 transform 等价居中。
