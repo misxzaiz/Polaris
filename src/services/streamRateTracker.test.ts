@@ -231,6 +231,30 @@ describe('reset 与终态', () => {
     expect(s.generationMs).toBe(800)
   })
 
+  it('wallClockMs / periodStartMs：起点为 reset 的 periodStart，运行中随 now 推进', () => {
+    const t = new TokenRateTracker()
+    t.reset(T0)
+    t.recordDelta(T0 + 200, 'first chunk', 10)
+    // 运行中（未 markEnd）：wallClock = now - periodStart，periodStartMs 透传
+    const live = t.snapshot(T0 + 1500)
+    expect(live.periodStartMs).toBe(T0)
+    expect(live.wallClockMs).toBe(1500)
+    // 结束后：wallClock 定格为 endedAt - periodStart
+    t.markEnd(T0 + 2000)
+    const settled = t.snapshot(T0 + 9999)
+    expect(settled.wallClockMs).toBe(2000)
+    expect(settled.settled).toBe(true)
+  })
+
+  it('periodStart 缺省（reset 无参）时 wallClockMs / periodStartMs 为 null', () => {
+    const t = new TokenRateTracker()
+    t.reset()
+    t.recordDelta(T0 + 100, 'chunk', 10)
+    const s = t.snapshot(T0 + 500)
+    expect(s.periodStartMs).toBeNull()
+    expect(s.wallClockMs).toBeNull()
+  })
+
   it('markProviderUsage 幂等（同值只通知一次）', () => {
     const t = new TokenRateTracker()
     t.reset(T0)

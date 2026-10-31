@@ -63,6 +63,15 @@ export interface StreamRateSnapshot {
   ttftMs: number | null;
   /** 生成耗时 ms（首个内容块 → 最近一个内容块/结束） */
   generationMs: number | null;
+  /** 整轮墙钟时长 ms（session_start 到达 → session_end / 当前 now）。
+   *  与 generationMs 的区别：generationMs 是「首 token → 末 token」，
+   *  wallClockMs 还包含 prefill 等待（TTFT）与工具执行间隙，
+   *  对应 ZCode goal 的「运行时长」语义。
+   *  periodStart 缺省（引擎未传 receivedAtMs）时为 null。 */
+  wallClockMs: number | null;
+  /** session_start 到达时刻（reset 时写入），供 UI 层 useNowTicker 实时重算
+   *  wallClockMs，避免依赖 store 在 chunk 间隙不刷新导致的停滞。 */
+  periodStartMs: number | null;
   /** 启发式 token 总量（含首块） */
   tokens: number;
   /** provider 精确输出 token（流末到达）；null 表示尚未收到 */
@@ -76,6 +85,8 @@ const EMPTY_SNAPSHOT: StreamRateSnapshot = {
   avgTps: null,
   ttftMs: null,
   generationMs: null,
+  wallClockMs: null,
+  periodStartMs: null,
   tokens: 0,
   providerTokens: null,
   settled: false,
@@ -220,6 +231,9 @@ export class TokenRateTracker {
     if (this.origin == null && this.totalTokens === 0) return EMPTY_SNAPSHOT;
 
     const spanEnd = this.endedAt ?? this.lastChunkAt ?? this.origin;
+    // 墙钟终点：已结束用 endedAt，运行中用传入 now（或当前时刻）。
+    // 运行中由 UI 层 useNowTicker 每秒传入新 now，保证 chunk 间隙也能推进。
+    const wallEnd = this.endedAt ?? now ?? Date.now();
 
     return {
       tps: this.instantTps(now),
@@ -232,6 +246,13 @@ export class TokenRateTracker {
         this.origin != null && spanEnd != null && spanEnd > this.origin
           ? spanEnd - this.origin
           : null,
+      // periodStart = session_start.receivedAtMs；缺省（旧引擎未带）时为 null，
+      // 不显示运行时长，避免 NaN。结束态用 endedAt 定格，运行态用 wallEnd。
+      wallClockMs:
+        this.periodStart != null && wallEnd >= this.periodStart
+          ? wallEnd - this.periodStart
+          : null,
+      periodStartMs: this.periodStart,
       tokens: this.totalTokens,
       providerTokens: this.providerTokens,
       settled: this.endedAt != null,

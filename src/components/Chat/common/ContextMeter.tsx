@@ -23,6 +23,7 @@ import { clsx } from 'clsx';
 import type { UsageStats } from '@/stores/conversationStore/types';
 import type { StreamRateSnapshot } from '@/services/streamRateTracker';
 import { eventBus } from '@/services/eventBus';
+import { useNowTicker } from '@/hooks/useNowTicker';
 
 interface ContextMeterProps {
   usage: UsageStats;
@@ -141,6 +142,22 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
   const rateTpsLabel = rateTps != null && rateTps > 0 ? rateTps.toFixed(1) : null;
   const rateTtft = streamRate?.ttftMs != null && streamRate.ttftMs >= 100 ? streamRate.ttftMs : null;
   const rateGen = streamRate?.generationMs != null && streamRate.generationMs > 0 ? streamRate.generationMs : null;
+
+  // 运行时长（墙钟）：流式中由 useNowTicker 每秒驱动重算，避免 chunk 间隙停滞；
+  // 结束态用 snapshot 定格的 wallClockMs。periodStartMs 缺省（引擎未传 receivedAtMs）时不显示。
+  // ticker 只在「详情卡展开且流式中」才走：详情卡未展开时用户看不到运行时长，
+  // 不必每秒重渲染整个 ContextMeter（含 ring SVG）。结束时用定格值，也不需要 tick。
+  const now = useNowTicker(active === true && streaming === true);
+  const rateWall = (() => {
+    const startMs = streamRate?.periodStartMs;
+    if (startMs == null) return null;
+    if (streamRate?.settled) return streamRate.wallClockMs ?? null;
+    if (streaming !== true) return streamRate?.wallClockMs ?? null;
+    // 详情卡未展开：用 streamRate 上一次 snapshot 的 wallClockMs（跟随 chunk 刷新），
+    // 不开 ticker，避免空转。展开后切换为 now 驱动的实时值。
+    if (active !== true) return streamRate?.wallClockMs ?? null;
+    return Math.max(0, now - startMs);
+  })();
 
   return (
     <div
@@ -291,13 +308,13 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
                 </div>
               )}
 
-              {/* 生成速率（本轮 TTFT / TPS / 生成耗时） */}
-              {(rateTpsLabel || rateTtft || rateGen) && (
+              {/* 生成速率（本轮 TTFT / TPS / 生成耗时 / 运行时长） */}
+              {(rateTpsLabel || rateTtft || rateGen || rateWall != null) && (
                 <div className="mt-2.5 pt-2.5 border-t border-border-subtle">
                   <div className="flex items-center justify-between mb-1.5">
                     <span
                       className="text-[11px] text-text-muted"
-                      title="本轮回复的端到端生成速率（含思考与工具间隔）；流式期间为即时滚窗值，结束后为全程平均"
+                      title="本轮回复的端到端生成速率（含思考与工具间隔）；流式期间为即时滚窗值，结束后为全程平均。运行时长 = session_start 到 session_end 的墙钟时长（含 prefill 与工具间隙）"
                     >
                       生成速率
                     </span>
@@ -331,6 +348,14 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
                         <span className="text-text-muted">生成耗时</span>
                         <span className="font-mono text-right tabular-nums text-text-secondary">
                           {fmtSeconds(rateGen)}
+                        </span>
+                      </>
+                    )}
+                    {rateWall != null && (
+                      <>
+                        <span className="text-text-muted">运行时长</span>
+                        <span className="font-mono text-right tabular-nums text-text-secondary">
+                          {fmtSeconds(rateWall)}
                         </span>
                       </>
                     )}
