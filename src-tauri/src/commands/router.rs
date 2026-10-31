@@ -15,6 +15,7 @@
 use crate::contracts::{CapabilityId, Envelope, MsgId, Source, TraceId};
 use crate::error::{AppError, Result};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use crate::contracts::{PermissionPromptSink as _, Router as _}; // dispatch / subscribe / register_handle / resolve
 
 /// 主窗口 label（本地信任域；tauri.conf.json 主窗口配置）
@@ -86,12 +87,33 @@ pub async fn router_dispatch(
     // 性能治理（git 面板 vNext PR-2a 轴，master-plan 裁决 8）：同步 dispatch 链
     // 全局外包 blocking 线程池 —— GitService 等重量级 sync capability（commit/pull
     // 秒级）不再长期占用 tokio worker，读动作高并发不被写动作挤压。
-    // X5 护栏：DISPATCH_SYNC_TIMEOUT 兜「能力 handler 永不返回」的挂死——
+    // X5 护栏：DISPATCH_SYNC_TIMEOUT 兜「能力 handler 未返回」的挂死——
     // 只解除调用方阻塞（blocking 线程无法强取消，由能力自行完成）。
+    // 楔死取证（2026-10-31）：10s 未返回即点名 target——900s 才报太晚且不带
+    // 名字，生产曾整实例 dispatch 楔死 50+ 分钟无法归因。
     let router = state.router.clone();
+    let watchdog_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let done2 = Arc::clone(&watchdog_done);
+        let watchdog_target = env.target.0.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            if !done2.load(std::sync::atomic::Ordering::Relaxed) {
+                tracing::warn!(
+                    target = %watchdog_target,
+                    "dispatch 10s 未返回（楔死取证：此能力挂住，blocking 池将被占满）"
+                );
+            }
+        });
+    }
+    let done_store = Arc::clone(&watchdog_done);
     let reply = match tokio::time::timeout(
         crate::services::router::DISPATCH_SYNC_TIMEOUT,
-        tokio::task::spawn_blocking(move || router.dispatch(env)),
+        tokio::task::spawn_blocking(move || {
+            let out = router.dispatch(env);
+            done_store.store(true, std::sync::atomic::Ordering::Relaxed);
+            out
+        }),
     )
     .await
     {

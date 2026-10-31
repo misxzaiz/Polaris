@@ -37,6 +37,14 @@ const STABLE_UPTIME_SECS: u64 = 60;
 /// （进程退出/重启仍由 process_watcher 处理——审计 P1-2）。
 const HEALTH_FAIL_THRESHOLD: u32 = 3;
 
+/// 启动宽限期（spec audit-startup-firsttoken-root-cure §D.2，P0-3）：
+/// 宿主 setup 完成前后的一段时间内，健康检查失败与进程退出多为
+/// 宿主自身忙（审计/引擎初始化）或**多实例同启互踩插件端口**（2026-10-30
+/// 生产实证：一天 91 次 auto-restart / 178 次「端口已被其他插件服务占用」，
+/// 全部聚簇在启动时刻）——宽限期内不判死、不消耗重启预算，重启统一
+/// 延迟到宽限结束后带随机抖动执行，避免多实例同拍继续互踩。
+const BOOT_GRACE: Duration = Duration::from_secs(45);
+
 /// 端口分配 bind 探测候选上限（10000-60000 共 5 万个候选，正常几十次内命中）
 const PORT_PROBE_MAX_ATTEMPTS: u32 = 256;
 
@@ -132,6 +140,8 @@ pub struct PluginServiceManager {
     /// 服务状态变更流（前端回推：UI 长期陈旧问题的修复通道，审计 P1-3）。
     /// 无订阅者时 send 的 Err 被忽略。
     status_events: broadcast::Sender<ServiceStatus>,
+    /// 管理器构造时刻（≈宿主 setup 起点），启动宽限期起算锚点（spec §D.2）
+    booted_at: Instant,
 }
 
 impl PluginServiceManager {
@@ -148,6 +158,17 @@ impl PluginServiceManager {
             port_counter: Mutex::new(10000),
             reserved_host_ports,
             status_events,
+            booted_at: Instant::now(),
+        }
+    }
+
+    /// 启动宽限剩余时长（None = 已过宽限期，spec §D.2）
+    fn boot_grace_remaining(&self) -> Option<Duration> {
+        let elapsed = self.booted_at.elapsed();
+        if elapsed < BOOT_GRACE {
+            Some(BOOT_GRACE - elapsed)
+        } else {
+            None
         }
     }
 
@@ -600,6 +621,22 @@ impl PluginServiceManager {
                             continue;
                         }
                     }
+                } else if manager.boot_grace_remaining().is_some() {
+                    // 启动宽限（spec §D.2，P0-3）：宿主 setup 窗口内的健康失败
+                    // 多为宿主自身忙或多实例端口互踩——不判死、探针不退出、
+                    // 计数归零（宽限后重新累计 HEALTH_FAIL_THRESHOLD 连败）。
+                    consecutive_failures = 0;
+                    let mut services = manager.services.lock().await;
+                    if let Some(m) = services.get_mut(&key) {
+                        m.status.last_error =
+                            Some(format!("health check failed during boot grace: {}", url));
+                    }
+                    drop(services);
+                    tracing::warn!(
+                        plugin_id = %plugin_id,
+                        service_id = %service_id,
+                        "plugin service health check failed during boot grace, skipping unhealthy marking"
+                    );
                 } else {
                     consecutive_failures += 1;
                     let mut services = manager.services.lock().await;
@@ -686,6 +723,24 @@ impl PluginServiceManager {
                     m.status.uptime = None;
                     m.started_at = None;
                     (port, None)
+                } else if manager.boot_grace_remaining().is_some() {
+                    // 启动宽限内的退出（spec §D.2，P0-3）：退出是环境性的
+                    // （多实例端口互踩/宿主忙），不消耗 max_restarts 预算
+                    // （计数不增），仍进重启队列——延迟由下方退避处统一
+                    // 扩展到宽限结束 + 抖动。
+                    m.status.state = ServiceState::Starting;
+                    m.status.pid = None;
+                    m.status.last_error = Some(exit_note);
+                    (
+                        port,
+                        Some((
+                            m.plugin_id.clone(),
+                            m.contribution.clone(),
+                            m.install_path.clone(),
+                            m.ctx.clone(),
+                            m.status.restart_count,
+                        )),
+                    )
                 } else {
                     // 稳定运行 ≥STABLE_UPTIME_SECS 后自然退出 → 计数清零再计
                     let uptime = m
@@ -759,6 +814,20 @@ impl PluginServiceManager {
 
             // 指数退避
             let delay_secs = std::cmp::min(2u64.pow(attempt.min(6)), 60);
+            // 启动宽限（spec §D.2，P0-3）：宽限内的重启延迟到宽限结束 +
+            // 随机抖动。抖动掺入进程级纳秒（三实例的决策时刻天然错开），
+            // 避免多实例同拍重启继续互踩插件端口——那正是宽限期存在的原因。
+            let delay_secs = match manager.boot_grace_remaining() {
+                Some(remain) => {
+                    let id_salt: u64 = pid.bytes().map(|b| b as u64).sum();
+                    let nanos = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.subsec_nanos() as u64)
+                        .unwrap_or(0);
+                    remain.as_secs() + ((nanos ^ id_salt) % 15)
+                }
+                None => delay_secs,
+            };
             tokio::time::sleep(Duration::from_secs(delay_secs)).await;
 
             // 退避窗口内收到停止请求（stop_service 已置 auto_restart_enabled=false）

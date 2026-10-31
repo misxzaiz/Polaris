@@ -825,24 +825,29 @@ impl Router for RouterBus {
                     trace: env.trace.clone(),
                 });
 
-                // 审计（X4：成败分别记 action；detail 记动作名，不落参数明文）
+                // 审计（X4：成败分别记 action；detail 记动作名，不落参数明文）。
+                // 降噪闸：kv 只读动作的 dispatch.ok 不入链（洪水治理，见闸注释）
                 if let Some(audit) = self.audit.as_ref() {
-                    audit_append(
-                        audit.as_ref(),
-                        &AuditEntry {
-                            timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
-                            capability: env.target.clone(),
-                            source: env.source.clone(),
-                            action: if result.is_ok() {
-                                "dispatch.ok".into()
-                            } else {
-                                "dispatch.error".into()
+                    let is_ok = result.is_ok();
+                    let detail = payload_action_detail(&env.payload);
+                    if !is_ok || should_audit_dispatch_ok(env.target.0.as_str(), detail.as_deref()) {
+                        audit_append(
+                            audit.as_ref(),
+                            &AuditEntry {
+                                timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                                capability: env.target.clone(),
+                                source: env.source.clone(),
+                                action: if is_ok {
+                                    "dispatch.ok".into()
+                                } else {
+                                    "dispatch.error".into()
+                                },
+                                prev_hash: String::new(),
+                                detail,
+                                duration_ms: Some(duration_ms),
                             },
-                            prev_hash: String::new(),
-                            detail: payload_action_detail(&env.payload),
-                            duration_ms: Some(duration_ms),
-                        },
-                    );
+                        );
+                    }
                 }
 
                 Ok(Reply {
@@ -878,24 +883,31 @@ impl Router for RouterBus {
                         Ok(v) => (Ok(v), None),
                     };
                     // X4：回退分支补审计——这是 cap.ai.chat 同步动作的高频路径，
-                    // 历史版本整段零审计（2026-10-24 审计 X4-①）
+                    // 历史版本整段零审计（2026-10-24 审计 X4-①）。
+                    // 降噪闸：kv 只读动作的 dispatch.ok 不入链（洪水治理）
                     if let Some(audit) = self.audit.as_ref() {
-                        audit_append(
-                            audit.as_ref(),
-                            &AuditEntry {
-                                timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
-                                capability: env.target.clone(),
-                                source: env.source.clone(),
-                                action: if result.is_ok() {
-                                    "dispatch.ok".into()
-                                } else {
-                                    "dispatch.error".into()
+                        let is_ok = result.is_ok();
+                        let detail = payload_action_detail(&payload);
+                        if !is_ok
+                            || should_audit_dispatch_ok(env.target.0.as_str(), detail.as_deref())
+                        {
+                            audit_append(
+                                audit.as_ref(),
+                                &AuditEntry {
+                                    timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                                    capability: env.target.clone(),
+                                    source: env.source.clone(),
+                                    action: if is_ok {
+                                        "dispatch.ok".into()
+                                    } else {
+                                        "dispatch.error".into()
+                                    },
+                                    prev_hash: String::new(),
+                                    detail,
+                                    duration_ms: Some(started.elapsed().as_millis() as u64),
                                 },
-                                prev_hash: String::new(),
-                                detail: payload_action_detail(&payload),
-                                duration_ms: Some(started.elapsed().as_millis() as u64),
-                            },
-                        );
+                            );
+                        }
                     }
                     self.broadcaster.broadcast(Event {
                         seq: 0,
@@ -989,11 +1001,22 @@ impl RouterBus {
     }
 }
 
+/// 审计降噪闸（spec audit-startup-firsttoken-root-cure §A.3 的 P0 最小实现）：
+/// **高频只读动作的 dispatch.ok 不入链**。2026-10-27 起生产审计以 ~60 条/秒
+/// 洪水增长（10-30 单日 +450 万条），尾部样本 cap.kv 占 89%，其中
+/// `action=list` 59% / `action=get` 21%——插件 kvclient（kvKeys 高频轮询）
+/// 的只读调用被逐条全量落链。写动作（set/delete）与 error/deny 全量保留。
+fn should_audit_dispatch_ok(capability: &str, detail: Option<&str>) -> bool {
+    if capability != "cap.kv" {
+        return true;
+    }
+    !matches!(detail.as_deref(), Some(d) if d.starts_with("action=get") || d.starts_with("action=list"))
+}
+
 /// 审计 append 失败告警（X4：原三处 `let _ =` 静默吞错，磁盘满/IO 故障时
 /// 审计链无声断流）。行为保持 fail-open——dispatch 结果不因审计故障被丢弃
 /// （fail-closed 会让一次磁盘满挂掉全部能力调用）——但绝不无声。
-fn audit_append(audit: &dyn AuditSink, entry: &AuditEntry) {
-    if let Err(e) = audit.append(entry) {
+fn audit_append(audit: &dyn AuditSink, entry: &AuditEntry) {    if let Err(e) = audit.append(entry) {
         tracing::error!(
             capability = %entry.capability.0,
             action = %entry.action,

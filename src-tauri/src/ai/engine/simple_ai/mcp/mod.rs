@@ -14,6 +14,7 @@ pub(crate) mod client;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tokio::sync::RwLock;
@@ -39,25 +40,67 @@ pub(crate) struct McpClientPool {
 
 impl McpClientPool {
     /// 并发 spawn 所有 server；失败的跳过并 log，不阻断会话。
+    ///
+    /// 2026-10-31 根治：原实现名义「并发」实为**顺序 await**，而单 server 的
+    /// initialize/tools-list 超时高达 180s（`MCP_CALL_TIMEOUT_SECS`）——boot 窗口
+    /// 系统忙时（多实例 + 全家桶同时拉起）单个 server 慢/挂即拖死整池，外层
+    /// 30s 超时把已连上的也全部丢弃（生产实证 08:36 会话「0 个 server 连接」
+    /// 且 ClaudeCode init 86s）。现改为 JoinSet 真并发 + **每 server 独立
+    /// 15s 超时**：墙钟 = 最慢一个，部分成功即用，且超时/失败的 server 逐个
+    /// 点名落日志（定位楔死 server 的诊断锚点）。
     pub(crate) async fn from_servers(servers: Vec<ResolvedExternalMcpServer>) -> Self {
+        const PER_SERVER_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
+        let mut join_set = tokio::task::JoinSet::new();
+        for server in servers {
+            join_set.spawn(async move {
+                // env：ResolvedExternalMcpServer 当前不携带 env，传空（后续扩展）。
+                let env: HashMap<String, String> = HashMap::new();
+                let connect = async {
+                    let client = McpClient::spawn(
+                        server.server_name.clone(),
+                        &server.command,
+                        &server.args,
+                        &env,
+                    )
+                    .await?;
+                    let tools = client.tools().await;
+                    Ok::<_, crate::error::AppError>((client, tools))
+                };
+                let result = tokio::time::timeout(PER_SERVER_CONNECT_TIMEOUT, connect).await;
+                (server, result)
+            });
+        }
+
         let mut clients: HashMap<String, Arc<McpClient>> = HashMap::new();
         let mut tool_index: HashMap<String, (String, String)> = HashMap::new();
         let mut cached_specs: Vec<Value> = Vec::new();
 
-        for server in &servers {
-            // env：ResolvedExternalMcpServer 当前不携带 env，传空（后续扩展）。
-            let env: HashMap<String, String> = HashMap::new();
-            match McpClient::spawn(
-                server.server_name.clone(),
-                &server.command,
-                &server.args,
-                &env,
-            )
-            .await
-            {
-                Ok(client) => {
+        while let Some(joined) = join_set.join_next().await {
+            let (server, result) = match joined {
+                Ok(pair) => pair,
+                Err(e) => {
+                    tracing::warn!("[SimpleAI-MCP] 连接任务 join 失败，跳过: {}", e);
+                    continue;
+                }
+            };
+            match result {
+                Err(_) => {
+                    tracing::warn!(
+                        "[SimpleAI-MCP] MCP server '{}' 连接超时（{}s），跳过——其余 server 不受影响",
+                        server.server_name,
+                        PER_SERVER_CONNECT_TIMEOUT.as_secs()
+                    );
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        "[SimpleAI-MCP] 启动 MCP server '{}' 失败，跳过: {}",
+                        server.server_name,
+                        e
+                    );
+                }
+                Ok(Ok((client, tools))) => {
                     let client = Arc::new(client);
-                    let tools = client.tools().await;
                     for tool in &tools {
                         // P3 per-tool 注入门（全局 mcpToolGates，装配时载入、set_plugin_tools 更新）：
                         // 显式关闭的工具跳过注入；缺省全放行。
@@ -80,13 +123,6 @@ impl McpClientPool {
                         cached_specs.push(mcp_tool_to_spec(&mcp_name, tool));
                     }
                     clients.insert(server.server_name.clone(), client);
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "[SimpleAI-MCP] 启动 MCP server '{}' 失败，跳过: {}",
-                        server.server_name,
-                        e
-                    );
                 }
             }
         }

@@ -554,6 +554,20 @@ impl WorkspaceMcpConfigService {
     /// 内置 MCP 的 `builtin` 标记为 true，SimpleAI 分支据此跳过 `aiToolAccess`
     /// 门控（内置默认信任）；外部插件由 SimpleAI 分支另行检查 `aiToolAccess`。
     /// `plugin_id` 携带真实归属插件（如 `polaris.computer`），供 cap.mcp 管理面聚合。
+    /// 全部已注册 server 名（内置 + 外部插件，未做禁用过滤）。
+    ///
+    /// 供会话级白名单（config.json `mcp.sessionDefaults`，spec §四 C-P0）
+    /// 取补集并入禁用列表。
+    pub fn all_server_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .binaries
+            .iter()
+            .map(|b| b.server_name.clone())
+            .collect();
+        names.extend(self.external_servers.iter().map(|s| s.server_name.clone()));
+        names
+    }
+
     pub fn resolved_simple_ai_servers(
         &self,
         workspace_path: &str,

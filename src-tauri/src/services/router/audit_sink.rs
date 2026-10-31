@@ -113,6 +113,92 @@ pub fn audit_file_path_named(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// 尾部续链扫描窗口（spec audit-startup-firsttoken-root-cure §A.2）：
+/// 续链只需最后一条有效记录的 `record_hash`，从文件末尾回读该窗口即可，
+/// 不再全量扫描——历史单文件曾积累 3GB/695 万条，全量 serde_json 解析使
+/// 启动阻塞 16s（2026-10-30 生产日志 00:19:13.5→00:19:29.8 实证）。
+const TAIL_SCAN_BYTES: u64 = 64 * 1024;
+
+/// 归档超大旧式审计文件（spec §A.2，P0-1 配套）。
+///
+/// 单文件无轮转的历史布局已证明会无限增长（13.9 万条/天）。打开 sink 前
+/// 把超过 `max_bytes` 的文件整体改名进同级 `archive/`（保留可回溯），
+/// 当前路径从空文件重新起链。返回归档目标路径；文件不存在/未超限/改名
+/// 失败（多实例占用等）一律返回 None——绝不阻塞启动，尾读续链本身已 O(1)。
+pub fn archive_oversized_legacy(path: &Path, max_bytes: u64) -> Option<PathBuf> {
+    let meta = fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() <= max_bytes {
+        return None;
+    }
+    let parent = path.parent()?;
+    let dir = parent.join("archive");
+    fs::create_dir_all(&dir).ok()?;
+    // 目标名：dispatch-<mtime YYYYMMDD-HHMMSS>.<ext>，撞名追加序号
+    let stamp = chrono::DateTime::<chrono::Utc>::from(meta.modified().ok()?)
+        .format("%Y%m%d-%H%M%S")
+        .to_string();
+    let stem = path.file_stem()?.to_str()?;
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("jsonl");
+    let mut target = dir.join(format!("{}-{}.{}", stem, stamp, ext));
+    let mut n = 2;
+    while target.exists() {
+        target = dir.join(format!("{}-{}-{}.{}", stem, stamp, n, ext));
+        n += 1;
+    }
+    match fs::rename(path, &target) {
+        Ok(()) => Some(target),
+        // 被其他实例占用（Windows 改名打开中的文件可能成功也可能失败）：
+        // 失败即放弃本次归档，下次启动再试
+        Err(_) => None,
+    }
+}
+
+/// 从文件尾部 `window` 字节窗口扫描最后一条有效记录的 `record_hash`。
+///
+/// 返回 `(last_hash, 窗口内非空行数)`：
+/// - 窗口起点落在某行中间 → 该不完整半行读走丢弃（窗口内其余行完整）；
+/// - 文件末行无换行符（写入中崩溃截断）→ 解析失败自动沿用上一条有效记录；
+/// - 语义与旧全量扫描一致：无效行不中断，链哈希只认最后一条有效记录。
+fn scan_tail_last_hash(path: &Path, window: u64) -> (String, u64) {
+    let Ok(file) = File::open(path) else {
+        return (GENESIS_HASH.to_string(), 0);
+    };
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    if len == 0 {
+        return (GENESIS_HASH.to_string(), 0);
+    }
+    let mut reader = BufReader::new(file);
+    let start = len.saturating_sub(window);
+    if start > 0 {
+        use std::io::Seek as _;
+        if reader.seek(std::io::SeekFrom::Start(start)).is_err() {
+            return (GENESIS_HASH.to_string(), 0);
+        }
+        // 窗口首行大概率是被截断的半行，读走丢弃
+        let mut partial = String::new();
+        let _ = reader.read_line(&mut partial);
+    }
+    let mut last_hash = GENESIS_HASH.to_string();
+    let mut lines = 0u64;
+    let mut buf = String::new();
+    loop {
+        buf.clear();
+        match reader.read_line(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+        let line = buf.trim_end_matches(['\n', '\r']);
+        if line.trim().is_empty() {
+            continue;
+        }
+        lines += 1;
+        if let Ok(rec) = serde_json::from_str::<AuditRecord>(line) {
+            last_hash = rec.record_hash;
+        }
+    }
+    (last_hash, lines)
+}
+
 /// 文件型审计通道（Bootstrap 直管，dispatch allow/deny 都经这里追加）
 pub struct FileAuditSink {
     inner: Mutex<SinkState>,
@@ -125,10 +211,11 @@ struct SinkState {
 }
 
 impl FileAuditSink {
-    /// 打开（或创建）审计文件并续链。
+    /// 打开（或创建）审计文件并续链（O(1)：尾读，spec §A.2）。
     ///
-    /// 文件已存在时扫描既有记录，从最后一条有效记录的 `record_hash` 续链
-    /// （文件中断/损坏由 `verify_chain` 显式发现，这里不阻塞写入）。
+    /// 从文件尾部 `TAIL_SCAN_BYTES` 窗口取最后一条有效记录的 `record_hash`
+    /// 续链（文件中断/损坏由 `verify_chain` 显式发现，这里不阻塞写入）。
+    /// 打开后 `count()` 只含尾读窗口内行数——历史总量不再全量扫描获取。
     pub fn open(path: &Path) -> Result<Self, String> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("创建审计目录失败: {}", e))?;
@@ -139,28 +226,14 @@ impl FileAuditSink {
             .open(path)
             .map_err(|e| format!("打开审计文件失败: {}", e))?;
 
-        // 续链：取最后一条有效记录的 record_hash
-        let mut last_hash = GENESIS_HASH.to_string();
-        let mut count = 0u64;
-        if path.exists() {
-            let reader = File::open(path)
-                .map_err(|e| format!("读取审计文件失败: {}", e))
-                .map(BufReader::new)?;
-            for line in reader.lines() {
-                let Ok(line) = line else { continue };
-                if line.trim().is_empty() {
-                    continue;
-                }
-                count += 1;
-                if let Ok(rec) = serde_json::from_str::<AuditRecord>(&line) {
-                    last_hash = rec.record_hash;
-                }
-                // 无效行不中断：count 仍计入，链哈希沿用最后一条有效记录
-            }
-        }
+        let (last_hash, tail_count) = scan_tail_last_hash(path, TAIL_SCAN_BYTES);
 
         Ok(Self {
-            inner: Mutex::new(SinkState { file, last_hash, count }),
+            inner: Mutex::new(SinkState {
+                file,
+                last_hash,
+                count: tail_count,
+            }),
         })
     }
 
@@ -169,14 +242,13 @@ impl FileAuditSink {
         self.inner.lock().unwrap().last_hash.clone()
     }
 
-    /// 已追加条数（含打开时扫描到的历史记录）
+    /// 已追加条数（打开时尾读窗口内的行数 + 本次追加数）。
+    /// 不再等于历史总条数（O(1) 启动的代价，总条数按需走 `verify_chain`）。
     pub fn count(&self) -> u64 {
         self.inner.lock().unwrap().count
     }
-}
 
-impl AuditSink for FileAuditSink {
-    fn append(&self, entry: &AuditEntry) -> Result<(), String> {
+    fn append_inner(&self, entry: &AuditEntry) -> Result<(), String> {
         let mut state = self.inner.lock().map_err(|e| format!("审计锁失败: {}", e))?;
         let source = source_kind(&entry.source);
         let prev_hash = state.last_hash.clone();
@@ -209,6 +281,27 @@ impl AuditSink for FileAuditSink {
         state.count += 1;
         Ok(())
     }
+}
+
+impl AuditSink for FileAuditSink {
+    fn append(&self, entry: &AuditEntry) -> Result<(), String> {
+        let started = std::time::Instant::now();
+        let result = self.append_inner(entry);
+        // 慢追加观测（2026-10-31 楔死取证）：append 是每条 dispatch 的必经点，
+        // 若文件写被外部因素拖慢（杀软实时扫描/磁盘停顿），所有 dispatch 会
+        // 在此排队——生产楔死时 watchdog 点名 cap.kv 但 sqlite 慢操作为零，
+        // 本观测点用于二值定位「storage 慢 vs audit 慢」。
+        let elapsed = started.elapsed();
+        if elapsed >= std::time::Duration::from_millis(500) {
+            tracing::warn!(
+                capability = %entry.capability.0,
+                elapsed_ms = elapsed.as_millis() as u64,
+                "[AuditSink] 慢追加（>500ms），dispatch 排队元候"
+            );
+        }
+        result
+    }
+
 }
 
 /// 读取审计文件尾部 N 行 + 总条数（`audit_tail` 命令用）
@@ -375,6 +468,76 @@ mod tests {
         let first = fs::read_to_string(&path).unwrap();
         let rec: AuditRecord = serde_json::from_str(first.lines().next().unwrap()).unwrap();
         assert_eq!(rec.prev_hash, GENESIS_HASH, "首条 prev_hash 应为 GENESIS");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// P0-1：末行被截断（无换行 + 非法 JSON）时，续链沿用上一条有效记录
+    /// 且重开后续链校验通过。
+    #[test]
+    fn reopen_with_truncated_last_line_keeps_last_valid_hash() {
+        let path = tmp_path("truncated");
+        {
+            let sink = FileAuditSink::open(&path).unwrap();
+            sink.append(&entry("dispatch.ok")).unwrap();
+            sink.append(&entry("dispatch.ok")).unwrap();
+        }
+        // 模拟写入中崩溃：追加半行（无换行、非法 JSON）
+        let mut content = fs::read_to_string(&path).unwrap();
+        content.push_str("{\"timestampMs\":1700000000");
+        fs::write(&path, content).unwrap();
+
+        let sink = FileAuditSink::open(&path).unwrap();
+        // 链尾 = 第 2 条完整记录的 hash（截断行被忽略）
+        let content = fs::read_to_string(&path).unwrap();
+        let second: AuditRecord =
+            serde_json::from_str(content.lines().nth(1).unwrap()).unwrap();
+        assert_eq!(sink.last_hash(), second.record_hash, "应沿用最后一条有效记录");
+        sink.append(&entry("dispatch.ok")).unwrap();
+        // 截断半行 + 新记录后，链校验应定位到截断行（第 3 行）而非静默通过
+        assert_eq!(verify_chain(&path).unwrap_err(), 3, "截断行应被 verify_chain 定位");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// P0-1：窗口小于文件时只扫窗口内行，链尾哈希仍正确。
+    #[test]
+    fn tail_scan_with_small_window_finds_last_hash() {
+        let path = tmp_path("window");
+        {
+            let sink = FileAuditSink::open(&path).unwrap();
+            for _ in 0..50 {
+                sink.append(&entry("dispatch.ok")).unwrap();
+            }
+        }
+        // 每行约 300B，256B 窗口必然落在文件中部
+        let (last_hash, lines) = scan_tail_last_hash(&path, 256);
+        assert!(lines >= 1 && lines <= 3, "窗口内行数应远小于全量 50 行，实际 {}", lines);
+        let content = fs::read_to_string(&path).unwrap();
+        let last: AuditRecord = serde_json::from_str(content.lines().last().unwrap()).unwrap();
+        assert_eq!(last_hash, last.record_hash, "窗口扫描应命中全文件链尾");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// P0-1：超大文件被归档（保留在 archive/），当前路径重新起链；
+    /// 未超限文件不归档。
+    #[test]
+    fn archive_oversized_legacy_moves_and_restarts_chain() {
+        let path = tmp_path("archive");
+        fs::write(&path, "x".repeat(4096)).unwrap();
+
+        // 未超限 → 不动
+        assert!(archive_oversized_legacy(&path, 8192).is_none());
+        assert!(path.exists(), "未超限文件应保留原位");
+
+        // 超限 → 归档，原路径消失，重开从 GENESIS 起链
+        let archived = archive_oversized_legacy(&path, 1024).expect("超限文件应被归档");
+        assert!(archived.parent().unwrap().ends_with("archive"));
+        assert!(archived.exists());
+        assert!(!path.exists(), "归档后原路径应不存在");
+
+        let sink = FileAuditSink::open(&path).unwrap();
+        assert_eq!(sink.last_hash(), GENESIS_HASH, "归档后应从 GENESIS 起新链");
+        sink.append(&entry("dispatch.ok")).unwrap();
+        assert_eq!(verify_chain(&path).unwrap(), 1, "新文件自身链应完整");
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 

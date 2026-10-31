@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -14,6 +16,42 @@ use crate::utils::CREATE_NO_WINDOW;
 
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
+
+/// Claude CLI 探测结果 TTL 缓存（P0-2，spec audit-startup-firsttoken-root-cure §三）。
+///
+/// CLI 版本是机器级事实：进程内共享一份缓存即可，无需挂到 ConfigStore 实例
+/// （`health_status_async` 是无 self 的关联函数，全局缓存让四个入口统一受益）。
+const CLAUDE_DETECT_TTL: Duration = Duration::from_secs(300);
+
+static CLAUDE_DETECT_CACHE: OnceLock<Mutex<Option<(Instant, Option<String>)>>> = OnceLock::new();
+
+fn claude_detect_cache() -> &'static Mutex<Option<(Instant, Option<String>)>> {
+    CLAUDE_DETECT_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+/// 走 TTL 缓存的探测（常规入口唯一通道）。
+/// 读锁在探测前释放：慢探测（spawn 数百 ms）不长时间占锁，并发调用
+/// 最多重复探测一次，最终缓存仍收敛到同一次结果。
+fn cached_cli_version(cmd: &str, log_prefix: &str) -> Option<String> {
+    {
+        let cache = claude_detect_cache().lock().unwrap();
+        if let Some((at, version)) = cache.as_ref() {
+            if at.elapsed() < CLAUDE_DETECT_TTL {
+                return version.clone();
+            }
+        }
+    }
+    let version = ConfigStore::detect_cli_version(cmd, log_prefix);
+    *claude_detect_cache().lock().unwrap() = Some((Instant::now(), version.clone()));
+    version
+}
+
+/// 强制重新探测：绕过缓存并刷新（设置页「重新检测」用）。
+fn forced_cli_version(cmd: &str, log_prefix: &str) -> Option<String> {
+    let version = ConfigStore::detect_cli_version(cmd, log_prefix);
+    *claude_detect_cache().lock().unwrap() = Some((Instant::now(), version.clone()));
+    version
+}
 
 /// 配置存储管理器
 pub struct ConfigStore {
@@ -380,14 +418,27 @@ impl ConfigStore {
         }
     }
 
-    /// 检测 Claude CLI 是否可用
+    /// 检测 Claude CLI 是否可用（走 300s TTL 缓存，spec §三 / P0-2）。
+    ///
+    /// 根因：`health_status`/`detect_claude` 曾每次调用都 spawn
+    /// `claude.cmd --version`（cmd→node 链 250-500ms、零缓存），前端高频轮询
+    /// /api/health 造成 11.3 万次/天的探测风暴（2026-10-30 生产日志实证）。
+    /// CLI 版本是机器级事实：进程内共享一份 TTL 缓存，四个入口
+    /// （tauri detect_claude/health_check、web health_check/detect_claude）全部受益。
     pub fn detect_claude(&self) -> Option<String> {
         let cmd = self.config.resolve_claude_cmd();
-        Self::detect_cli_version(&cmd, "detect_claude")
+        cached_cli_version(&cmd, "detect_claude")
+    }
+
+    /// 强制重新探测（设置页「重新检测」语义）：绕过缓存并刷新。
+    pub fn detect_claude_force(&self) -> Option<String> {
+        let cmd = self.config.resolve_claude_cmd();
+        forced_cli_version(&cmd, "detect_claude")
     }
 
     fn detect_cli_version(cmd: &str, log_prefix: &str) -> Option<String> {
-        tracing::info!("[{}] 尝试执行: {} --version", log_prefix, cmd);
+        // 高频诊断降 debug（AGENTS.md 日志分级；失败仍 warn）
+        tracing::debug!("[{}] 尝试执行: {} --version", log_prefix, cmd);
 
         let output = Self::run_cli_version_command(cmd);
 
@@ -406,13 +457,13 @@ impl ConfigStore {
                     String::from_utf8_lossy(&output.stderr)
                 );
 
-                if output.status.success() {
-                    let version = String::from_utf8_lossy(&output.stdout)
-                        .lines()
-                        .next()
-                        .map(|s| s.to_string());
-                    tracing::info!("[{}] 解析成功: {:?}", log_prefix, version);
-                    version
+        if output.status.success() {
+            let version = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .map(|s| s.to_string());
+            tracing::debug!("[{}] 解析成功: {:?}", log_prefix, version);
+            version
                 } else {
                     tracing::warn!("[{}] 命令执行失败", log_prefix);
                     None
@@ -561,8 +612,10 @@ impl ConfigStore {
 
         // 将 Claude CLI 探测以 spawn_blocking 并发提交，带 5s 超时。
         // 任何单 CLI 超时/异常均降级为 unavailable。
+        // P0-2：走进程级 TTL 缓存——与同步入口共享，/api/health 高频轮询
+        // 不再每次 spawn 探测进程（缓存未命中时才真正探测）。
         let c1_fut = tokio::task::spawn_blocking(move || {
-            Self::detect_cli_version(&claude_path, "detect_claude")
+            cached_cli_version(&claude_path, "detect_claude")
         });
 
         let c1 = match tokio::time::timeout(std::time::Duration::from_secs(5), c1_fut).await {

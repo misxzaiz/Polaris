@@ -33,7 +33,8 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// 每域建表 SQL（items + domain_audit 内嵌同库）
 const SCHEMA_SQL: &str = "
@@ -54,11 +55,16 @@ const SCHEMA_SQL: &str = "
 /// SQLite 存储实现
 ///
 /// 每个域一个 `.db` 文件，`domain_audit` 表内嵌同库。
-/// 连接池：`Mutex<HashMap<String, Connection>>`，每域一连接，
-/// Phase 0/1 单连接内 Mutex 串行足够；Phase 2 换 async pool 再演进。
+/// 连接池：`Mutex<HashMap<String, Arc<Mutex<Connection>>>>`，每域一连接，
+/// 外层锁只护 map（微秒级），连接操作在**域级内锁**执行。
+/// 2026-10-31 楔死根治：原形态整张 map 一把锁且**持锁执行 f**——任一域的
+/// SQLite 调用挂死（双实例高频写 → kv WAL 膨胀 191MB → checkpoint 爬行）
+/// 即拖死全部域的 storage dispatch（生产实证：kv 挂 → prompt_snippet 排队
+/// 224s/299s → 512 blocking 池饱和 → 整实例 dispatch 楔死、线程 2814）。
+/// 域级拆分后单域挂死只损失该域。
 pub struct SqliteStorage {
     root_path: PathBuf,
-    connections: Mutex<HashMap<String, Connection>>,
+    connections: Mutex<HashMap<String, Arc<Mutex<Connection>>>>,
 }
 
 impl SqliteStorage {
@@ -88,6 +94,11 @@ impl SqliteStorage {
             .map_err(|e| format!("设置 WAL 失败: {}", e))?;
         conn.pragma_update(None, "synchronous", "NORMAL")
             .map_err(|e| format!("设置 synchronous=NORMAL 失败: {}", e))?;
+        // WAL 尺寸上限（2026-10-31 楔死治理）：高频写域的 WAL 曾无界膨胀到
+        // 200MB（99% 满的盘上 checkpoint 爬行→写停顿→楔死）。设上限后
+        // SQLite 在 checkpoint 时自动把 WAL 修剪到该值以内。
+        conn.pragma_update(None, "journal_size_limit", 64 * 1024 * 1024_i64)
+            .map_err(|e| format!("设置 journal_size_limit 失败: {}", e))?;
         conn.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(|e| format!("设置 busy_timeout 失败: {}", e))?;
         conn.execute_batch(SCHEMA_SQL)
@@ -96,21 +107,43 @@ impl SqliteStorage {
     }
 
     /// 取得（或懒创建）一个域的连接，并执行操作。
+    ///
+    /// 外层锁只护 map（微秒级）；连接操作在域级内锁执行——单域挂死不拖死
+    /// 其他域。慢操作（>1s）落 warn：楔死前兆（如 WAL 膨胀后 checkpoint
+    /// 爬行）从「224s 排队后爆发」变为秒级可见。
     fn with_conn<F, R>(&self, domain: &str, f: F) -> Result<R, String>
     where
         F: FnOnce(&Connection) -> Result<R, String>,
     {
-        let mut map = self
-            .connections
+        let conn_arc = {
+            let mut map = self
+                .connections
+                .lock()
+                .map_err(|e| format!("锁连接池失败: {}", e))?;
+            match map.get(domain) {
+                Some(a) => Arc::clone(a),
+                None => {
+                    let conn = self.open_domain_conn(domain)?;
+                    let arc = Arc::new(Mutex::new(conn));
+                    map.insert(domain.to_string(), Arc::clone(&arc));
+                    arc
+                }
+            }
+        };
+        let conn = conn_arc
             .lock()
-            .map_err(|e| format!("锁连接池失败: {}", e))?;
-        if !map.contains_key(domain) {
-            let conn = self.open_domain_conn(domain)?;
-            map.insert(domain.to_string(), conn);
+            .map_err(|e| format!("锁 {} 域连接失败: {}", domain, e))?;
+        let started = Instant::now();
+        let out = f(&conn);
+        let elapsed = started.elapsed();
+        if elapsed >= Duration::from_secs(1) {
+            tracing::warn!(
+                domain = %domain,
+                elapsed_ms = elapsed.as_millis() as u64,
+                "[SqliteStorage] 慢操作（>1s），楔死前兆观测点"
+            );
         }
-        // 借用 map.get，然后 drop lock 前执行 f（借用 guard 生命周期内）
-        let guard = map.get(domain).ok_or("域连接不存在")?;
-        f(guard)
+        out
     }
 
     /// 把 `q.filter` 解析成真实 WHERE 子句与 SQL 参数。

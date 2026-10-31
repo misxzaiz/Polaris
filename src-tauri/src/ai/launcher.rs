@@ -48,6 +48,20 @@ pub struct McpConfigParams<'a> {
     pub disabled_mcp_servers: &'a [String],
 }
 
+/// 读取 config.json 的 `mcp.sessionDefaults`（会话级 MCP 白名单）。
+///
+/// 缺省 / null / 非字符串数组 → `None`（全量可用，保持现行为，容错不炸）。
+fn load_session_mcp_whitelist(config_dir: &Path) -> Option<Vec<String>> {
+    let content = std::fs::read_to_string(config_dir.join("config.json")).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let list = value.get("mcp")?.get("sessionDefaults")?.as_array()?;
+    Some(
+        list.iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect(),
+    )
+}
+
 /// 统一 MCP 配置准备入口。
 ///
 /// 替代：
@@ -74,6 +88,28 @@ pub fn prepare_mcp_config(params: McpConfigParams) -> Result<McpSessionConfig> {
         if !disabled_servers.iter().any(|name| name == server_name) {
             disabled_servers.push(server_name.clone());
         }
+    }
+
+    // 会话级 MCP 白名单（spec §四 C-P0）：config.json `mcp.sessionDefaults`
+    // 缺省/null → 现行为（全量可用）；为数组 → 未列出的 server（内置与插件
+    // 一视同仁）一律并入 disabled。
+    // 性能依据（15 天日志实证，agent 复核）：ClaudeCode init 台阶在 3→5 个
+    // MCP 之间（4.7s → 31.1s），54 个 MCP 时首字延迟 23-89s；压到 ≤3 个
+    // → ~4-5s。
+    if let Some(whitelist) = load_session_mcp_whitelist(params.config_dir) {
+        let before = disabled_servers.len();
+        for name in service.all_server_names() {
+            let whitelisted = whitelist.iter().any(|w| w == &name);
+            if !whitelisted && !disabled_servers.iter().any(|d| d == &name) {
+                disabled_servers.push(name);
+            }
+        }
+        tracing::info!(
+            "[SessionLauncher] MCP 白名单生效：sessionDefaults={} 项，禁用 {} → {} 个 server",
+            whitelist.len(),
+            before,
+            disabled_servers.len()
+        );
     }
     // 为所有引擎准备配置（一次 resolve，多引擎复用）
     let claude_config_path = service

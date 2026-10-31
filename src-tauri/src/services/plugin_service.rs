@@ -1543,14 +1543,16 @@ impl PluginService {
 
     fn read_manifest(path: &Path) -> Result<PluginManifestFile> {
         let content = std::fs::read_to_string(path)?;
-        // ★ DIAG: 打印读取的路径和原始 JSON 中引擎的 mcpConsumption 字段
-        tracing::info!("[PluginDiscover-PATH] reading manifest: {}", path.display());
+        // DIAG 日志降级（洪水治理 2026-10-31）：discover 每天被调数百轮
+        // （对话路径也扫），RAW 全量 manifest JSON 曾以 INFO 刷 2.9 万行/天
+        // (~30MB)——降 debug，仅失败仍走 Result 错误路径。
+        tracing::debug!("[PluginDiscover-PATH] reading manifest: {}", path.display());
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-            tracing::info!("[PluginDiscover-RAW] raw JSON: {}", val.to_string().chars().take(500).collect::<String>());
+            tracing::debug!("[PluginDiscover-RAW] raw JSON: {}", val.to_string().chars().take(500).collect::<String>());
             if let Some(engines) = val.get("contributes").and_then(|c| c.get("engines")).and_then(|e| e.as_array()) {
                 for eng in engines {
                     let raw_mcp = eng.get("mcpConsumption").map(|v| v.to_string()).unwrap_or_else(|| "MISSING".to_string());
-                    tracing::info!(
+                    tracing::debug!(
                         "[PluginDiscover-RAW] engine_id={}, raw field mcpConsumption={}",
                         eng.get("id").and_then(|v| v.as_str()).unwrap_or("?"),
                         raw_mcp

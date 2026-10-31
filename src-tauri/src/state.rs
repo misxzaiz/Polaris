@@ -431,11 +431,20 @@ pub fn create_app_state(
 
         // 审计通道：Bootstrap 直管 JSONL（<DataRoot>/audit/dispatch.jsonl），
         // 打开失败不阻塞启动（审计缺失可见可查，不允许崩溃主流程）
-        let audit: Option<Arc<dyn crate::contracts::AuditSink>> =
-            match FileAuditSink::open(&audit_sink::audit_file_path()) {
+        let audit: Option<Arc<dyn crate::contracts::AuditSink>> = {
+            let audit_path = audit_sink::audit_file_path();
+            // P0-1（spec audit-startup-firsttoken-root-cure §A.2）：超大旧式单文件
+            // 先归档再打开——3GB 全量扫描曾是启动 16s 空洞的根源；改名失败
+            // （被其他实例占用等）静默跳过，尾读续链本身已 O(1)。
+            if let Some(dst) =
+                audit_sink::archive_oversized_legacy(&audit_path, 64 * 1024 * 1024)
+            {
+                tracing::info!("[AuditSink] 超大旧式审计文件已归档: {}", dst.display());
+            }
+            match FileAuditSink::open(&audit_path) {
                 Ok(sink) => {
                     tracing::info!(
-                        "[AuditSink] dispatch 审计已接线（{} 条历史记录，链尾续接）",
+                        "[AuditSink] dispatch 审计已接线（尾读 {} 行续链，O(1) 启动）",
                         sink.count()
                     );
                     Some(Arc::new(sink))
@@ -444,7 +453,8 @@ pub fn create_app_state(
                     tracing::warn!("[AuditSink] 审计通道打开失败，dispatch 审计暂不落盘: {}", e);
                     None
                 }
-            };
+            }
+        };
 
         let bus = Arc::new(RouterBus::new(
             adapter,
