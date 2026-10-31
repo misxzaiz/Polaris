@@ -56,7 +56,16 @@ impl TauriAutolaunchBackend {
     }
 }
 
-#[cfg(feature = "tauri-app")]
+// 桌面实现：真实 OS 写路径（tauri-plugin-autostart ManagerExt）。
+// 根因：该插件是桌面插件，crate 导出（ManagerExt / autolaunch()）整体被
+// `#[cfg(desktop)]` 门控，android target 下这些 API 不存在，因此 impl 按
+// target 拆成两份；类型与 trait 方法签名不变，调用方（lib.rs 装配 +
+// cap.app.autolaunch）零改动。
+//
+// 门控说明：与 terminal.rs / Cargo.toml（portable-pty）的既有平台约定一致，
+// 采用 `target_os = "android"` 而非 `cfg(desktop)`——后者在 web-only 构建
+// （build.rs 不跑 tauri_build）下未注册，且语义上本仓库仅面向 android 移植。
+#[cfg(all(feature = "tauri-app", not(target_os = "android")))]
 impl AutolaunchBackend for TauriAutolaunchBackend {
     fn enable(&self) -> Result<(), String> {
         use tauri_plugin_autostart::ManagerExt;
@@ -80,6 +89,23 @@ impl AutolaunchBackend for TauriAutolaunchBackend {
             .autolaunch()
             .is_enabled()
             .map_err(|e| format!("开机自启状态查询失败: {e}"))
+    }
+}
+
+// android 实现：移动端无「OS 登录自启」概念，返回显式「不支持」错误值
+// （ensure 对账会把该错误上抛并记 warn，行为可观测、不静默假成功）。
+#[cfg(all(feature = "tauri-app", target_os = "android"))]
+impl AutolaunchBackend for TauriAutolaunchBackend {
+    fn enable(&self) -> Result<(), String> {
+        Err("开机自启仅在桌面端可用".into())
+    }
+
+    fn disable(&self) -> Result<(), String> {
+        Err("开机自启仅在桌面端可用".into())
+    }
+
+    fn is_enabled(&self) -> Result<bool, String> {
+        Err("开机自启仅在桌面端可用".into())
     }
 }
 

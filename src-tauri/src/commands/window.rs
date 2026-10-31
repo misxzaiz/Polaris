@@ -27,14 +27,28 @@ pub async fn toggle_devtools(app: AppHandle, window_label: Option<String>) -> Re
 }
 
 /// 设置窗口始终置顶
+///
+/// 根因：`WebviewWindow::set_always_on_top` 是桌面专属 API，android target 下
+/// 被 tauri cfg 掉（E0599/E0282 均源于此），android 分支返回显式错误。
+/// 门控采用 `target_os = "android"` 而非 `cfg(desktop)`——同 autolaunch.rs
+/// 仓库约定（build.rs 仅在 tauri-app feature 下运行 tauri_build，web-only
+/// 构建中 `desktop` cfg 未注册）。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn set_always_on_top(app: AppHandle, always_on_top: bool) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("main") {
-        window.set_always_on_top(always_on_top).map_err(|e| e.to_string())?;
-        Ok(())
-    } else {
-        Err("主窗口不存在".to_string())
+    #[cfg(target_os = "android")]
+    {
+        let _ = (&app, always_on_top);
+        return Err("该功能仅在桌面端可用".to_string());
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        if let Some(window) = app.get_webview_window("main") {
+            window.set_always_on_top(always_on_top).map_err(|e| e.to_string())?;
+            Ok(())
+        } else {
+            Err("主窗口不存在".to_string())
+        }
     }
 }
 

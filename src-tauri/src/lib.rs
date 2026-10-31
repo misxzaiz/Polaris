@@ -233,6 +233,48 @@ impl<R: tauri::Runtime> SingleInstanceGuard for tauri::Builder<R> {
     }
 }
 
+/// 开机自启插件注册点（扩展 trait，桌面 / android 双实现按 target 切换）。
+///
+/// `#[cfg]` 无法用在方法链中间，因此把该步做成 `Builder` 的扩展方法，按
+/// target 编译出两种实现（同 `SingleInstanceGuard` 的先例模式），调用方
+/// `.with_autostart()` 无需感知。
+///
+/// 根因：tauri-plugin-autostart 是桌面插件，crate 导出（`init` /
+/// `MacosLauncher`）整体被 `#[cfg(desktop)]` 门控，android target 下不存在；
+/// 且移动端无「OS 登录自启」概念，android 实现直接透传 Builder（no-op）。
+/// 门控采用 `target_os = "android"`（同 terminal.rs / Cargo.toml 的平台约定）。
+#[cfg(all(feature = "tauri-app", not(target_os = "android")))]
+#[cfg_attr(test, allow(dead_code))]
+trait AutostartPlugin {
+    fn with_autostart(self) -> Self;
+}
+
+#[cfg(all(feature = "tauri-app", not(target_os = "android")))]
+impl<R: tauri::Runtime> AutostartPlugin for tauri::Builder<R> {
+    fn with_autostart(self) -> Self {
+        // 开机自启（plans/autostart-boot-launch-spec.md）：注册值带 --minimized，
+        // 主窗创建时命中该参数则最小化启动（登录场景不抢焦点）。
+        self.plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
+    }
+}
+
+#[cfg(all(feature = "tauri-app", target_os = "android"))]
+#[cfg_attr(test, allow(dead_code))]
+trait AutostartPlugin {
+    fn with_autostart(self) -> Self;
+}
+
+#[cfg(all(feature = "tauri-app", target_os = "android"))]
+impl<R: tauri::Runtime> AutostartPlugin for tauri::Builder<R> {
+    fn with_autostart(self) -> Self {
+        // android：桌面插件不参与构建，透传（见 AutostartPlugin 文档）。
+        self
+    }
+}
+
 /// 配置变更后广播事件，通知各模块按需调整（热切换）。
 ///
 /// 事件名：`config-changed`
@@ -567,12 +609,9 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        // 开机自启（plans/autostart-boot-launch-spec.md）：注册值带 --minimized，
-        // 主窗创建时命中该参数则最小化启动（登录场景不抢焦点）。
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec!["--minimized"]),
-        ))
+        // 开机自启（plans/autostart-boot-launch-spec.md）：桌面专属插件，经
+        // with_autostart 扩展 trait 注册（android 下为透传 no-op，见该 trait 文档）。
+        .with_autostart()
         .manage(state::create_app_state(
             config_store,
             engine_registry_arc,
@@ -766,8 +805,14 @@ pub fn run() {
             let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Polaris")
                 .inner_size(1200.0, 800.0)
-                .decorations(false)
                 .devtools(true);
+            // 根因：decorations（无边框窗口）属 tauri builder 的「Desktop APIs」
+            // （#[cfg(desktop)] impl 块），android target 下没有该方法，故从上面
+            // 的链里拆出、按平台条件追加；桌面行为不变。
+            #[cfg(not(target_os = "android"))]
+            {
+                builder = builder.decorations(false);
+            }
 
             // 分模式 + 分实例 UserData 目录，避免脏锁交叉污染。
             //
@@ -803,8 +848,18 @@ pub fn run() {
             // 创建窗口并校验：失败立即退出，杜绝"后台全绿、桌面空白"的半启动状态。
             match builder.build() {
                 Ok(main_window) => {
+                    // 根因：minimize 属 tauri「Desktop window setters and actions」
+                    // （#[cfg(desktop)] impl 块），android target 下方法不存在；且
+                    // --minimized 仅由桌面 autostart 插件注册值传入，移动端该分支
+                    // 不可能命中，按平台门控不影响行为。
+                    #[cfg(not(target_os = "android"))]
                     if start_minimized {
                         let _ = main_window.minimize();
+                    }
+                    // android：无最小化窗口 API，消费绑定避免 unused 告警（无行为）。
+                    #[cfg(target_os = "android")]
+                    {
+                        let _ = (start_minimized, main_window);
                     }
                     tracing::info!("[Window] 主窗口创建成功");
                 }

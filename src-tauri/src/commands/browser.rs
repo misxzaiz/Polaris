@@ -727,6 +727,18 @@ fn browser_bounds(label: &str) -> Result<Option<BrowserBounds>> {
 
 #[cfg(feature = "tauri-app")]
 fn apply_webview_bounds(webview: &tauri::Webview, bounds: BrowserBounds) -> Result<()> {
+    // 根因：Webview 的 hide/show/set_position/set_size 是桌面专属 API，
+    // android target 下被 tauri cfg 掉（E0599），无法调整原生 WebView 几何，
+    // android 分支返回显式错误。门控采用 target_os = "android"（同 autolaunch.rs 仓库约定）。
+    #[cfg(target_os = "android")]
+    {
+        let _ = (webview, &bounds);
+        return Err(AppError::Unknown(
+            "WebView 窗口定位仅在桌面端可用".to_string(),
+        ));
+    }
+    #[cfg(not(target_os = "android"))]
+    {
     if bounds.width < 1.0 || bounds.height < 1.0 {
         tracing::info!(
             "[Browser] apply_webview_bounds: HIDE (bounds={:?})",
@@ -751,6 +763,7 @@ fn apply_webview_bounds(webview: &tauri::Webview, bounds: BrowserBounds) -> Resu
     ))?;
     webview.show()?;
     Ok(())
+    }
 }
 
 #[cfg(feature = "tauri-app")]
@@ -1426,6 +1439,8 @@ fn reuse_browser_webview(
     }
 
     // 先隐藏再重设 bounds，避免 hide→show 帧窗口期黑屏
+    // 根因：Webview::hide 是桌面专属 API，android target 被 tauri cfg 掉，android 分支跳过隐藏
+    #[cfg(not(target_os = "android"))]
     let _ = existing.hide();
     apply_webview_bounds(&existing, bounds)?;
     remember_browser_bounds(&label, bounds)?;
@@ -1602,7 +1617,12 @@ fn browser_create_with_app(
     let fs_toggle_app = app.clone();
     let fs_toggle_label = label.clone();
 
-    let builder = WebviewBuilder::new(label.clone(), WebviewUrl::External(normalized.clone()))
+    // 显式标注运行时参数：android 上 Window::add_child 被 cfg 掉，builder 的 R
+    // 失去来自 add_child（host_window: Window<Wry>）的唯一约束来源，
+    // on_document_title_changed 等闭包的 &Webview<_> 推断失败（E0283）；
+    // 桌面端标注与原推断结果一致，行为不变
+    let builder: tauri::webview::WebviewBuilder<tauri::Wry> =
+        WebviewBuilder::new(label.clone(), WebviewUrl::External(normalized.clone()))
         .devtools(true)
         .focused(false)
         .initialization_script(browser_scripts::NET_HOOK_INIT_SCRIPT)
@@ -1731,6 +1751,16 @@ fn browser_create_with_app(
             _ => true,
         });
 
+    // 根因：Window::add_child 是桌面专属 API，android target 下被 tauri cfg 掉
+    // （E0599 + 连锁 E0282），android 无法挂载原生子 WebView 窗口，在此终止并返回显式错误。
+    // builder / host_window 在 android 分支仅作占用引用，避免 unused 告警
+    #[cfg(target_os = "android")]
+    {
+        let _ = (&builder, &host_window);
+        return Err(AppError::Unknown("内置浏览器仅在桌面端可用".to_string()));
+    }
+    #[cfg(not(target_os = "android"))]
+    {
     if let Err(error) = host_window.add_child(
         builder,
         tauri::LogicalPosition::new(bounds.x, bounds.y),
@@ -1755,6 +1785,7 @@ fn browser_create_with_app(
         Some(normalized.to_string()),
         title.or_else(|| Some("Browser".to_string())),
     )
+    }
 }
 
 #[cfg(feature = "tauri-app")]
@@ -1811,6 +1842,9 @@ pub async fn browser_close(app: AppHandle, label: String) -> Result<()> {
                 error
             );
         }
+        // 根因：Webview::close 是桌面专属 API，android target 被 tauri cfg 掉，
+        // android 分支跳过原生销毁（仅清理会话状态）
+        #[cfg(not(target_os = "android"))]
         if let Err(error) = webview.close() {
             tracing::warn!(
                 "[Browser] browser_close: close failed label={} err={}",
@@ -1871,7 +1905,11 @@ pub async fn browser_clear_orphaned_sessions(app: AppHandle) -> Result<usize> {
     let mut count = 0usize;
     for label in &labels {
         if let Some(webview) = app.get_webview(label) {
+            // 根因：Webview::close 是桌面专属 API，android target 被 tauri cfg 掉
+            #[cfg(not(target_os = "android"))]
             let _ = webview.close();
+            #[cfg(target_os = "android")]
+            let _ = &webview;
             count += 1;
         }
         let _ = forget_browser_session_state(label);
@@ -2979,6 +3017,16 @@ pub async fn browser_show_overflow_menu(
     x: f64,
     y: f64,
 ) -> Result<()> {
+    // 根因：tauri::menu（MenuBuilder/MenuItemBuilder/MenuEvent）与
+    // WebviewWindow::on_menu_event / popup_menu_at 是桌面专属 API，
+    // android target 下被 tauri cfg 掉（E0432/E0599），返回显式错误
+    #[cfg(target_os = "android")]
+    {
+        let _ = (&app, &label, x, y);
+        return Err(AppError::Unknown("溢出菜单仅在桌面端可用".to_string()));
+    }
+    #[cfg(not(target_os = "android"))]
+    {
     use std::collections::HashSet;
     use std::sync::{Mutex, OnceLock};
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -3038,6 +3086,7 @@ pub async fn browser_show_overflow_menu(
     }
 
     Ok(())
+    }
 }
 
 #[cfg(feature = "tauri-app")]
@@ -3626,6 +3675,8 @@ impl BrowserActionDispatcher {
             "close" | "close_page" | "closePage" => {
                 if let Some(webview) = self.app.get_webview(&label) {
                     let _ = apply_webview_bounds(&webview, BrowserBounds { x: 0.0, y: 0.0, width: 0.0, height: 0.0 });
+                    // 根因：Webview::close 是桌面专属 API，android target 被 tauri cfg 掉
+                    #[cfg(not(target_os = "android"))]
                     if let Err(error) = webview.close() {
                         tracing::warn!("[Browser] dispatch close failed label={} err={}", label, error);
                     }

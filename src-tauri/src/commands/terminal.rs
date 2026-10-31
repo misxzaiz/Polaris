@@ -15,6 +15,11 @@ use portable_pty::{native_pty_system, CommandBuilder, PtyPair, PtySize};
 use serde::{Deserialize, Serialize};
 #[cfg(all(feature = "tauri-app", not(target_os = "android")))]
 use tauri::{AppHandle, Emitter};
+// 根因：android 上 TerminalEventSink::Tauri 变体被 cfg 掉导致 Emitter 不再使用，
+// 但 terminal_create 命令签名仍需 AppHandle（tauri command 宏在各平台都会注入）
+#[cfg(all(feature = "tauri-app", target_os = "android"))]
+use tauri::AppHandle;
+#[cfg(not(target_os = "android"))]
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
@@ -111,6 +116,9 @@ pub struct TerminalManager {
     #[cfg(not(target_os = "android"))]
     sessions: Mutex<HashMap<String, PtySession>>,
     /// 已退出但尚未被显式关闭的会话
+    // android 上所有读取方（create/close/list/get 的桌面实现）随 PTY 一起被 cfg 掉，
+    // 字段仅在 new() 写入，豁免 dead_code
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     closed_sessions: Arc<Mutex<HashSet<String>>>,
 }
 
@@ -145,7 +153,10 @@ impl TerminalManager {
     }
 
     /// 创建新的终端会话
-    #[cfg(not(target_os = "android"))]
+    ///
+    /// 门控说明（同 autolaunch.rs 仓库约定）：采用 `target_os = "android"` 而非
+    /// `cfg(desktop)`——本仓 build.rs 仅在 tauri-app feature 下运行 tauri_build，
+    /// web-only 构建中 `desktop` cfg 未注册。
     #[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
     pub fn create_session(
         &self,
@@ -159,6 +170,18 @@ impl TerminalManager {
         purpose: Option<String>,
         script_id: Option<String>,
     ) -> Result<TerminalSession> {
+        // 根因：portable_pty（PTY 创建 + 读取线程）是桌面专属依赖，android target
+        // 下相关导入/实现被 cfg 掉，无法创建终端会话，返回显式错误
+        #[cfg(target_os = "android")]
+        {
+            let _ = (
+                &event_sink, &name, &cwd, cols, rows,
+                &initial_command, &env, &purpose, &script_id,
+            );
+            return Err(AppError::ProcessError("终端功能仅在桌面端可用".to_string()));
+        }
+        #[cfg(not(target_os = "android"))]
+        {
         let pty_system = native_pty_system();
 
         // 创建 PTY
@@ -294,10 +317,20 @@ impl TerminalManager {
 
         tracing::info!("[Terminal] 创建会话成功: {:?}", session_info);
         Ok(session_info)
+        }
     }
 
     /// 写入数据到终端
     pub fn write(&self, session_id: &str, data: &str) -> Result<()> {
+        // 根因：sessions 字段（portable_pty PTY 会话表）是桌面专属实现，
+        // android target 被 cfg 掉，无 PTY 可写，返回显式错误
+        #[cfg(target_os = "android")]
+        {
+            let _ = (session_id, data);
+            return Err(AppError::ProcessError("终端功能仅在桌面端可用".to_string()));
+        }
+        #[cfg(not(target_os = "android"))]
+        {
         let mut sessions = self.sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
@@ -321,10 +354,20 @@ impl TerminalManager {
         } else {
             Err(AppError::SessionNotFound(session_id.to_string()))
         }
+        }
     }
 
     /// 调整终端大小
     pub fn resize(&self, session_id: &str, cols: u16, rows: u16) -> Result<()> {
+        // 根因：sessions 字段与 PtySize（portable_pty）是桌面专属实现，
+        // android target 被 cfg 掉，返回显式错误
+        #[cfg(target_os = "android")]
+        {
+            let _ = (session_id, cols, rows);
+            return Err(AppError::ProcessError("终端功能仅在桌面端可用".to_string()));
+        }
+        #[cfg(not(target_os = "android"))]
+        {
         let sessions = self.sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
@@ -343,10 +386,19 @@ impl TerminalManager {
         } else {
             Err(AppError::SessionNotFound(session_id.to_string()))
         }
+        }
     }
 
     /// 关闭终端会话
     pub fn close_session(&self, session_id: &str) -> Result<()> {
+        // 根因：sessions 字段（portable_pty）是桌面专属实现，android target 被 cfg 掉
+        #[cfg(target_os = "android")]
+        {
+            let _ = session_id;
+            return Err(AppError::ProcessError("终端功能仅在桌面端可用".to_string()));
+        }
+        #[cfg(not(target_os = "android"))]
+        {
         let mut sessions = self.sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
@@ -370,10 +422,18 @@ impl TerminalManager {
         } else {
             Err(AppError::SessionNotFound(session_id.to_string()))
         }
+        }
     }
 
     /// 获取所有会话
     pub fn list_sessions(&self) -> Result<Vec<TerminalSession>> {
+        // 根因：sessions 字段（portable_pty）是桌面专属实现，android target 被 cfg 掉
+        #[cfg(target_os = "android")]
+        {
+            return Err(AppError::ProcessError("终端功能仅在桌面端可用".to_string()));
+        }
+        #[cfg(not(target_os = "android"))]
+        {
         let sessions = self.sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
@@ -387,10 +447,19 @@ impl TerminalManager {
             .filter(|s| !closed.contains(&s.info.id))
             .map(|s| s.info.clone())
             .collect())
+        }
     }
 
     /// 获取单个会话
     pub fn get_session(&self, session_id: &str) -> Result<TerminalSession> {
+        // 根因：sessions 字段（portable_pty）是桌面专属实现，android target 被 cfg 掉
+        #[cfg(target_os = "android")]
+        {
+            let _ = session_id;
+            return Err(AppError::ProcessError("终端功能仅在桌面端可用".to_string()));
+        }
+        #[cfg(not(target_os = "android"))]
+        {
         let sessions = self.sessions
             .lock()
             .map_err(|e| AppError::StateError(format!("无法获取锁: {}", e)))?;
@@ -407,6 +476,7 @@ impl TerminalManager {
                 info
             })
             .ok_or_else(|| AppError::SessionNotFound(session_id.to_string()))
+        }
     }
 }
 
@@ -430,6 +500,18 @@ pub fn terminal_create(
     purpose: Option<String>,
     script_id: Option<String>,
 ) -> Result<TerminalSession> {
+    // 根因：portable_pty 会话创建与 TerminalEventSink::Tauri 事件出口是桌面专属实现，
+    // android target 被 cfg 掉，直接返回错误
+    #[cfg(target_os = "android")]
+    {
+        let _ = (
+            &app_handle, &state, &name, &cwd, cols, rows,
+            &initial_command, &env, &purpose, &script_id,
+        );
+        return Err(AppError::ProcessError("终端功能仅在桌面端可用".to_string()));
+    }
+    #[cfg(not(target_os = "android"))]
+    {
     let manager = state.terminal_manager.lock()
         .map_err(|e| AppError::StateError(e.to_string()))?;
 
@@ -444,6 +526,7 @@ pub fn terminal_create(
         purpose,
         script_id,
     )
+    }
 }
 
 /// 写入终端
@@ -521,6 +604,15 @@ pub fn terminal_open_in_external(
     cwd: Option<String>,
     env: Option<HashMap<String, String>>,
 ) -> Result<()> {
+    // 根因：外部系统终端（cmd / gnome-terminal 等）是桌面概念，android 上
+    // 无外部终端可拉起，直接返回错误
+    #[cfg(target_os = "android")]
+    {
+        let _ = (&command, &cwd, &env);
+        return Err(AppError::ProcessError("外部终端仅在桌面端可用".to_string()));
+    }
+    #[cfg(not(target_os = "android"))]
+    {
     use std::process::Command;
 
     let cwd = cwd.unwrap_or_else(|| {
@@ -619,4 +711,5 @@ pub fn terminal_open_in_external(
     }
 
     Ok(())
+    }
 }

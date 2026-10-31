@@ -1675,6 +1675,11 @@ fn optional_string_map(args: &Value, key: &str) -> Result<Option<HashMap<String,
         .map_err(|error| WebError::BadRequest(format!("Invalid {} map: {}", key, error)))
 }
 
+// 根因：TerminalManager::create_session（PTY 会话创建）在 terminal.rs 按
+// `not(target_os = "android")` 门控，android target 下方法不存在。本 dispatch
+// 函数与该门控精确对齐拆成两份：android 返回显式 4xx，其余平台原实现不变
+// （web 独立版 polaris-web 的终端能力不受影响）。
+#[cfg(not(target_os = "android"))]
 fn dispatch_terminal_create(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
     let cols = optional_u16(args, "cols")?.unwrap_or(80);
     let rows = optional_u16(args, "rows")?.unwrap_or(24);
@@ -1696,6 +1701,11 @@ fn dispatch_terminal_create(state: &AppState, args: &Value) -> Result<Json<Value
         optional_string(args, "purpose"),
         optional_string(args, "scriptId"),
     ))
+}
+
+#[cfg(target_os = "android")]
+fn dispatch_terminal_create(_state: &AppState, _args: &Value) -> Result<Json<Value>, WebError> {
+    Err(WebError::BadRequest("终端功能仅在桌面端可用".into()))
 }
 
 /// 查询聊天会话是否仍在任一引擎中运行。
@@ -2875,12 +2885,32 @@ async fn dispatch_router_dispatch(state: &AppState, args: &Value) -> Result<Json
     // 性能治理（同 commands/router.rs router_dispatch）：外包 blocking 线程池，
     // 重量级 sync capability 不占 tokio worker（git 写秒级任务尤其受益）。
     // 若 git feature 未编译，cap.git 将以"能力未注册"应答（与旧行为等价）。
-    // X5 护栏：DISPATCH_SYNC_TIMEOUT 兜「能力 handler 永不返回」的挂死——
+    // X5 护栏：DISPATCH_SYNC_TIMEOUT 兜「能力 handler 未返回」的挂死——
     // 只解除调用方阻塞（blocking 线程无法强取消，由能力自行完成）。
+    // 楔死取证（2026-10-31）：10s 未返回即点名 target（与 commands/router.rs 同款）。
     let router = state.router.clone();
+    let watchdog_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let done2 = std::sync::Arc::clone(&watchdog_done);
+        let watchdog_target = env.target.0.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            if !done2.load(std::sync::atomic::Ordering::Relaxed) {
+                tracing::warn!(
+                    target = %watchdog_target,
+                    "dispatch 10s 未返回（楔死取证：此能力挂住，blocking 池将被占满）"
+                );
+            }
+        });
+    }
+    let done_store = std::sync::Arc::clone(&watchdog_done);
     let reply = match tokio::time::timeout(
         crate::services::router::DISPATCH_SYNC_TIMEOUT,
-        tokio::task::spawn_blocking(move || router.dispatch(env)),
+        tokio::task::spawn_blocking(move || {
+            let out = router.dispatch(env);
+            done_store.store(true, std::sync::atomic::Ordering::Relaxed);
+            out
+        }),
     )
     .await
     {
