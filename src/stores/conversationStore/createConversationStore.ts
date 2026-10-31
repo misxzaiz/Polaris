@@ -171,6 +171,11 @@ function createInitialState(sessionId: string): ConversationState {
     promptSuggestion: null,
     usageStats: null,
     streamRate: null,
+    // 会话运行累计时长（纯运行时，不落库）：初始为 0，无活动轮
+    sessionElapsedMs: 0,
+    runStartAtMs: null,
+    // 最近完成一轮时长：初始 0（从未对话）；session_end / settle 时写入
+    lastTurnMs: 0,
 
     // 输入草稿
     inputDraft: {
@@ -2245,6 +2250,19 @@ export function createConversationStore(
           taskBoardBlockMap: new Map(),
           activeTaskBoardId: null,
           pendingTaskCreates: [],
+          // 乐观计时起点（spec：续聊兜底）。SimpleAI 等引擎续聊不发 session_start
+          // 事件，若等它来录起点，后续轮次将永远不计时；此处以发送时刻乐观起算，
+          // 真实 session_start 到达后由其 receivedAtMs 覆盖（同一轮，不双计）。
+          // 静默会话（标题生成/压缩交接触发的 sendMessage）不计入用户可见时长，
+          // 与 eventHandler session_start/session_end 的 silentMode 守卫保持一致。
+          runStartAtMs: (() => {
+            try {
+              const meta = sessionStoreManager.getState().sessionMetadata.get(sessionId)
+              return meta?.silentMode ? null : Date.now()
+            } catch {
+              return Date.now()
+            }
+          })(),
           // 批 4b（审计 4.1）：轮次代际 +1——interrupt 兜底定时器等跨轮回调
           // 据此识别旧轮次，不再误杀新一轮流式
           turnEpoch: get().turnEpoch + 1,
@@ -2396,6 +2414,9 @@ export function createConversationStore(
             isStreaming: false,
             currentMessage: null,
             progressMessage: null,
+            // 乐观计时起点对本轮失效：发送失败无真实轮次，清空避免残留起点
+            // 被未来迟到的 session_end 误结算（否则误累加一大段墙面时间）
+            runStartAtMs: null,
             // 回滚本轮乐观追加的用户消息（未进引擎上下文，不该留在历史）
             messages: get().messages.filter((m) => m.id !== userMessage.id),
           })
@@ -2409,6 +2430,18 @@ export function createConversationStore(
           }
           return false
         }
+      },
+
+      settleSessionElapsedMs: () => {
+        const runStart = get().runStartAtMs
+        if (runStart == null) return
+        const delta = Math.max(0, Date.now() - runStart)
+        set((s) => ({
+          sessionElapsedMs: s.sessionElapsedMs + delta,
+          runStartAtMs: null,
+          // 记录最近完成一轮时长：会话结束后折叠态继续显示「刚才那轮」而非回 0
+          lastTurnMs: delta,
+        }))
       },
 
       interrupt: async () => {
@@ -2475,6 +2508,8 @@ export function createConversationStore(
               // 批 4b（审计 4.10）：强制收尾路径同样清理 progressMessage——
               // 此前只复位流式标志，灵动岛从 progressMessage 派生的 running 卡
               // 持续转圈直到下次事件
+              // 中断兜底：session_end 不会到达，先结算本活动轮时长再收尾
+              get().settleSessionElapsedMs()
               set({ isStreaming: false, isInterrupting: false, progressMessage: null })
               get().finishMessage()
               // 中断兜底强制收尾后，若有待发送队列则继续派发（session_end 不会到达此路径）
@@ -2488,6 +2523,8 @@ export function createConversationStore(
           // invoke 本身失败（如后端未找到会话）：session_end 不会到达，
           // 前端需主动结束流式状态避免 UI 卡死。
           // 批 4b（审计 4.10）：同步清理 progressMessage（同超时兜底路径）
+          // 先结算本活动轮时长，避免中断后已流逝时间丢失
+          get().settleSessionElapsedMs()
           set({ isStreaming: false, isInterrupting: false, progressMessage: null })
           get().finishMessage()
           // 中断失败兜底收尾后，若有待发送队列则继续派发

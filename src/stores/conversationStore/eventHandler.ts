@@ -351,13 +351,26 @@ export function handleAIEvent(
     case 'session_start':
       // 新一轮起点：重置速率跟踪器（计时基准 = session_start 到达时刻）
       resetTracker(state.sessionId, event.receivedAtMs)
-      set({
-        conversationId: event.sessionId,
-        isStreaming: true,
-        error: null,
-        promptSuggestion: null,
-        streamRate: null,
-      })
+      // 会话累计时长：记录本轮起点（后台计时基），session_end 结算累加。
+      // receivedAtMs 为后端注入的事件到达时刻；缺省（旧引擎）回退 Date.now()。
+      // 静默会话（标题生成/压缩交接）不计入用户可见统计。
+      {
+        const isSilentStart = (() => {
+          try {
+            return sessionStoreManager.getState().sessionMetadata.get(state.sessionId)?.silentMode
+          } catch {
+            return undefined
+          }
+        })()
+        set({
+          conversationId: event.sessionId,
+          isStreaming: true,
+          error: null,
+          promptSuggestion: null,
+          streamRate: null,
+          runStartAtMs: isSilentStart ? null : (event.receivedAtMs ?? Date.now()),
+        })
+      }
       // 如果事件携带了 engineId，更新会话元数据，确保后续回复使用正确引擎
       if (event.engineId && state.sessionId) {
         const managerState = sessionStoreManager.getState()
@@ -378,6 +391,25 @@ export function handleAIEvent(
       const rateTracker = getTracker(state.sessionId)
       rateTracker.markEnd(event.receivedAtMs)
       const finalRate = rateTracker.isEmpty() ? null : rateTracker.snapshot(event.receivedAtMs)
+
+      // 会话累计时长结算：把本轮墙钟（end - start）累加进 sessionElapsedMs。
+      // 边界守卫：
+      // - runStartAtMs == null = 静默会话 / 会话从未 start（旧引擎无 session_start）
+      //   → 跳过，不把虚假的整段时间累加进累计。
+      // - receivedAtMs 缺省回退 Date.now()；end 早于 start 归零（防御乱序）。
+      const runStart = get().runStartAtMs
+      if (runStart != null) {
+        const endAt = event.receivedAtMs ?? Date.now()
+        const delta = endAt >= runStart ? endAt - runStart : 0
+        // set 为纯 partial 签名，不支持函数式；直接读当前累计再写回。
+        // lastTurnMs：记录最近完成一轮时长，折叠态于「会话结束、下一轮未开始」
+        // 的间隙继续显示刚才那轮，而非回落 0 / 累计。
+        set({
+          sessionElapsedMs: get().sessionElapsedMs + delta,
+          runStartAtMs: null,
+          lastTurnMs: delta,
+        })
+      }
 
       // HTML 卡片渲染（会话级开关）：结束时对本轮回复做 HTML 卡片检测，命中则把
       // 最后一段 text 替换为 artifact_preview 块（inlineToBody 直出）。必须在

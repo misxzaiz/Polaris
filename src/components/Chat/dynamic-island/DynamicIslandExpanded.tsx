@@ -43,7 +43,7 @@ import { useToastStore } from '@/stores/toastStore';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { resolveWorkspacePath } from '@/utils/path';
-import { formatTokens, type ContextWater, type RuntimeCard, type TaskRow, type UrgentCard } from './useRuntimeSummary';
+import { formatDuration, formatTokens, type ContextWater, type RuntimeCard, type TaskRow, type UrgentCard } from './useRuntimeSummary';
 import {
   MAX_DIFF_CHARS,
   type FileOpKind,
@@ -65,6 +65,10 @@ interface DynamicIslandExpandedProps {
   onClose: () => void;
   elapsedMs: number;
   water: ContextWater | null;
+  /** 当前这轮回复墙钟（ms）；内部 formatDuration 显示 */
+  currentTurnMs: number;
+  /** 本次会话累计对话时长（ms） */
+  sessionTotalMs: number;
   onUrgentDecision: (card: UrgentCard, approved: boolean) => void;
   /** 会话变更汇总（变更汇总 / 后台任务 tab 数据源） */
   changeSummary: SessionChangeSummary;
@@ -80,6 +84,8 @@ export function DynamicIslandExpanded({
   water,
   onUrgentDecision,
   changeSummary,
+  currentTurnMs,
+  sessionTotalMs,
 }: DynamicIslandExpandedProps) {
   // tab 懒选默认：展开瞬间有运行态内容 → 运行 tab；空闲展开 → 变更汇总 tab
   const [tab, setTab] = useState<IslandTab>(() =>
@@ -181,6 +187,20 @@ export function DynamicIslandExpanded({
 
         {tab === 'changes' && <ChangeList summary={changeSummary} />}
         {tab === 'tasks' && <TaskList summary={changeSummary} />}
+
+        {/* 会话时长统计：本轮（实时）+ 累计 */}
+        {sessionTotalMs > 0 || currentTurnMs > 0 ? (
+          <div className="island-stat-line">
+            <span className="island-stat-ico"><Activity /></span>
+            <span className="island-stat-item">
+              本轮 <b>{formatDuration(currentTurnMs)}</b>
+            </span>
+            <span className="island-stat-divider" />
+            <span className="island-stat-item">
+              本次会话累计 <b>{formatDuration(sessionTotalMs)}</b>
+            </span>
+          </div>
+        ) : null}
 
         {/* 底部水位条 */}
         {water && <WaterBar water={water} />}

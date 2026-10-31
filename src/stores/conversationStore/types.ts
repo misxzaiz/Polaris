@@ -394,6 +394,20 @@ export interface ConversationState {
    */
   streamRate: StreamRateSnapshot | null
 
+  // ===== 会话运行累计时长（本次会话 AI 运行墙钟合计） =====
+  /**
+   * 已结算的会话累计时长（ms）：跨轮累加，每轮 session_end 把本轮墙钟计入。
+   * 刷新页面 / 切换会话后归零（纯运行时统计，不落库），满足「本次会话实时
+   * 显示花了多久」的诉求；动态岛折叠态常驻展示。
+   */
+  sessionElapsedMs: number
+  /** 当前活动轮起点（epoch ms）。session_start 写入，session_end 清空并结算。
+   *  null = 无运行中的轮。 */
+  runStartAtMs: number | null
+  /** 最近完成一轮的墙钟时长（ms）。session_end / settleSessionElapsedMs 结算时写入，
+   *  供折叠态在「会话结束、下一轮未开始」的间隙，继续显示刚才那轮的时长而非回落 0。 */
+  lastTurnMs: number
+
   // ===== 元数据 =====
   sessionId: string // 会话唯一标识，由后端返回或前端生成
 
@@ -678,6 +692,9 @@ export interface ConversationActions {
   /** 继续会话（用于回答问题/审批计划/权限重试后） */
   continueChat: (prompt?: string, allowedTools?: string[]) => Promise<void>
   interrupt: () => Promise<void>
+  /** 把当前活动轮的时间结算进 sessionElapsedMs（interrupt 兜底等无 session_end
+   *  的强制收尾路径调用，保证中断后已流逝的对话时长不丢失）。 */
+  settleSessionElapsedMs: () => void
   regenerateResponse: (assistantMessageId: string) => Promise<void>
   editAndResend: (userMessageId: string, newContent: string) => Promise<void>
   /** 从磁盘归档中加载更早的消息（向上滚动分页；同步内存归档兜底） */

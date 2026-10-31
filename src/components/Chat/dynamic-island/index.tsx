@@ -310,7 +310,6 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
                 <span className="island-seg-lbl">完成 · {doneCount} 项</span>
               </span>
             </div>
-            <span className="island-time">{formatDuration(summary.elapsedMs)}</span>
           </>
         ) : isResident ? (
           <div className="island-main">
@@ -320,13 +319,28 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
             </span>
           </div>
         ) : (
-          <>
-            <div className="island-main">
-              <Carousel slide={activeSlide} />
-            </div>
-            <span className="island-time">{formatDuration(summary.elapsedMs)}</span>
-          </>
+          <div className="island-main">
+            <Carousel slide={activeSlide} />
+          </div>
         )}
+
+        {/* 时长：显示「当前/最近一轮」墙钟——进行中实时跳；会话结束后保持显示
+            刚结束那轮的时长（lastTurnMs 退避），直到开启下一次对话。tooltip 解释语义。 */}
+        {summary.currentTurnMs > 0 ? (
+          <span
+            className="island-time"
+            title={`本轮回复 ${formatDuration(summary.currentTurnMs)} · 本次会话累计 ${formatDuration(summary.sessionTotalMs)}`}
+          >
+            {formatDuration(summary.currentTurnMs)}
+          </span>
+        ) : summary.sessionTotalMs > 0 ? (
+          <span
+            className="island-time"
+            title={`本次会话累计对话时长：${formatDuration(summary.sessionTotalMs)}`}
+          >
+            {formatDuration(summary.sessionTotalMs)}
+          </span>
+        ) : null}
 
         {/* 会话变更段：常驻显示（v3）——文件数 / +N −M / 后台任务数 */}
         <ChangeDelta summary={changeSummary} />
@@ -350,6 +364,8 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
           water={summary.water}
           onUrgentDecision={handleUrgentDecision}
           changeSummary={changeSummary}
+          currentTurnMs={summary.currentTurnMs}
+          sessionTotalMs={summary.sessionTotalMs}
         />
       )}
     </div>

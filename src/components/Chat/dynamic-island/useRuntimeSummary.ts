@@ -137,6 +137,13 @@ export interface RuntimeSummary {
   thinking: string | null;
   /** 会话变更汇总（文件操作 + 后台任务，纯派生自 messages/blocks，常驻变更段数据源） */
   changeSummary: SessionChangeSummary;
+  /** 会话累计对话时长（ms）= 已结算 sessionElapsedMs + 运行中本轮推进。
+   *  跨轮累加、常驻显示；刷新/切会话归零（纯运行时统计，不落库）。 */
+  sessionTotalMs: number;
+  /** 当前这轮回复的墙钟时长（ms）= runStartAtMs → now。
+   *  纯文本流式（无运行块）也推进；本轮已结束或空闲（runStartAtMs=null）为 0，
+   *  折叠态此时回落显示会话累计，避免「0s」噪音。 */
+  currentTurnMs: number;
 }
 
 const EMPTY_SUMMARY: RuntimeSummary = {
@@ -153,6 +160,8 @@ const EMPTY_SUMMARY: RuntimeSummary = {
   progressMessage: null,
   thinking: null,
   changeSummary: EMPTY_CHANGE_SUMMARY,
+  sessionTotalMs: 0,
+  currentTurnMs: 0,
 };
 
 const WORKFLOW_TOOL_NAME = 'workflow';
@@ -721,6 +730,9 @@ export function deriveRuntimeSummary(
     progressMessage,
     thinking,
     changeSummary,
+    // hook 层随后按 store 的 sessionElapsedMs/runStartAtMs 覆盖为真实值（此默认仅供纯函数测试/兜底）
+    sessionTotalMs: 0,
+    currentTurnMs: 0,
   };
 }
 
@@ -763,18 +775,38 @@ export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
     const usage = state.usageStats;
     // now 用 tick（稳定），而非 Date.now()
     const now = tickStartRef.current;
+    // 会话累计时长：已结算 sessionElapsedMs + 运行中本轮推进（now - runStartAtMs）。
+    // tick 驱动（活跃轮 start 后 hasRunning 场景 tick 每秒推进；纯流式无块时可能无 tick，
+    // 退化为常量，随 session_start/end 的 store 更新刷新，不影响「会话累计」主要诉求）。
+    const runningRunStart = state.runStartAtMs;
+    const sessionTotalMs = Math.max(
+      0,
+      (state.sessionElapsedMs ?? 0) +
+        (runningRunStart != null && now >= runningRunStart ? now - runningRunStart : 0),
+    );
+    // 当前这轮回复墙钟：本轮起点（runStartAtMs，sendMessage 乐观置位 / session_start 覆盖）
+    // 到 now。起点为空（本轮结束/空闲）时退化为 lastTurnMs——上次完成那轮的时长，
+    // 使折叠态在「会话结束、下一轮未开始」的间隙继续显示刚才那轮而非回 0。
+    const currentTurnMs =
+      runningRunStart != null && now >= runningRunStart
+        ? now - runningRunStart
+        : (state.lastTurnMs ?? 0);
     // 会话变更汇总：messages（历史）+ currentBlocks（流式）纯派生，memo 在 changeSummary.ts 内
     const changeSummary = deriveChangeSummary(state.messages ?? [], state.currentMessage?.blocks, now);
     const next = deriveRuntimeSummary(blocks, pm, now, interrupting, usage, changeSummary);
+    // 会话累计时长是 hook 层并入的（deriveRuntimeSummary 不接触 store 会话统计），合并进快照
+    const nextWithSession = sessionTotalMs !== next.sessionTotalMs || currentTurnMs !== next.currentTurnMs
+      ? { ...next, sessionTotalMs, currentTurnMs }
+      : next;
     if (
       cachedStoreRef.current === store &&
-      shallowEqualSummary(cachedRef.current, next)
+      shallowEqualSummary(cachedRef.current, nextWithSession)
     ) {
       return cachedRef.current;
     }
     cachedStoreRef.current = store;
-    cachedRef.current = next;
-    return next;
+    cachedRef.current = nextWithSession;
+    return nextWithSession;
   };
 
   const subscribe = (onChange: () => void) => {
@@ -785,21 +817,21 @@ export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
    
   const summary = useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_SUMMARY);
 
-  // 计时 effect：仅当有运行中活动时，每秒推进 tick
+  // 计时 effect：有运行中活动（工具/海报）或会话处于流式（含纯文本流式）
+  // 时，每秒推进 tick。纯文本回复无 running blocks（hasRunning=false）但
+  // sessionTotalMs 仍需实时推进，故 OR 上 store 的 isStreaming。
+  // tick 存真实时间戳：活动间隙停顿后重启，tick 立即回到真实时钟，
+  // 不会滞后导致「新一轮 runStartAtMs 大于 stale tick」的累计丢失。
+  const storeIsStreaming = store?.getState().isStreaming ?? false;
+  const tickActive = summary.hasRunning || summary.isInterrupting || storeIsStreaming;
   useEffect(() => {
-    if (!summary.hasRunning && !summary.isInterrupting) return;
+    if (!tickActive) return;
+    setTick(Date.now());
     const timer = setInterval(() => {
-      setTick(t => (t === 0 ? Date.now() : t + 1000));
+      setTick(Date.now());
     }, 1000);
     return () => clearInterval(timer);
-  }, [summary.hasRunning, summary.isInterrupting]);
-
-  // 运行态开始时记录起始 tick
-  useEffect(() => {
-    if (summary.hasRunning && tickStartRef.current === 0) {
-      setTick(Date.now());
-    }
-  }, [summary.hasRunning]);
+  }, [tickActive]);
 
   return summary;
 }
@@ -814,6 +846,8 @@ function shallowEqualSummary(a: RuntimeSummary, b: RuntimeSummary): boolean {
   if (a.elapsedMs !== b.elapsedMs) return false;
   if (a.progressMessage !== b.progressMessage) return false;
   if (a.thinking !== b.thinking) return false;
+  if (a.sessionTotalMs !== b.sessionTotalMs) return false;
+  if (a.currentTurnMs !== b.currentTurnMs) return false;
   if (a.slides.length !== b.slides.length) return false;
   if (a.cards.length !== b.cards.length) return false;
   if (a.urgent.length !== b.urgent.length) return false;

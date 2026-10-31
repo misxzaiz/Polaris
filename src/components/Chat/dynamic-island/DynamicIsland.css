@@ -740,6 +740,42 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ========== 会话时长统计（展开面板，底部水位条上方） ========== */
+.island-stat-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 0;
+  font-size: 10px;
+  color: rgb(var(--c-text-muted));
+}
+.island-stat-ico {
+  display: flex;
+  align-items: center;
+  color: rgb(var(--c-text-tertiary));
+}
+.island-stat-ico > svg {
+  width: 11px;
+  height: 11px;
+}
+.island-stat-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.island-stat-item b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--c-text-secondary));
+}
+.island-stat-divider {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(var(--c-border), 0.5);
+  opacity: 0.6;
+}
+
 /* ========== 补充（V2-3 组件接入） ========== */
 /* urgent 区段容器 */
 .island-urgent-sec {
