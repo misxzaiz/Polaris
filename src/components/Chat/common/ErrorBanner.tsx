@@ -8,11 +8,51 @@ import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, RotateCcw } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores'
+import type { Attachment } from '@/types/attachment'
 import {
   useActiveSessionActions,
   useActiveSessionMessages,
 } from '@/stores/conversationStore/useActiveSession'
 import { isUserMessage, type UserChatMessage } from '@/types/chat'
+
+/**
+ * 存储态附件 → sendMessage 入参（Attachment）的无损映射。
+ *
+ * 根因：重试此前只回传 content，attachments 被丢弃——带图消息发送失败后点重试，
+ * 附件从新一轮消息中静默消失（UserBubble 不再渲染附件条）。
+ * 存储态 UserChatMessage.attachments（types/chat.ts）只保留展示元数据
+ * （id/type/fileName/fileSize/mimeType），不含 content(base64)/textContent/preview；
+ * 而 sendMessage 入参类型为完整 Attachment（types/attachment.ts:20）。
+ * 因此这里只回传存储态真实拥有的字段：
+ * - 缺失的二进制内容不伪造：空 content 附件到后端 process_attachments 会被
+ *   warn+continue 跳过（src-tauri ai_chat_core.rs:262-268 图片 / 417-422 文件），不会崩；
+ * - source/status 是 Attachment 类型必填、但 sendMessage 的两处消费（userMessage
+ *   展示映射与 attachmentsForBackend 后端载荷映射）都不读取，仅前端输入溯源用，
+ *   以中性值补齐满足类型；
+ * - 单条形状异常（历史/异构数据）跳过该条而非硬转，绝不崩掉重试路径。
+ */
+function mapStoredAttachmentsForRetry(
+  stored: UserChatMessage['attachments']
+): Attachment[] | undefined {
+  if (!stored || stored.length === 0) return undefined
+  const mapped: Attachment[] = []
+  for (const att of stored) {
+    if (!att || typeof att !== 'object') continue
+    if (att.type !== 'image' && att.type !== 'file') continue
+    if (typeof att.id !== 'string' || typeof att.fileName !== 'string') continue
+    mapped.push({
+      id: att.id,
+      type: att.type,
+      source: 'select',
+      fileName: att.fileName,
+      fileSize: typeof att.fileSize === 'number' ? att.fileSize : 0,
+      mimeType: typeof att.mimeType === 'string' ? att.mimeType : 'application/octet-stream',
+      content: '',
+      status: 'ready',
+    })
+  }
+  return mapped.length > 0 ? mapped : undefined
+}
 
 export function ErrorBanner({ error }: { error: string }) {
   const { t } = useTranslation(['errors', 'common'])
@@ -44,7 +84,13 @@ export function ErrorBanner({ error }: { error: string }) {
   const handleRetry = useCallback(() => {
     if (!lastUserMessage) return
     clearError()
-    sendMessage(lastUserMessage.content, currentWorkspace?.path)
+    // 根因修复：重试回传附件元数据（映射规则见 mapStoredAttachmentsForRetry 注释），
+    // 新一轮消息的附件条不再静默消失。
+    sendMessage(
+      lastUserMessage.content,
+      currentWorkspace?.path,
+      mapStoredAttachmentsForRetry(lastUserMessage.attachments)
+    )
   }, [lastUserMessage, currentWorkspace, clearError, sendMessage])
 
   return (
