@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Polaris 会话运行时间徽章原型</title>
+<style>
+  :root {
+    --bg: #0f1014;
+    --bg-elev: #1a1c23;
+    --border: #2a2d36;
+    --text: #e6e8ee;
+    --text-muted: #8b8fa2;
+    --text-tertiary: #5c6072;
+    --primary: #6ea8fe;
+    --success: #4cc38a;
+    --hover: #242833;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 48px 24px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 18px; margin-bottom: 6px; }
+  .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 32px; }
+  .section { margin-bottom: 40px; }
+  .section-title {
+    font-size: 13px; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 12px;
+  }
+  /* 模拟 Polaris 状态栏 */
+  .statusbar {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px 12px;
+    font-size: 12px; max-width: 720px; margin-bottom: 20px;
+    min-height: 34px;
+  }
+  .spacer { flex: 1; }
+  .text-muted { color: var(--text-muted); }
+  .text-tertiary { color: var(--text-tertiary); }
+  /* 模拟 ContextMeter 圆圈 */
+  .ring {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 8px; color: var(--text-muted);
+  }
+  /* 核心：会话运行时间徽章 */
+  .timer-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 1px 7px; border-radius: 999px;
+    border: 1px solid transparent;
+    font-family: var(--mono); font-size: 11px; color: var(--text-muted);
+    cursor: default; transition: background 0.15s, color 0.15s;
+    position: relative;
+  }
+  .timer-badge:hover { background: var(--hover); color: var(--text); }
+  .timer-badge.running { color: var(--primary); }
+  .timer-badge.running .dot { background: var(--primary); }
+  .timer-badge .dot {
+    width: 5px; height: 5px; border-radius: 50%; background: var(--text-tertiary);
+  }
+  .timer-badge.running .dot { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  /* tooltip */
+  .timer-badge .tooltip {
+    position: absolute; bottom: calc(100% + 8px); right: 0;
+    background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 11px; font-family: sans-serif;
+    color: var(--text); white-space: nowrap;
+    opacity: 0; pointer-events: none; transform: translateY(4px);
+    transition: opacity 0.12s, transform 0.12s; z-index: 10;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .timer-badge:hover .tooltip { opacity: 1; transform: translateY(0); }
+  .timer-badge .tooltip .head { color: var(--text-muted); font-size: 10px; margin-bottom: 2px; }
+  .timer-badge .tooltip .val { font-family: var(--mono); color: var(--text); }
+
+  /* 卡片：三种状态演示 */
+  .cards { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 24px; }
+  .card {
+    background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; width: 300px; position: relative;
+  }
+  .card .label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+  .card .big {
+    font-family: var(--mono); font-size: 22px; color: var(--text);
+    letter-spacing: 0.02em;
+  }
+  .card .note { font-size: 11px; color: var(--text-tertiary); margin-top: 8px; }
+  .card .run-demo { color: var(--text-tertiary); font-size: 11px; margin-top: 10px; }
+
+  /* 周期条 */
+  .run-bar { margin-top: 10px; }
+  .run-bar .info { display:flex; justify-content: space-between; font-size: 10px; color: var(--text-tertiary); margin-bottom: 3px; }
+  .run-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .run-fill { height: 100%; background: var(--primary); border-radius: 2px; }
+  .btn-row { margin-top: 10px; margin-bottom: 20px; }
+  button {
+    background: var(--bg-elev); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 8px 14px; font-size: 12px; cursor: pointer;
+    font-family: inherit; margin-right: 8px;
+  }
+  button:hover { background: var(--hover); border-color: var(--primary); }
+  caption { caption-side: top; text-align: left; font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+  table { border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 5px 12px 5px 0; text-align: left; }
+  th { color: var(--text-tertiary); font-weight: 500; }
+  td.mono, th.mono { font-family: var(--mono); }
+  .tag {
+    display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px;
+    background: var(--hover); color: var(--text-muted); margin-left: 6px; vertical-align: 1px;
+  }
+  .tag.p0 { color: var(--primary); }
+</style>
+</head>
+<body>
+
+  <h1>Polaris 会话运行时间徽章 · 原型</h1>
+  <div class="sub">G1 常驻实时显示 + G2 会话级累计时长 · 状态栏徽章（方案 A）</div>
+
+  <!-- 实况演示：状态栏 -->
+  <div class="section">
+    <div class="section-title">◆ 状态栏实况（可交互：发消息 → 计时开始）</div>
+    <div class="statusbar">
+      <span class="text-tertiary">●</span>
+      <span class="text-muted">workspace/polaris</span>
+      <span class="spacer"></span>
+      <span class="text-tertiary" style="font-size:11px">tok 2.4k/200k</span>
+      <span class="ring">62%</span>
+      <span id="liveBadge" class="timer-badge">
+        <span class="dot"></span>
+        <span id="liveText">—</span>
+        <span class="tooltip">
+          <div class="head">本次会话累计对话时长</div>
+          <div class="val" id="liveTooltip">0s</div>
+        </span>
+      </span>
+    </div>
+    <div class="btn-row">
+      <button id="btnStart">▶ 发一条消息（开始计时）</button>
+      <button id="btnPause">⏸ 结束本轮（定格累计）</button>
+      <button id="btnReset">↺ 重置会话（归零）</button>
+    </div>
+    <div class="run-demo" id="demoState">状态：空闲（未开始）</div>
+  </div>
+
+  <!-- 三状态静态说明 -->
+  <div class="section">
+    <div class="section-title">◆ 徽章三种状态</div>
+    <div class="cards">
+      <div class="card">
+        <div class="label">流式中 · 每秒跳</div>
+        <div class="big">⏱ 2:35</div>
+        <div class="note"><span class="dot" style="display:inline-block;width:5px;height:5px;background:var(--primary);border-radius:50%;margin-right:4px"></span>蓝点脉冲 + tabular-nums，累计 + 本轮实时推算</div>
+      </div>
+      <div class="card">
+        <div class="label">空闲 · 定格会话累计</div>
+        <div class="big">⏱ 12:05</div>
+        <div class="note">无动画，显示 totalElapsedMs，hover 说明</div>
+      </div>
+      <div class="card">
+        <div class="label">无会话 / 旧会话</div>
+        <div class="big" style="color:var(--text-tertiary)">——</div>
+        <div class="note">totalElapsedMs 缺省 → 隐藏徽章，不占位</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 数据模型 -->
+  <div class="section">
+    <div class="section-title">◆ 数据模型（SessionMetadata 新增 2 字段）</div>
+    <table>
+      <tr><th class="mono">字段</th><th>类型</th><th>语义</th></tr>
+      <tr><td class="mono">totalElapsedMs</td><td>number</td><td>会话累计对话时长（跨轮累加，落库可回看）</td></tr>
+      <tr><td class="mono">activeRunStartedAtMs</td><td>number | null</td><td>当前活动轮起点（运行中非空，流式实时推算用）</td></tr>
+    </table>
+    <div style="margin-top:12px;font-size:11px;color:var(--text-muted)">
+      写入路径：轮末 <span class="mono">session_end</span> → <span class="mono">totalElapsedMs += (endAt − startAt)</span>，清空 active 指针，落库。<br>
+      实时显示：<span class="mono">liveMs = totalElapsedMs + (now − activeRunStartedAtMs)</span>，streaming 时每秒 tick。
+    </div>
+  </div>
+
+  <script>
+    const fmt = (ms) => {
+      ms = Math.max(0, Math.floor(ms / 1000));
+      const h = Math.floor(ms / 3600), m = Math.floor((ms % 3600) / 60), s = ms % 60;
+      if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+      if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`;
+      return `${s}s`;
+    };
+
+    let totalMs = 0;        // totalElapsedMs
+    let runStart = null;    // activeRunStartedAtMs
+    let streaming = false;
+    let tick = null;
+
+    const badge = document.getElementById('liveBadge');
+    const text = document.getElementById('liveText');
+    const tooltip = document.getElementById('liveTooltip');
+    const demo = document.getElementById('demoState');
+
+    function liveMs() {
+      return runStart != null && streaming ? totalMs + (Date.now() - runStart) : totalMs;
+    }
+    function render() {
+      const ms = liveMs();
+      text.textContent = ms > 0 ? fmt(ms) : '—';
+      tooltip.textContent = fmt(ms);
+      badge.className = 'timer-badge' + (streaming ? ' running' : '');
+      demo.textContent =
+        streaming && runStart != null
+          ? `状态：流式中 · 累计 ${fmt(totalMs)} + 本轮 ${fmt(Date.now()-runStart)}`
+          : `状态：空闲 · 会话累计 ${fmt(totalMs)}`;
+    }
+
+    document.getElementById('btnStart').onclick = () => {
+      if (streaming) return;
+      streaming = true;
+      runStart = Date.now();
+      clearInterval(tick); tick = setInterval(render, 1000);
+      render();
+    };
+    document.getElementById('btnPause').onclick = () => {
+      if (!streaming) return;
+      totalMs += (Date.now() - runStart);
+      streaming = false; runStart = null;
+      clearInterval(tick); render();
+    };
+    document.getElementById('btnReset').onclick = () => {
+      totalMs = 0; streaming = false; runStart = null;
+      clearInterval(tick); render();
+    };
+    render();
+  </script>
+
+</body>
+</html>

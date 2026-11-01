@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Polaris ChatInput 拆分架构原型 · v3</title>
+<style>
+  /* ============================================================
+     真实 token：取自 src/index.css（暗色专属）
+     ============================================================ */
+  :root {
+    --c-bg-base:        0 0 0;
+    --c-bg-elev:       26 26 31;
+    --c-bg-surface:    37 37 43;
+    --c-border:       255 255 255;
+    --c-text-primary: 248 248 248;
+    --c-text-secondary: 170 174 188;
+    --c-text-muted:   109 109 112;
+    --c-text-tertiary: 92 96 114;
+    --c-status-info:   96 165 250;
+    --c-status-success:52 211 153;
+    --c-status-warning:251 191 36;
+    --c-status-danger: 248 113 113;
+    --c-accent-ai:    167 139 250;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+    /* 块热区配色（按功能域） */
+    --blk-const:    rgb(var(--c-text-muted));      /* 常量/配置 */
+    --blk-props:    rgb(var(--c-text-tertiary));   /* 接口定义 */
+    --blk-hooks:    rgb(var(--c-status-info));     /* state/hooks */
+    --blk-optimize: rgb(var(--c-accent-ai));       /* 优化浮层 */
+    --blk-switch1:  rgb(var(--c-status-warning));  /* handleInputChange switch */
+    --blk-switch2:  rgb(var(--c-status-danger));   /* selectSuggestion switch */
+    --blk-send:     rgb(var(--c-status-success));  /* handleSend */
+    --blk-keys:     rgb(var(--c-text-muted));      /* 键盘/语音 */
+    --blk-jsx:      rgb(var(--c-status-info));     /* JSX 渲染 */
+    --blk-jsx-inline: rgb(var(--c-accent-ai));     /* JSX 内联优化浮层 */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: rgb(var(--c-bg-base));
+    color: rgb(var(--c-text-primary));
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 48px 24px 80px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  h1 { font-size: 18px; margin-bottom: 6px; text-align: center; }
+  .sub { color: rgb(var(--c-text-muted)); font-size: 13px; margin-bottom: 40px; text-align: center; }
+  .section { max-width: 880px; margin: 0 auto 48px; }
+  .section-title {
+    font-size: 11px; color: rgb(var(--c-text-tertiary)); text-transform: uppercase;
+    letter-spacing: 0.08em; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::before { content: '◆'; color: rgb(var(--c-status-info)); }
+  .section-title .meta { margin-left: auto; font-family: var(--mono); color: rgb(var(--c-text-muted)); text-transform: none; letter-spacing: 0; }
+
+  /* ============================================================
+     热区条：2175 行按块着色，横向占比 = 行数占比
+     ============================================================ */
+  .heatbar-wrap {
+    background: rgb(var(--c-bg-elev));
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .heatbar-meta {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 14px;
+    font-size: 12px; color: rgb(var(--c-text-muted));
+  }
+  .heatbar-meta .big {
+    font-family: var(--mono); font-size: 22px; color: rgb(var(--c-text-primary));
+  }
+  .heatbar-meta .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-family: var(--mono);
+    background: rgba(var(--c-status-danger), 0.12); color: rgb(var(--c-status-danger));
+    margin-left: 8px;
+  }
+  .heatbar {
+    display: flex; height: 44px; border-radius: 6px; overflow: hidden;
+    border: 1px solid rgb(var(--c-border) / 0.06);
+  }
+  .blk {
+    flex: var(--lines, 1) 0 0;
+    min-width: 2px;
+    position: relative;
+    cursor: pointer;
+    transition: filter 0.12s ease-out, opacity 0.12s ease-out;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .blk:hover { filter: brightness(1.3); }
+  .blk.dim { opacity: 0.35; }
+  .blk .lbl {
+    font-size: 9px; color: rgba(0,0,0,0.75); font-weight: 600;
+    white-space: nowrap; padding: 0 4px;
+    pointer-events: none;
+  }
+  .blk[data-cat="const"]    { background: var(--blk-const); }
+  .blk[data-cat="props"]    { background: var(--blk-props); }
+  .blk[data-cat="hooks"]    { background: var(--blk-hooks); }
+  .blk[data-cat="optimize"] { background: var(--blk-optimize); }
+  .blk[data-cat="switch1"]  { background: var(--blk-switch1); }
+  .blk[data-cat="switch2"]  { background: var(--blk-switch2); }
+  .blk[data-cat="send"]     { background: var(--blk-send); }
+  .blk[data-cat="keys"]     { background: var(--blk-keys); }
+  .blk[data-cat="jsx"]      { background: var(--blk-jsx); }
+  .blk[data-cat="jsx-inline"] { background: var(--blk-jsx-inline); }
+
+  .scale {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 9px; color: rgb(var(--c-text-tertiary));
+    margin-top: 6px;
+  }
+
+  /* 图例 */
+  .legend {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px; margin-top: 20px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; color: rgb(var(--c-text-secondary));
+    padding: 6px 10px; border-radius: 6px;
+    background: rgb(var(--c-bg-surface) / 0.4);
+    cursor: pointer;
+    transition: background 0.12s ease-out;
+  }
+  .legend-item:hover { background: rgb(var(--c-bg-surface)); }
+  .legend-item.active { background: rgb(var(--c-bg-surface)); box-shadow: inset 0 0 0 1px rgb(var(--c-status-info) / 0.3); }
+  .legend-item .sw { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .legend-item .ln { font-family: var(--mono); color: rgb(var(--c-text-muted)); margin-left: auto; font-size: 10px; }
+
+  /* 详情面板 */
+  .detail {
+    margin-top: 16px;
+    background: rgb(var(--c-bg-elev));
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    border-radius: 10px; padding: 16px 20px;
+    min-height: 80px;
+    font-size: 12px;
+  }
+  .detail .dt-head {
+    display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px;
+  }
+  .detail .dt-name { font-weight: 600; color: rgb(var(--c-text-primary)); }
+  .detail .dt-range { font-family: var(--mono); color: rgb(var(--c-text-muted)); font-size: 11px; }
+  .detail .dt-lines { font-family: var(--mono); color: rgb(var(--c-status-info)); font-size: 11px; }
+  .detail .dt-desc { color: rgb(var(--c-text-secondary)); line-height: 1.6; }
+  .detail .dt-action {
+    margin-top: 8px; padding-top: 8px;
+    border-top: 1px dashed rgb(var(--c-border) / 0.08);
+    color: rgb(var(--c-text-muted)); font-size: 11px;
+  }
+  .detail .dt-action b { color: rgb(var(--c-status-success)); }
+
+  /* ============================================================
+     渲染边界对比：当前 vs 拆分后
+     ============================================================ */
+  .compare {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+  .compare-col {
+    background: rgb(var(--c-bg-elev));
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    border-radius: 10px; padding: 16px;
+  }
+  .compare-col .col-title {
+    font-size: 12px; font-weight: 600; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .compare-col .col-title .badge {
+    font-size: 10px; padding: 2px 6px; border-radius: 4px;
+    font-family: var(--mono); font-weight: 400;
+  }
+  .compare-col.before .badge { background: rgba(var(--c-status-danger), 0.15); color: rgb(var(--c-status-danger)); }
+  .compare-col.after .badge { background: rgba(var(--c-status-success), 0.15); color: rgb(var(--c-status-success)); }
+
+  /* 渲染树节点 */
+  .tree-node {
+    margin: 4px 0; padding: 6px 10px;
+    border-radius: 6px; font-size: 11px;
+    border: 1px solid rgb(var(--c-border) / 0.06);
+    background: rgb(var(--c-bg-surface) / 0.3);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .tree-node.recalc {
+    border-color: rgb(var(--c-status-danger) / 0.3);
+    box-shadow: inset 0 0 0 1px rgb(var(--c-status-danger) / 0.15);
+  }
+  .tree-node.recalc .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgb(var(--c-status-danger));
+    box-shadow: 0 0 5px rgb(var(--c-status-danger));
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .tree-node.isolated {
+    border-color: rgb(var(--c-status-success) / 0.3);
+    background: rgba(var(--c-status-success), 0.04);
+  }
+  .tree-node.isolated .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgb(var(--c-status-success));
+  }
+  .tree-node .name { font-family: var(--mono); color: rgb(var(--c-text-primary)); }
+  .tree-node .note { color: rgb(var(--c-text-muted)); margin-left: auto; font-size: 10px; }
+  .tree-node .memo-tag {
+    font-size: 9px; font-family: var(--mono);
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(var(--c-status-success), 0.12); color: rgb(var(--c-status-success));
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .trigger {
+    margin-top: 10px; padding: 8px 10px;
+    background: rgb(var(--c-bg-surface) / 0.5); border-radius: 6px;
+    font-size: 10px; color: rgb(var(--c-text-muted));
+    border-left: 2px solid rgb(var(--c-status-warning) / 0.5);
+  }
+  .trigger code { font-family: var(--mono); color: rgb(var(--c-status-warning)); }
+
+  /* 拆分步骤 */
+  .steps { display: flex; flex-direction: column; gap: 10px; }
+  .step {
+    background: rgb(var(--c-bg-elev));
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    border-radius: 10px; padding: 14px 16px;
+    display: grid; grid-template-columns: 28px 1fr auto; gap: 12px;
+    align-items: start;
+    transition: border-color 0.12s ease-out;
+  }
+  .step:hover { border-color: rgb(var(--c-status-info) / 0.3); }
+  .step .num {
+    width: 24px; height: 24px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 600; font-family: var(--mono);
+    background: rgba(var(--c-status-info), 0.12); color: rgb(var(--c-status-info));
+  }
+  .step .body { font-size: 12px; }
+  .step .body .st-title { font-weight: 600; color: rgb(var(--c-text-primary)); margin-bottom: 3px; }
+  .step .body .st-desc { color: rgb(var(--c-text-secondary)); line-height: 1.6; }
+  .step .body .st-desc code { font-family: var(--mono); color: rgb(var(--c-status-info); font-size: 11px; background: rgb(var(--c-border) / 0.06); padding: 1px 4px; border-radius: 3px; }
+  .step .cost {
+    font-size: 10px; font-family: var(--mono);
+    color: rgb(var(--c-text-muted));
+    text-align: right; white-space: nowrap;
+  }
+  .step .cost .v { color: rgb(var(--c-status-success)); }
+  .step .cost .r { color: rgb(var(--c-status-info)); }
+
+  .perf-note {
+    max-width: 880px; margin: 0 auto;
+    font-size: 11px; color: rgb(var(--c-text-tertiary));
+    line-height: 1.7;
+    border-left: 2px solid rgb(var(--c-status-info) / 0.4);
+    padding: 8px 14px;
+    background: rgb(var(--c-bg-elev) / 0.5);
+    border-radius: 0 8px 8px 0;
+  }
+  .perf-note code { font-family: var(--mono); color: rgb(var(--c-status-info)); background: rgb(var(--c-border) / 0.06); padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+  <h1>Polaris ChatInput · 拆分架构原型</h1>
+  <div class="sub">2175 行渲染热区可视化 · memo 边界设计 · P0 改造决策参照</div>
+
+  <!-- 热区条 -->
+  <div class="section">
+    <div class="section-title">行级热区分布 <span class="meta">ChatInput.tsx · 2175 行 · 97KB</span></div>
+    <div class="heatbar-wrap">
+      <div class="heatbar-meta">
+        <span>每个色块宽度 ∝ 行数占比 · 点击/悬停查看详情</span>
+        <span><span class="big">2175</span> 行<span class="tag">未 memo</span></span>
+      </div>
+      <div class="heatbar" id="heatbar"></div>
+      <div class="scale">
+        <span>L1</span><span>L500</span><span>L1000</span><span>L1500</span><span>L2000</span><span>L2175</span>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="detail" id="detail">
+        <div class="dt-head"><span class="dt-name">点击色块查看详情</span></div>
+        <div class="dt-desc" style="color:rgb(var(--c-text-tertiary))">悬停高亮同类块,点击锁定详情与改造动作。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 渲染边界对比 -->
+  <div class="section">
+    <div class="section-title">渲染边界对比 <span class="meta">store tick 时谁重算</span></div>
+    <div class="compare">
+      <div class="compare-col before">
+        <div class="col-title">现状 · 单体未 memo <span class="badge">L155 裸函数</span></div>
+        <div class="tree-node recalc"><span class="dot"></span><span class="name">ChatInput</span><span class="note">2175 行整体重算</span></div>
+        <div class="tree-node recalc"><span class="dot"></span><span class="name">↳ handleInputChange</span><span class="note">326行 switch</span></div>
+        <div class="tree-node recalc"><span class="dot"></span><span class="name">↳ selectSuggestion</span><span class="note">178行 switch</span></div>
+        <div class="tree-node recalc"><span class="dot"></span><span class="name">↳ 优化浮层 JSX</span><span class="note">194行内联</span></div>
+        <div class="tree-node recalc"><span class="dot"></span><span class="name">↳ 底部工具栏</span><span class="note">每次重渲染</span></div>
+        <div class="trigger">触发：<code>conversationStore</code> 任意 tick → 整组件重算 · 30 个 store hook 联动</div>
+      </div>
+      <div class="compare-col after">
+        <div class="col-title">拆分后 · memo 隔离 <span class="badge">P0 方案</span></div>
+        <div class="tree-node recalc"><span class="dot"></span><span class="name">ChatInput</span><span class="note">瘦身后主体</span></div>
+        <div class="tree-node isolated"><span class="dot"></span><span class="name">PromptOptimizeOverlay</span><span class="memo-tag">memo</span><span class="note">仅优化开启渲染</span></div>
+        <div class="tree-node isolated"><span class="dot"></span><span class="name">AttachmentPreview</span><span class="memo-tag">memo</span><span class="note">已外部组件</span></div>
+        <div class="tree-node isolated"><span class="dot"></span><span class="name">UnifiedSuggestion</span><span class="memo-tag">memo</span><span class="note">已外部组件</span></div>
+        <div class="tree-node isolated"><span class="dot"></span><span class="name">底部工具栏</span><span class="memo-tag">memo</span><span class="note">props 稳定</span></div>
+        <div class="trigger">触发：<code>conversationStore</code> tick → 仅 ChatInput 主体重算 · memo 子树跳过</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 拆分步骤 -->
+  <div class="section">
+    <div class="section-title">拆分方案 · 三步走 <span class="meta">克制拆分 · 不做无收益大重构</span></div>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div class="body">
+          <div class="st-title">React.memo 包裹 + props 引用审计</div>
+          <div class="st-desc">L155 裸 <code>export function</code> 改 <code>memo(ChatInput)</code>。审计 30 个 store hook 与 props 流,确保引用稳定,否则 memo 形同虚设。需 React DevTools Profiler 实测确认。</div>
+        </div>
+        <div class="cost"><span class="r">收益</span> 高<br><span class="v">成本</span> 中</div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div class="body">
+          <div class="st-title">拆优化浮层为独立组件 PromptOptimizeOverlay</div>
+          <div class="st-desc">L544–714 浮层逻辑 + L1846–2039 共 ~365 行 JSX 抽出,独立 memo,仅优化模式开启时渲染。主组件 JSX 减 ~190 行。4 个 <code>OPTIMIZE_*</code> 配置数组(L95–122)外移到 <code>input/constants.ts</code>。</div>
+        </div>
+        <div class="cost"><span class="r">收益</span> 高<br><span class="v">成本</span> 中</div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div class="body">
+          <div class="st-title">两处大 switch 暂不拆</div>
+          <div class="st-desc"><code>handleInputChange</code>(L741–1067 触发符路由)与 <code>selectSuggestion</code>(L1107–1285 类型分发)逻辑耦合深,拆出需重构数据流,收益不如前两步直接。留作后续,标记为已知技术债。</div>
+        </div>
+        <div class="cost"><span class="r">收益</span> 低<br><span class="v">成本</span> 高</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 性能注脚 -->
+  <div class="perf-note">
+    <strong style="color:rgb(var(--c-text-primary))">落地约束（AGENTS.md §三 / §七）</strong><br>
+    • ChatInput 经 Chat barrel 静态 import 进首屏(<code>App.tsx:11</code>)——memo 不影响首屏体积,只降运行时重渲染<br>
+    • 改动前先读 <code>src/components/Chat/input/ChatInput.tsx</code> 与对应测试(§二.1)<br>
+    • 改后跑 <code>pnpm exec tsc --noEmit</code> + <code>pnpm lint</code> + <code>pnpm test:run</code>(§七)<br>
+    • memo 有效性需 Profiler 实测——若 store hook 返回值引用不稳,memo 失效;失败时回退到 step 2 先行<br>
+    • 不动协议/状态模型(§二.4 spec 要求),纯组件内部重构,无需补 plan
+  </div>
+
+  <script>
+    // 块定义：行号/行数/分类/名称/描述/改造动作 —— 全部来自实读摸排
+    const BLOCKS = [
+      { cat:'const',    name:'OPTIMIZE_* 配置数组',     range:'L95–129',   lines:35,  desc:'4 个优化配置数组(OPTIMIZE_ENGINE/MODE/DIRECTION/ITERATION_OPTIONS) + toProfileEngine 映射,内联在文件顶层。', action:'外移到 input/constants.ts,顶层求值不占组件闭包。' },
+      { cat:'props',    name:'Props 接口',               range:'L131–153',  lines:23,  desc:'EditMode + ChatInputProps 接口定义。', action:'无需改动。' },
+      { cat:'hooks',    name:'hooks/state 扇出',         range:'L166–235',  lines:70,  desc:'约 30 个 store hook 调用 + 本地 state,含草稿/优化/附件/上下文块/历史。', action:'memo 后审计这些 hook 返回值引用稳定性。' },
+      { cat:'hooks',    name:'prompt 历史事务',          range:'L237–279',  lines:43,  desc:'commitPromptHistory + 加载代数号防过期。', action:'无需改动。' },
+      { cat:'hooks',    name:'草稿同步/防抖持久化',      range:'L293–323',  lines:31,  desc:'会话切换同步 effect。', action:'无需改动。' },
+      { cat:'hooks',    name:'附件/拖放/粘贴',           range:'L437–542',  lines:106, desc:'addAttachment/removeAttachment/handlePaste/handleDrop/handleFileSelect。', action:'可抽 hook,但非热点,留后续。' },
+      { cat:'optimize', name:'提示词优化全套',           range:'L544–714',  lines:171, desc:'引擎/模式/方向/Profile/模型/迭代/隐私浮层逻辑,大量 useState + useMemo。最大可拆分块之一。', action:'与 JSX 浮层一起拆出为 PromptOptimizeOverlay 独立组件。' },
+      { cat:'switch1',  name:'handleInputChange switch', range:'L741–1067', lines:327, desc:'触发符路由: /agent /dispatch /nexus /cap / 斜杠命令 @/path @对话 @专家 @workspace:path。文件最大内联逻辑块。', action:'暂不拆(逻辑耦合深),标记技术债。' },
+      { cat:'switch2',  name:'selectSuggestion switch',  range:'L1107–1285',lines:179, desc:'9 个 item.type 分支(snippet/cli/skill/agent/mcp/cap/conversation/workspace/file)的选中插入逻辑。', action:'暂不拆,标记技术债。' },
+      { cat:'send',     name:'handleSend',               range:'L1287–1479',lines:193, desc:'发送主流程:流式入队/本地斜杠命令路由/ /clear 拦截/编辑模式/上下文块物化。', action:'无需改动(核心路径,慎动)。' },
+      { cat:'keys',     name:'键盘/语音/外部点击',       range:'L1482–1619',lines:138, desc:'handleKeyDown(Enter/方向键历史召回/ESC/Tab)。', action:'无需改动。' },
+      { cat:'jsx',      name:'JSX 渲染(主体)',          range:'L1626–1845',lines:220, desc:'版本控件、底部工具栏、建议浮窗主体。', action:'底部工具栏可再拆 memo 子组件。' },
+      { cat:'jsx-inline',name:'JSX 内联优化浮层',        range:'L1846–2039',lines:194, desc:'优化引擎浮层 190 行 JSX 内联在组件内,无子组件抽取。', action:'与 L544–714 逻辑一起拆出 PromptOptimizeOverlay。' },
+      { cat:'jsx',      name:'JSX 渲染(收尾)',          range:'L2040–2173',lines:134, desc:'隐私弹窗、UnifiedSuggestion 挂载点等收尾 JSX。', action:'无需改动。' },
+    ];
+
+    const heatbar = document.getElementById('heatbar');
+    const legend = document.getElementById('legend');
+    const detail = document.getElementById('detail');
+
+    // 渲染热区条
+    BLOCKS.forEach((b, i) => {
+      const el = document.createElement('div');
+      el.className = 'blk';
+      el.dataset.cat = b.cat;
+      el.dataset.idx = i;
+      el.style.setProperty('--lines', b.lines);
+      if (b.lines >= 60) {
+        const lbl = document.createElement('span');
+        lbl.className = 'lbl';
+        lbl.textContent = b.name.length > 14 ? b.name.slice(0, 13) + '…' : b.name;
+        el.appendChild(lbl);
+      }
+      el.title = `${b.name} · ${b.range} · ${b.lines}行`;
+      el.addEventListener('mouseenter', () => showDetail(i, false));
+      el.addEventListener('click', () => showDetail(i, true));
+      heatbar.appendChild(el);
+    });
+
+    // 图例(按分类聚合)
+    const cats = {};
+    BLOCKS.forEach(b => {
+      if (!cats[b.cat]) cats[b.cat] = { name: b.name.split(' ')[0], lines: 0, count: 0, first: b };
+      cats[b.cat].lines += b.lines;
+      cats[b.cat].count += 1;
+    });
+    const catOrder = ['hooks','optimize','switch1','switch2','send','jsx','jsx-inline','keys','const','props'];
+    catOrder.forEach(cat => {
+      if (!cats[cat]) return;
+      const c = cats[cat];
+      const item = document.createElement('div');
+      item.className = 'legend-item';
+      item.dataset.cat = cat;
+      item.innerHTML = `<span class="sw blk-color" data-cat="${cat}"></span><span>${c.name}</span><span class="ln">${c.lines}行 · ${c.count}块</span>`;
+      item.addEventListener('mouseenter', () => highlightCat(cat));
+      item.addEventListener('mouseleave', () => clearHighlight());
+      item.addEventListener('click', () => { showDetail(BLOCKS.findIndex(b => b.cat === cat), true); });
+      // 给 sw 设色
+      const sw = item.querySelector('.sw');
+      const colors = { const:'var(--blk-const)',props:'var(--blk-props)',hooks:'var(--blk-hooks)',optimize:'var(--blk-optimize)',switch1:'var(--blk-switch1)',switch2:'var(--blk-switch2)',send:'var(--blk-send)',keys:'var(--blk-keys)',jsx:'var(--blk-jsx)','jsx-inline':'var(--blk-jsx-inline)' };
+      sw.style.background = colors[cat];
+      legend.appendChild(item);
+    });
+
+    let locked = false;
+    function showDetail(i, lock) {
+      if (locked && !lock) return;
+      if (lock) locked = true;
+      const b = BLOCKS[i];
+      detail.innerHTML = `
+        <div class="dt-head">
+          <span class="dt-name">${b.name}</span>
+          <span class="dt-range">${b.range}</span>
+          <span class="dt-lines">${b.lines} 行</span>
+        </div>
+        <div class="dt-desc">${b.desc}</div>
+        <div class="dt-action">改造动作：<b>${b.action}</b></div>
+      `;
+      // 高亮同类
+      highlightCat(b.cat);
+      if (lock) {
+        // 锁定后点击别处解锁
+        setTimeout(() => { locked = false; }, 50);
+      }
+    }
+    function highlightCat(cat) {
+      document.querySelectorAll('.blk').forEach(el => {
+        el.classList.toggle('dim', el.dataset.cat !== cat);
+      });
+      document.querySelectorAll('.legend-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.cat === cat);
+      });
+    }
+    function clearHighlight() {
+      if (locked) return;
+      document.querySelectorAll('.blk').forEach(el => el.classList.remove('dim'));
+      document.querySelectorAll('.legend-item').forEach(el => el.classList.remove('active'));
+    }
+    heatbar.addEventListener('mouseleave', clearHighlight);
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Polaris 终端面板体验重构原型 · v4</title>
+<style>
+  /* ============================================================
+     真实 token：取自 src/index.css（暗色专属）
+     ============================================================ */
+  :root {
+    --c-bg-base:        0 0 0;
+    --c-bg-elev:       26 26 31;
+    --c-bg-surface:    37 37 43;
+    --c-bg-hover:      45 45 52;
+    --c-border:       255 255 255;
+    --c-text-primary: 248 248 248;
+    --c-text-secondary: 180 180 184;
+    --c-text-muted:   109 109 112;
+    --c-text-tertiary: 92 96 114;
+    --c-primary:       59 130 246;
+    --c-status-info:   96 165 250;
+    --c-status-success:52 211 153;
+    --c-status-warning:251 191 36;
+    --c-status-danger: 248 113 113;
+    --c-accent-ai:    167 139 250;
+    --mono: "Consolas", "SF Mono", "Cascadia Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: rgb(var(--c-bg-base));
+    color: rgb(var(--c-text-primary));
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 32px 24px 80px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  h1 { font-size: 18px; margin-bottom: 6px; text-align: center; }
+  .sub { color: rgb(var(--c-text-muted)); font-size: 13px; margin-bottom: 36px; text-align: center; }
+  .section { max-width: 920px; margin: 0 auto 48px; }
+  .section-title {
+    font-size: 11px; color: rgb(var(--c-text-tertiary)); text-transform: uppercase;
+    letter-spacing: 0.08em; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::before { content: '◆'; color: rgb(var(--c-status-info)); }
+  .section-title .meta { margin-left: auto; font-family: var(--mono); color: rgb(var(--c-text-muted)); text-transform: none; letter-spacing: 0; }
+
+  /* ============================================================
+     终端面板仿真：复刻 TerminalPanel.tsx 真实布局
+     QuickRunBar(36) + ScriptPanel(可折叠) + TabBar(36) + 终端区
+     ============================================================ */
+  .term-frame {
+    background: rgb(var(--c-bg-base));
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  &.fullscreen { border-radius: 0; border: none; }
+
+  /* QuickRunBar —— 复刻 TerminalQuickRunBar.tsx h-9 + 脚本状态 */
+  .quick-bar {
+    height: 36px; padding: 0 8px;
+    background: rgb(var(--c-bg-elev));
+    border-bottom: 1px solid rgb(var(--c-border) / 0.08);
+    display: flex; align-items: center; gap: 8px;
+    flex-shrink: 0;
+  }
+  .qb-btn {
+    width: 28px; height: 28px;
+    display: grid; place-items: center;
+    color: rgb(var(--c-text-secondary));
+    border-radius: 6px; cursor: pointer;
+    transition: background 0.12s ease-out, color 0.12s ease-out;
+  }
+  .qb-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .qb-info { flex: 1; min-width: 0; }
+  .qb-name { font-size: 12px; color: rgb(var(--c-text-primary)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qb-cmd { font-size: 10px; color: rgb(var(--c-text-tertiary)); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qb-status {
+    width: 48px; text-align: right; font-size: 12px;
+    color: rgb(var(--c-text-tertiary));
+  }
+  .qb-status.running { color: rgb(var(--c-status-info)); }
+  .qb-status.success { color: rgb(var(--c-status-success)); }
+  .qb-status.failed { color: rgb(var(--c-status-danger)); }
+  .qb-action {
+    height: 28px; padding: 0 8px;
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; color: rgb(var(--c-text-secondary));
+    border-radius: 6px; cursor: pointer;
+    transition: background 0.12s ease-out, color 0.12s ease-out;
+  }
+  .qb-action:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .qb-action.disabled { opacity: 0.4; pointer-events: none; }
+
+  /* ScriptPanel —— 可折叠的脚本中心 */
+  .script-panel {
+    background: rgb(var(--c-bg-elev));
+    border-bottom: 1px solid rgb(var(--c-border) / 0.08);
+    max-height: 200px;
+    transition: max-height 0.2s ease-out;
+    overflow: hidden;
+  }
+  .script-panel.collapsed { max-height: 0; border-bottom: none; }
+  .script-panel-inner { padding: 10px 12px; }
+  .script-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+  .script-tab {
+    font-size: 11px; padding: 3px 10px; border-radius: 5px;
+    cursor: pointer; color: rgb(var(--c-text-muted));
+    transition: background 0.12s, color 0.12s;
+  }
+  .script-tab.active { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .script-list { display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
+  .script-item {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center;
+    padding: 5px 8px; border-radius: 5px; cursor: pointer;
+    transition: background 0.12s;
+  }
+  .script-item:hover { background: rgb(var(--c-bg-hover) / 0.5); }
+  .script-item .s-name { font-size: 12px; color: rgb(var(--c-text-primary)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .script-item .s-cmd { font-size: 10px; color: rgb(var(--c-text-tertiary)); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; grid-column: 1; }
+  .script-item .s-status { font-size: 10px; font-family: var(--mono); }
+  .script-item .s-run {
+    width: 24px; height: 22px; display: grid; place-items: center;
+    color: rgb(var(--c-status-success)); border-radius: 4px; cursor: pointer;
+  }
+  .script-item .s-run:hover { background: rgba(var(--c-status-success), 0.12); }
+
+  /* TabBar —— 复刻标签栏 h-9 */
+  .tab-bar {
+    height: 36px;
+    background: rgb(var(--c-bg-elev));
+    border-bottom: 1px solid rgb(var(--c-border) / 0.08);
+    display: flex; align-items: stretch;
+    flex-shrink: 0;
+  }
+  .tab-strip { flex: 1; display: flex; overflow-x: auto; }
+  .tab {
+    display: flex; align-items: center; gap: 6px;
+    padding: 0 12px; min-width: 100px; max-width: 200px;
+    cursor: pointer; border-right: 1px solid rgb(var(--c-border) / 0.08);
+    transition: background 0.12s ease-out;
+  }
+  .tab:hover { background: rgb(var(--c-bg-hover) / 0.5); }
+  .tab.active { background: rgb(var(--c-bg-base)); }
+  .tab .t-icon { color: rgb(var(--c-text-secondary)); flex-shrink: 0; }
+  .tab.active .t-icon { color: rgb(var(--c-status-info)); }
+  .tab .t-name { flex: 1; font-size: 13px; color: rgb(var(--c-text-secondary)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tab.active .t-name { color: rgb(var(--c-text-primary)); }
+  .tab .t-close {
+    width: 18px; height: 18px; display: grid; place-items: center;
+    border-radius: 3px; color: rgb(var(--c-text-muted));
+    visibility: hidden; cursor: pointer;
+  }
+  .tab:hover .t-close { visibility: visible; }
+  .tab .t-close:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .tab-bar-actions { display: flex; align-items: stretch; }
+  .tab-action {
+    width: 36px; display: grid; place-items: center;
+    color: rgb(var(--c-text-secondary)); cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+  .tab-action:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .tab-action.fs-on { color: rgb(var(--c-primary)); background: rgb(var(--c-bg-hover)); }
+
+  /* 终端内容区 —— 模拟 xterm.js 渲染 */
+  .term-content {
+    height: 320px; position: relative; overflow: hidden;
+    background: rgb(var(--c-bg-base));
+    font-family: var(--mono); font-size: 13px; line-height: 1.4;
+    padding: 12px 14px;
+    overflow-y: auto;
+  }
+  .term-line { white-space: pre; color: rgb(var(--c-text-primary)); }
+  .term-line .c-prompt { color: rgb(var(--c-status-success)); }
+  .term-line .c-path { color: rgb(var(--c-status-info)); }
+  .term-line .c-cmd { color: rgb(var(--c-text-primary)); }
+  .term-line .c-out { color: rgb(var(--c-text-secondary)); }
+  .term-line .c-err { color: rgb(var(--c-status-danger)); }
+  .term-line .c-ok { color: rgb(var(--c-status-success)); }
+  .term-line .c-warn { color: rgb(var(--c-status-warning)); }
+  .term-line .c-muted { color: rgb(var(--c-text-muted)); }
+  .term-cursor {
+    display: inline-block; width: 8px; height: 15px;
+    background: rgb(var(--c-text-primary)); vertical-align: text-bottom;
+    animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+  .term-empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; color: rgb(var(--c-text-muted));
+  }
+
+  /* ============================================================
+     渲染后端对比：DOM renderer vs WebGL renderer
+     ============================================================ */
+  .renderer-compare {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  @media (max-width: 720px) { .renderer-compare { grid-template-columns: 1fr; } }
+  .rend-col {
+    background: rgb(var(--c-bg-elev));
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    border-radius: 10px; padding: 16px;
+  }
+  .rend-col .rc-title {
+    font-size: 12px; font-weight: 600; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .rend-col .rc-badge {
+    font-size: 10px; padding: 2px 7px; border-radius: 4px;
+    font-family: var(--mono); font-weight: 400;
+  }
+  .rend-col.now .rc-badge { background: rgba(var(--c-status-danger), 0.15); color: rgb(var(--c-status-danger)); }
+  .rend-col.goal .rc-badge { background: rgba(var(--c-status-success), 0.15); color: rgb(var(--c-status-success)); }
+  .rend-mock {
+    background: rgb(var(--c-bg-base)); border-radius: 6px; padding: 10px;
+    font-family: var(--mono); font-size: 11px; height: 120px; overflow: hidden;
+    position: relative;
+  }
+  /* DOM renderer：每行是一个 DOM 节点（视觉重） */
+  .dom-rows .term-line { border-bottom: 1px dashed rgba(255,255,255,0.03); }
+  /* WebGL renderer：整片 canvas（视觉轻） */
+  .gl-canvas {
+    position: absolute; inset: 0;
+    background:
+      linear-gradient(180deg, rgba(var(--c-status-info),0.04), transparent 30%),
+      repeating-linear-gradient(180deg, transparent 0, transparent 16px, rgba(255,255,255,0.02) 16px, rgba(255,255,255,0.02) 17px);
+  }
+  .gl-canvas::after {
+    content: 'GPU 合成层 · 单纹理';
+    position: absolute; bottom: 6px; right: 8px;
+    font-size: 9px; color: rgb(var(--c-status-success)); font-family: var(--mono);
+  }
+  .dom-rows::after {
+    content: 'N 个 DOM 节点 · 滚动重排';
+    position: absolute; bottom: 6px; right: 8px;
+    font-size: 9px; color: rgb(var(--c-status-danger)); font-family: var(--mono);
+  }
+  .rend-meta { margin-top: 10px; font-size: 11px; color: rgb(var(--c-text-secondary)); line-height: 1.6; }
+  .rend-meta code { font-family: var(--mono); color: rgb(var(--c-status-info)); font-size: 10px; background: rgb(var(--c-border)/0.06); padding: 1px 4px; border-radius: 3px; }
+
+  /* ============================================================
+     痛点卡片 + 优化步骤
+     ============================================================ */
+  .pains { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .pain {
+    background: rgb(var(--c-bg-elev));
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    border-radius: 10px; padding: 14px;
+    border-left: 3px solid rgb(var(--c-status-warning));
+  }
+  .pain .p-title { font-size: 12px; font-weight: 600; margin-bottom: 6px; color: rgb(var(--c-text-primary)); }
+  .pain .p-loc { font-family: var(--mono); font-size: 10px; color: rgb(var(--c-text-tertiary)); margin-bottom: 8px; }
+  .pain .p-desc { font-size: 11px; color: rgb(var(--c-text-secondary)); line-height: 1.6; }
+
+  .steps { display: flex; flex-direction: column; gap: 10px; }
+  .step {
+    background: rgb(var(--c-bg-elev));
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    border-radius: 10px; padding: 14px 16px;
+    display: grid; grid-template-columns: 28px 1fr auto; gap: 12px;
+    align-items: start;
+    transition: border-color 0.12s;
+  }
+  .step:hover { border-color: rgba(var(--c-status-info), 0.3); }
+  .step .num {
+    width: 24px; height: 24px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 600; font-family: var(--mono);
+    background: rgba(var(--c-status-info), 0.12); color: rgb(var(--c-status-info));
+  }
+  .step .body { font-size: 12px; }
+  .step .body .st-title { font-weight: 600; color: rgb(var(--c-text-primary)); margin-bottom: 3px; }
+  .step .body .st-desc { color: rgb(var(--c-text-secondary)); line-height: 1.6; }
+  .step .body .st-desc code { font-family: var(--mono); color: rgb(var(--c-status-info)); font-size: 11px; background: rgb(var(--c-border)/0.06); padding: 1px 4px; border-radius: 3px; }
+  .step .cost { font-size: 10px; font-family: var(--mono); color: rgb(var(--c-text-muted)); text-align: right; white-space: nowrap; }
+  .step .cost .v { color: rgb(var(--c-status-success)); }
+  .step .cost .r { color: rgb(var(--c-status-info)); }
+
+  /* 控制条 */
+  .ctrl-bar {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+    background: rgb(var(--c-bg-elev)); border: 1px solid rgb(var(--c-border)/0.08);
+    border-radius: 8px; padding: 8px;
+  }
+  .ctrl-btn {
+    background: transparent; border: 1px solid rgb(var(--c-border)/0.1);
+    color: rgb(var(--c-text-secondary)); border-radius: 6px; padding: 6px 12px;
+    font-size: 11px; cursor: pointer; font-family: inherit;
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .ctrl-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .ctrl-btn.active { color: rgb(var(--c-text-primary)); border-color: rgba(var(--c-status-info), 0.4); background: rgba(var(--c-status-info), 0.08); }
+  .ctrl-btn.danger.active { border-color: rgba(var(--c-status-danger), 0.4); background: rgba(var(--c-status-danger), 0.08); }
+
+  .perf-note {
+    max-width: 920px; margin: 0 auto;
+    font-size: 11px; color: rgb(var(--c-text-tertiary));
+    line-height: 1.7;
+    border-left: 2px solid rgba(var(--c-status-info), 0.4);
+    padding: 8px 14px;
+    background: rgba(var(--c-bg-elev), 0.5);
+    border-radius: 0 8px 8px 0;
+  }
+  .perf-note code { font-family: var(--mono); color: rgb(var(--c-status-info)); background: rgb(var(--c-border)/0.06); padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+  <h1>Polaris 终端面板 · 体验重构原型</h1>
+  <div class="sub">xterm.js 渲染优化 · resize 防抖 · 输出解码 · 脚本中心交互</div>
+
+  <!-- 实况终端仿真 -->
+  <div class="section">
+    <div class="section-title">终端面板实况 <span class="meta">复刻 TerminalPanel.tsx 真实布局</span></div>
+
+    <div class="ctrl-bar">
+      <button class="ctrl-btn active" data-act="run">▶ 输出一段日志</button>
+      <button class="ctrl-btn danger" data-act="err">✕ 输出错误流</button>
+      <button class="ctrl-btn" data-act="clear">↺ 清屏</button>
+      <span style="flex:1"></span>
+      <button class="ctrl-btn" data-act="script">展开/折叠脚本中心</button>
+      <button class="ctrl-btn" data-act="fullscreen">⤢ 全屏</button>
+    </div>
+
+    <div class="term-frame" id="termFrame">
+      <!-- QuickRunBar -->
+      <div class="quick-bar">
+        <div class="qb-btn" id="qbToggle">▼</div>
+        <div class="qb-info">
+          <div class="qb-name" id="qbName">dev:server</div>
+          <div class="qb-cmd" id="qbCmd">pnpm tauri:dev:web</div>
+        </div>
+        <span class="qb-status running" id="qbStatus">运行中</span>
+        <button class="qb-action disabled" id="qbRun">▶ 运行</button>
+        <button class="qb-action" id="qbStop">■ 停止</button>
+        <button class="qb-action" id="qbSearch">🔍 快速运行</button>
+      </div>
+
+      <!-- ScriptPanel -->
+      <div class="script-panel collapsed" id="scriptPanel">
+        <div class="script-panel-inner">
+          <div class="script-tabs">
+            <span class="script-tab active">项目脚本</span>
+            <span class="script-tab">自定义</span>
+          </div>
+          <div class="script-list">
+            <div class="script-item"><div><div class="s-name">dev:server</div><div class="s-cmd">pnpm tauri:dev:web</div></div><span class="s-status" style="color:rgb(var(--c-status-info))">运行中</span><span class="s-run">▶</span></div>
+            <div class="script-item"><div><div class="s-name">build</div><div class="s-cmd">pnpm tauri:build</div></div><span class="s-status" style="color:rgb(var(--c-text-muted))">未运行</span><span class="s-run">▶</span></div>
+            <div class="script-item"><div><div class="s-name">typecheck</div><div class="s-cmd">pnpm exec tsc --noEmit</div></div><span class="s-status" style="color:rgb(var(--c-status-success))">成功</span><span class="s-run">▶</span></div>
+            <div class="script-item"><div><div class="s-name">test</div><div class="s-cmd">pnpm test:run</div></div><span class="s-status" style="color:rgb(var(--c-status-danger))">失败</span><span class="s-run">▶</span></div>
+            <div class="script-item"><div><div class="s-name">lint</div><div class="s-cmd">pnpm lint:fix</div></div><span class="s-status" style="color:rgb(var(--c-text-muted))">未运行</span><span class="s-run">▶</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TabBar -->
+      <div class="tab-bar">
+        <div class="tab-strip" id="tabStrip">
+          <div class="tab active" data-tab="1"><span class="t-icon">▣</span><span class="t-name">bash — polaris</span><span class="t-close">×</span></div>
+          <div class="tab" data-tab="2"><span class="t-icon">▣</span><span class="t-name">logs</span><span class="t-close">×</span></div>
+          <div class="tab" data-tab="3"><span class="t-icon">▣</span><span class="t-name">repl</span><span class="t-close">×</span></div>
+        </div>
+        <div class="tab-bar-actions">
+          <div class="tab-action" id="newTab" title="新建终端">+</div>
+          <div class="tab-action" id="fsBtn" title="全屏 (Esc)">⤢</div>
+        </div>
+      </div>
+
+      <!-- 终端内容 -->
+      <div class="term-content" id="termContent">
+        <div class="term-line"><span class="c-prompt">➜</span> <span class="c-path">~/polaris</span> <span class="c-cmd">pnpm tauri:dev:web</span></div>
+        <div class="term-line"><span class="c-out">> @polaris/tauri-app tauri:dev:web</span></div>
+        <div class="term-line"><span class="c-out">> cross-env POLARIS_DATA_ROOT=Polaris-dev vite --port 9827 --mode web</span></div>
+        <div class="term-line"><span class="c-muted">  VITE v5.4.8  ready in 312 ms</span></div>
+        <div class="term-line"><span class="c-out">  ➜  Local:   http://localhost:9827/</span></div>
+        <div class="term-line"><span class="c-out">  ➜  Network: http://192.168.1.42:9827/</span></div>
+        <div class="term-line"><span class="c-out">  Tauri backend http://localhost:9829</span></div>
+        <div class="term-line"><span class="c-ok">✓ token injected: 98279829</span></div>
+        <div class="term-line"><span class="c-out">  proxy /api → :9829</span></div>
+        <div class="term-line"><span class="c-prompt">➜</span> <span class="c-path">~/polaris</span> <span class="c-cmd" id="liveCmd"></span><span class="term-cursor"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 渲染后端对比 -->
+  <div class="section">
+    <div class="section-title">渲染后端对比 <span class="meta">DOM renderer vs WebGL renderer</span></div>
+    <div class="renderer-compare">
+      <div class="rend-col now">
+        <div class="rc-title">现状 · DOM renderer <span class="rc-badge">scrollback 10000</span></div>
+        <div class="rend-mock dom-rows" id="domRows"></div>
+        <div class="rend-meta">
+          每行 = 1 个 DOM 节点 · 大输出/快滚时重排成本高<br>
+          <code>scrollback: 10000</code> 满载时视口外仍有数千节点参与重排
+        </div>
+      </div>
+      <div class="rend-col goal">
+        <div class="rc-title">目标 · WebGL renderer <span class="rc-badge">GPU 合成</span></div>
+        <div class="rend-mock">
+          <div class="gl-canvas"></div>
+        </div>
+        <div class="rend-meta">
+          整片 <code>&lt;canvas&gt;</code> 纹理 · 字形批量绘制<br>
+          引入 <code>@xterm/addon-webgl</code> · DOM renderer 作 fallback（WebGL 不可用降级）
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 痛点卡片 -->
+  <div class="section">
+    <div class="section-title">已识别痛点 <span class="meta">来自 TerminalPanel.tsx 实读</span></div>
+    <div class="pains">
+      <div class="pain">
+        <div class="p-title">无 WebGL 渲染</div>
+        <div class="p-loc">TerminalPanel.tsx:8-11</div>
+        <div class="p-desc">仅 FitAddon + WebLinksAddon，默认 DOM renderer。大输出/快速滚动场景渲染开销高于 WebGL/Canvas。</div>
+      </div>
+      <div class="pain">
+        <div class="p-title">resize 高频抖动</div>
+        <div class="p-loc">TerminalPanel.tsx:176-186</div>
+        <div class="p-desc">ResizeObserver 高频回调，每次 resize 触发 fit + IPC 两次同步调用。已用 rAF + setTimeout(100) 双层 debounce 缓解，本质仍贵。</div>
+      </div>
+      <div class="pain">
+        <div class="p-title">输出逐字节解码</div>
+        <div class="p-loc">TerminalPanel.tsx:147-150</div>
+        <div class="p-desc">atob 后 for 循环逐字节写 Uint8Array，高频大块输出（cat 大文件）下有 CPU 成本，无批量写入。</div>
+      </div>
+      <div class="pain">
+        <div class="p-title">初始化竞态</div>
+        <div class="p-loc">TerminalPanel.tsx:84-88</div>
+        <div class="p-desc">容器零尺寸时 xterm RenderService 初始化竞态，已 guard 但首次挂载可能延迟一帧。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 优化步骤 -->
+  <div class="section">
+    <div class="section-title">优化方案 · 三步走 <span class="meta">按确定性×收益÷成本排序</span></div>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div class="body">
+          <div class="st-title">引入 @xterm/addon-webgl</div>
+          <div class="st-desc">终端初始化时挂载 <code>WebGLAddon</code>，<code>xterm.loadAddon(new WebGLAddon())</code>。WebGL context 不可用时 catch 降级回 DOM renderer。几行代码，官方支持。</div>
+        </div>
+        <div class="cost"><span class="r">收益</span> 高<br><span class="v">成本</span> 低</div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div class="body">
+          <div class="st-title">输出解码批量写入</div>
+          <div class="st-desc"><code>TerminalPanel.tsx:147-150</code> 逐字节 for 循环改为 <code>Uint8Array.from(binary, c =&gt; c.charCodeAt(0))</code> 一次性构造，或直接 <code>xterm.write(binary)</code>（xterm 支持字符串入参）。大块输出 CPU 成本骤降。</div>
+        </div>
+        <div class="cost"><span class="r">收益</span> 中<br><span class="v">成本</span> 低</div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div class="body">
+          <div class="st-title">resize debounce 收紧 + IPC 合并</div>
+          <div class="st-desc">现状 100ms debounce 偏松（拖拽尾迹明显）。改为 60ms + 拖拽中只 <code>fit</code> 不 <code>resize</code>（拖拽结束才发 IPC），减少同步 IPC 次数。保留 rAF 合帧。</div>
+        </div>
+        <div class="cost"><span class="r">收益</span> 中<br><span class="v">成本</span> 低</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="perf-note">
+    <strong style="color:rgb(var(--c-text-primary))">落地约束（AGENTS.md §一 / §七）</strong><br>
+    • xterm 相关包已在 <code>optimizeDeps</code>（vite.config.ts），WebGL addon 需补进 include 预打包防双实例<br>
+    • 改后跑 <code>pnpm exec tsc --noEmit</code> + <code>pnpm lint</code>（§七本地验证）<br>
+    • WebGL 降级路径需实测：低端 GPU / 虚拟机无 WebGL 时回退 DOM renderer 不崩<br>
+    • 输出解码改动触及 <code>eventBus.on('terminal-output')</code> 消费链，需验证 UTF-8 中文输出正常<br>
+    • 本机 <code>cargo test --lib</code> 不可用（§九），前端改动用 vitest 代替；终端组件无单测，需手测
+  </div>
+
+  <script>
+    // ===== 终端仿真交互 =====
+    const termContent = document.getElementById('termContent');
+    const liveCmd = document.getElementById('liveCmd');
+    const qbStatus = document.getElementById('qbStatus');
+    const qbRun = document.getElementById('qbRun');
+    const qbStop = document.getElementById('qbStop');
+    const scriptPanel = document.getElementById('scriptPanel');
+    const qbToggle = document.getElementById('qbToggle');
+    const termFrame = document.getElementById('termFrame');
+    const fsBtn = document.getElementById('fsBtn');
+
+    const LOG_BATCHES = [
+      ['[INFO] router: dispatch.start cap.bash','[INFO] router: dispatch.end(ok) cap.bash · 42ms','[INFO] bash: $ pnpm typecheck','[WARN] tsc: 0 errors','[INFO] bash: exit 0'],
+      ['[DEBUG] event_broadcaster: seq=1842 push','[DEBUG] event_broadcaster: seq=1843 push','[DEBUG] event_broadcaster: seq=1844 push','[INFO] ws: 3 clients online','[INFO] chat-event relayed'],
+      ['[INFO] ai_chat_core: stream.start','[INFO] ai_chat_core: token delta ×128','[INFO] ai_chat_core: stream.end(ok)','[INFO] turn persisted: 14 blocks','[INFO] fts5 index updated'],
+    ];
+    let logIdx = 0;
+
+    function appendLine(html) {
+      const div = document.createElement('div');
+      div.className = 'term-line';
+      div.innerHTML = html;
+      termContent.insertBefore(div, liveCmd.parentElement);
+      termContent.scrollTop = termContent.scrollHeight;
+    }
+
+    document.querySelectorAll('.ctrl-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const act = btn.dataset.act;
+        if (act === 'run') {
+          const batch = LOG_BATCHES[logIdx % LOG_BATCHES.length];
+          logIdx++;
+          batch.forEach((line, i) => {
+            setTimeout(() => {
+              const cls = line.includes('[WARN]') ? 'c-warn' : line.includes('[ERROR]') ? 'c-err' : 'c-out';
+              appendLine(`<span class="${cls}">${line}</span>`);
+            }, i * 120);
+          });
+        } else if (act === 'err') {
+          appendLine('<span class="c-err">[ERROR] terminal:exit code 1</span>');
+          appendLine('<span class="c-err">  at handleOutput (TerminalPanel.tsx:152)</span>');
+          appendLine('<span class="c-err">  at eventBus.emit (eventBus.ts:39)</span>');
+          qbStatus.textContent = '失败'; qbStatus.className = 'qb-status failed';
+        } else if (act === 'clear') {
+          // 保留 prompt 行
+          const prompt = liveCmd.parentElement;
+          termContent.innerHTML = '';
+          termContent.appendChild(prompt);
+          qbStatus.textContent = '运行中'; qbStatus.className = 'qb-status running';
+        } else if (act === 'script') {
+          scriptPanel.classList.toggle('collapsed');
+          qbToggle.textContent = scriptPanel.classList.contains('collapsed') ? '▼' : '▲';
+        } else if (act === 'fullscreen') {
+          termFrame.classList.toggle('fullscreen');
+          fsBtn.classList.toggle('fs-on');
+          fsBtn.textContent = termFrame.classList.contains('fullscreen') ? '⤓' : '⤢';
+        }
+      });
+    });
+
+    // QuickRunBar 交互
+    qbToggle.addEventListener('click', () => {
+      scriptPanel.classList.toggle('collapsed');
+      qbToggle.textContent = scriptPanel.classList.contains('collapsed') ? '▼' : '▲';
+    });
+    qbStop.addEventListener('click', () => {
+      qbStatus.textContent = '已停止'; qbStatus.className = 'qb-status';
+      qbRun.classList.remove('disabled'); qbStop.classList.add('disabled');
+    });
+    qbRun.addEventListener('click', () => {
+      if (qbRun.classList.contains('disabled')) return;
+      qbStatus.textContent = '运行中'; qbStatus.className = 'qb-status running';
+      qbRun.classList.add('disabled'); qbStop.classList.remove('disabled');
+    });
+
+    // 标签切换
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', e => {
+        if (e.target.classList.contains('t-close')) return;
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+      });
+    });
+
+    // 全屏 Esc 退出
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && termFrame.classList.contains('fullscreen')) {
+        termFrame.classList.remove('fullscreen');
+        fsBtn.classList.remove('fs-on');
+        fsBtn.textContent = '⤢';
+      }
+    });
+
+    // DOM renderer 仿真：持续生成行展示重排成本
+    const domRows = document.getElementById('domRows');
+    let domTimer = null;
+    function startDomSim() {
+      let n = 0;
+      domTimer = setInterval(() => {
+        if (domRows.children.length > 30) domRows.removeChild(domRows.firstChild);
+        const line = document.createElement('div');
+        line.className = 'term-line';
+        line.style.fontSize = '10px';
+        const t = new Date().toLocaleTimeString();
+        line.innerHTML = `<span class="c-muted">${t}</span> <span class="c-out">line ${++n} · DOM node</span>`;
+        domRows.appendChild(line);
+      }, 200);
+    }
+    startDomSim();
+
+    // 打字光标闪烁已有 CSS；liveCmd 留空作为光标锚点
+  </script>
+</body>
+</html>

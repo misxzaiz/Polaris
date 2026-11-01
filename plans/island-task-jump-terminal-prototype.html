@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Polaris 灵动岛后台任务跳终端 · 原型 v6</title>
+<style>
+  :root {
+    --c-bg-base: 0 0 0; --c-bg-elev: 26 26 31; --c-bg-surface: 37 37 43; --c-bg-hover: 45 45 52;
+    --c-border: 255 255 255; --c-text-primary: 248 248 248; --c-text-secondary: 180 180 184;
+    --c-text-muted: 109 109 112; --c-text-tertiary: 92 96 114;
+    --c-primary: 59 130 246; --c-status-info: 96 165 250; --c-status-success: 52 211 153;
+    --c-status-warning: 251 191 36; --c-status-danger: 248 113 113; --c-accent-ai: 167 139 250;
+    --mono: "Consolas", "SF Mono", "Cascadia Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: rgb(var(--c-bg-base)); color: rgb(var(--c-text-primary)); font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 32px 24px 80px; line-height: 1.5; min-height: 100vh; }
+  h1 { font-size: 18px; margin-bottom: 6px; text-align: center; }
+  .sub { color: rgb(var(--c-text-muted)); font-size: 13px; margin-bottom: 36px; text-align: center; }
+  .section { max-width: 920px; margin: 0 auto 40px; }
+  .section-title { font-size: 11px; color: rgb(var(--c-text-tertiary)); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .section-title::before { content: '◆'; color: rgb(var(--c-status-info)); }
+  .section-title .meta { margin-left: auto; font-family: var(--mono); color: rgb(var(--c-text-muted)); text-transform: none; letter-spacing: 0; }
+
+  /* 灵动岛 expanded 模拟 */
+  .island-exp { background: rgb(var(--c-bg-elev)); border: 1px solid rgb(var(--c-border) / 0.08); border-radius: 12px; padding: 16px; max-width: 440px; margin: 0 auto 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+  .island-tab-row { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid rgb(var(--c-border) / 0.08); padding-bottom: 8px; }
+  .island-tab { font-size: 11px; padding: 4px 10px; border-radius: 5px; cursor: pointer; color: rgb(var(--c-text-muted)); transition: background 0.12s, color 0.12s; position: relative; }
+  .island-tab.active { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .island-tab .badge { position: absolute; top: -2px; right: -2px; width: 14px; height: 14px; border-radius: 50%; background: rgb(var(--c-status-info)); color: #fff; font-size: 8px; display: grid; place-items: center; }
+  .task-line { display: flex; align-items: center; gap: 8px; padding: 8px 6px; border-radius: 6px; cursor: pointer; transition: background 0.12s; border: 1px solid transparent; }
+  .task-line:hover { background: rgb(var(--c-bg-hover) / 0.5); border-color: rgba(var(--c-status-info), 0.2); }
+  .task-line .ico { color: rgb(var(--c-text-secondary)); font-size: 12px; }
+  .task-line .cmd { flex: 1; font-family: var(--mono); font-size: 11px; color: rgb(var(--c-text-primary)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .task-line .st { font-size: 9px; font-family: var(--mono); padding: 1px 5px; border-radius: 3px; }
+  .task-line .st.running { color: rgb(var(--c-status-info)); background: rgba(var(--c-status-info), 0.12); }
+  .task-line .st.done { color: rgb(var(--c-status-success)); background: rgba(var(--c-status-success), 0.12); }
+  .island-note { margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgb(var(--c-border) / 0.08); font-size: 10px; color: rgb(var(--c-text-tertiary)); display: flex; align-items: center; gap: 6px; }
+  .island-link { background: none; border: none; color: rgb(var(--c-status-info)); font-size: 10px; cursor: pointer; padding: 0; text-decoration: underline; font-family: inherit; }
+  .island-link:hover { color: rgb(var(--c-primary)); }
+
+  /* 档位切换 */
+  .tier-bar { display: flex; gap: 8px; margin-bottom: 16px; background: rgb(var(--c-bg-elev)); border: 1px solid rgb(var(--c-border)/0.08); border-radius: 8px; padding: 8px; flex-wrap: wrap; }
+  .tier-btn { background: transparent; border: 1px solid rgb(var(--c-border)/0.1); color: rgb(var(--c-text-secondary)); border-radius: 6px; padding: 6px 14px; font-size: 11px; cursor: pointer; font-family: inherit; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+  .tier-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .tier-btn.active { color: rgb(var(--c-text-primary)); border-color: rgba(var(--c-status-info), 0.4); background: rgba(var(--c-status-info), 0.08); }
+
+  /* 终端面板模拟 */
+  .term-frame { background: rgb(var(--c-bg-base)); border: 1px solid rgb(var(--c-border) / 0.08); border-radius: 8px; overflow: hidden; }
+  .term-tabs { height: 32px; background: rgb(var(--c-bg-elev)); border-bottom: 1px solid rgb(var(--c-border) / 0.08); display: flex; align-items: stretch; }
+  .term-tab { display: flex; align-items: center; gap: 5px; padding: 0 12px; min-width: 100px; max-width: 220px; cursor: pointer; border-right: 1px solid rgb(var(--c-border) / 0.08); font-size: 11px; color: rgb(var(--c-text-secondary)); transition: background 0.12s; }
+  .term-tab.active { background: rgb(var(--c-bg-base)); color: rgb(var(--c-text-primary)); }
+  .term-tab .dot { width: 5px; height: 5px; border-radius: 50%; }
+  .term-tab .dot.new { background: rgb(var(--c-status-info)); }
+  .term-tab .dot.log { background: rgb(var(--c-accent-ai)); }
+  .term-tab .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); font-size: 11px; }
+  .term-tab .close { color: rgb(var(--c-text-muted)); cursor: pointer; }
+  .term-content { height: 280px; background: rgb(var(--c-bg-base)); font-family: var(--mono); font-size: 12px; line-height: 1.45; padding: 10px 12px; overflow-y: auto; }
+  .term-line { white-space: pre-wrap; word-break: break-all; color: rgb(var(--c-text-secondary)); }
+  .term-line .prompt { color: rgb(var(--c-status-success)); }
+  .term-line .path { color: rgb(var(--c-status-info)); }
+  .term-line .cmd { color: rgb(var(--c-text-primary)); }
+  .term-line .out { color: rgb(var(--c-text-secondary)); }
+  .term-line .ok { color: rgb(var(--c-status-success)); }
+  .term-line .warn { color: rgb(var(--c-status-warning)); }
+  .term-line .muted { color: rgb(var(--c-text-muted)); }
+  .term-line .ai { color: rgb(var(--c-accent-ai)); }
+  .term-input { display: flex; align-items: center; gap: 0; background: rgb(var(--c-bg-elev)); border-top: 1px solid rgb(var(--c-border) / 0.08); padding: 6px 12px; font-family: var(--mono); font-size: 12px; }
+  .term-input .prompt { color: rgb(var(--c-status-success)); margin-right: 4px; }
+  .term-input .path { color: rgb(var(--c-status-info)); margin-right: 4px; }
+  .term-input .prefill { color: rgb(var(--c-text-primary)); flex: 1; }
+  .term-input .cursor { display: inline-block; width: 7px; height: 13px; background: rgb(var(--c-text-primary)); animation: blink 1s steps(1) infinite; vertical-align: text-bottom; }
+  @keyframes blink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+  .term-input .hint { font-size: 10px; color: rgb(var(--c-text-tertiary)); margin-left: 8px; }
+  .readonly-banner { background: rgba(var(--c-accent-ai), 0.08); border-bottom: 1px solid rgba(var(--c-accent-ai), 0.2); padding: 4px 12px; font-size: 10px; color: rgb(var(--c-accent-ai)); font-family: var(--mono); display: flex; align-items: center; gap: 6px; }
+
+  /* 可行性表 */
+  .feas { display: grid; grid-template-columns: 60px 1fr auto auto auto; gap: 0; border: 1px solid rgb(var(--c-border) / 0.08); border-radius: 8px; overflow: hidden; font-size: 12px; }
+  .feas > div { padding: 10px 12px; border-bottom: 1px solid rgb(var(--c-border) / 0.06); border-right: 1px solid rgb(var(--c-border) / 0.06); display: flex; align-items: center; }
+  .feas > div:last-child { border-right: none; }
+  .feas .hd { background: rgb(var(--c-bg-elev)); color: rgb(var(--c-text-tertiary)); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500; }
+  .feas .tier { font-family: var(--mono); color: rgb(var(--c-status-info)); font-weight: 600; }
+  .feas .name { color: rgb(var(--c-text-primary)); }
+  .feas .cost { font-family: var(--mono); font-size: 10px; }
+  .feas .cost.low { color: rgb(var(--c-status-success)); }
+  .feas .cost.mid { color: rgb(var(--c-status-warning)); }
+  .feas .cost.high { color: rgb(var(--c-status-danger)); }
+  .feas .feas-v { font-family: var(--mono); font-size: 10px; }
+  .feas .feas-v.yes { color: rgb(var(--c-status-success)); }
+  .feas .feas-v.warn { color: rgb(var(--c-status-warning)); }
+  .feas .loc { font-family: var(--mono); font-size: 9px; color: rgb(var(--c-text-muted)); }
+
+  .perf-note { max-width: 920px; margin: 0 auto; font-size: 11px; color: rgb(var(--c-text-tertiary)); line-height: 1.7; border-left: 2px solid rgba(var(--c-status-info), 0.4); padding: 8px 14px; background: rgba(var(--c-bg-elev), 0.5); border-radius: 0 8px 8px 0; }
+  .perf-note code { font-family: var(--mono); color: rgb(var(--c-status-info)); background: rgb(var(--c-border)/0.06); padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+  <h1>灵动岛后台任务 → 跳终端</h1>
+  <div class="sub">三档跳转方案对比 · 可行性验证 · 点击任务卡看效果</div>
+
+  <!-- 灵动岛 expanded 模拟 -->
+  <div class="section">
+    <div class="section-title">灵动岛 · 后台任务 tab <span class="meta">DynamicIslandExpanded.tsx:365-393</span></div>
+    <div class="island-exp">
+      <div class="island-tab-row">
+        <span class="island-tab">变更</span>
+        <span class="island-tab active">后台任务<span class="badge">3</span></span>
+        <span class="island-tab">需要你</span>
+      </div>
+      <div id="taskList">
+        <div class="task-line" data-task="0">
+          <span class="ico">▶</span><span class="cmd">pnpm tauri:build</span><span class="st running">运行中</span>
+        </div>
+        <div class="task-line" data-task="1">
+          <span class="ico">▶</span><span class="cmd">pnpm typecheck</span><span class="st done">exit 0</span>
+        </div>
+        <div class="task-line" data-task="2">
+          <span class="ico">▶</span><span class="cmd">cargo check --lib</span><span class="st running">运行中</span>
+        </div>
+      </div>
+      <div class="island-note">
+        运行中 = 已启动、生命周期未知 ·
+        <button class="island-link" id="islandLink">在<span id="linkTarget">控制台</span>打开</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 档位切换 -->
+  <div class="section">
+    <div class="section-title">跳转方案切换 <span class="meta">点击上方任务卡看效果</span></div>
+    <div class="tier-bar">
+      <button class="tier-btn" data-tier="1">档1 · 跳终端(空白)</button>
+      <button class="tier-btn active" data-tier="2">档2 · 跳终端+预填命令(推荐)</button>
+      <button class="tier-btn" data-tier="3">档3 · 只读日志视图(协议级)</button>
+    </div>
+
+    <!-- 终端面板 -->
+    <div class="term-frame">
+      <div class="term-tabs" id="termTabs">
+        <div class="term-tab active"><span class="dot new"></span><span class="name">bash — polaris</span></div>
+      </div>
+      <div id="readonlyBanner" style="display:none" class="readonly-banner">
+        <span>ⓘ 只读日志视图</span><span style="margin-left:auto">taskId=bash_xxx · 来源 cap.bash log · 无法交互</span>
+      </div>
+      <div class="term-content" id="termContent">
+        <div class="term-line"><span class="muted">// 点击上方灵动岛任务卡，看不同档位的跳转效果</span></div>
+      </div>
+      <div class="term-input" id="termInput" style="display:none">
+        <span class="prompt">➜</span><span class="path">~/polaris</span><span class="prefill" id="prefillCmd"></span><span class="cursor"></span><span class="hint" id="inputHint">回车执行 · 可编辑</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 可行性验证表 -->
+  <div class="section">
+    <div class="section-title">可行性验证 <span class="meta">实读代码定位</span></div>
+    <div class="feas">
+      <div class="hd">档</div><div class="hd">方案</div><div class="hd">可行性</div><div class="hd">成本</div><div class="hd">代码落点</div>
+
+      <div class="tier">1</div>
+      <div class="name">跳转改字符串 aiConsole→terminal</div>
+      <div class="feas-v yes">✓ 完全可行</div>
+      <div class="cost low">低</div>
+      <div class="loc">DynamicIslandExpanded.tsx:386</div>
+
+      <div class="tier">2</div>
+      <div class="name">跳转 + createSession(initialCommand) 预填</div>
+      <div class="feas-v yes">✓ 完全可行</div>
+      <div class="cost low">低</div>
+      <div class="loc">terminalStore.ts:208 · RunCommandModal:53 先例</div>
+
+      <div class="tier">3</div>
+      <div class="name">router_dispatch cap.bash log 拉日志 + 只读视图</div>
+      <div class="feas-v warn">⚠ 协议级</div>
+      <div class="cost high">高</div>
+      <div class="loc">htmlCardCapBridge:65 样板 · bash_capability.rs:614 log</div>
+    </div>
+  </div>
+
+  <div class="perf-note">
+    <strong style="color:rgb(var(--c-text-primary))">验证依据（实读代码）</strong><br>
+    • 当前跳转：<code>DynamicIslandExpanded.tsx:386</code> <code>switchToLeftPanel('aiConsole')</code> → ExecutionConsolePanel（不展示 bash 任务，落空跳转）<br>
+    • Terminal 激活：<code>switchToLeftPanel('terminal')</code> 同 API，<code>builtinPlugins.ts:70-77</code> 注册<br>
+    • 预填命令：<code>terminalStore.ts:208</code> <code>initialCommand</code> 字段已支持 · <code>TerminalRunCommandModal.tsx:53</code> 已有先例<br>
+    • 任务卡数据：<code>changeSummary.ts:62-67</code> SessionBgTask（taskId/label/status）· <code>DynamicIslandExpanded.tsx:372-379</code> 只读渲染无 onClick<br>
+    • 档3 日志拉取：<code>router_dispatch('cap.bash',{action:'log',taskId})</code> · <code>htmlCardCapBridge.ts:65</code> 有调用样板 · <code>bash_capability.rs:614-631</code> 后端支持<br>
+    • plan 边界：<code>plans/dynamic-island-change-summary-plan.md:141</code> 岛只做摘要出口，重型明细归 Dock/控制台<br>
+    • 障碍：taskId(cap.bash TaskManager) 与 sessionId(pty) 无关联（<code>bash_capability.rs:105-117</code> Task 无 sessionId 字段）
+  </div>
+
+  <script>
+    const TASKS = [
+      { cmd: 'pnpm tauri:build', status: 'running', log: ['> @polaris/tauri-app tauri:build', '  Compiling vite...', '  Bundling...', '  Tauri: cargo build...', '  [running] building...'] },
+      { cmd: 'pnpm typecheck', status: 'done', log: ['> @polaris/tauri-app typecheck', '> tsc --noEmit', '  0 errors', '  exit 0'] },
+      { cmd: 'cargo check --lib', status: 'running', log: ['    Checking polaris v10.5.8', '    Finished dev [unoptimized] target(s)', '  [running] checking deps...'] },
+    ];
+    let tier = 2;
+    const termContent = document.getElementById('termContent');
+    const termTabs = document.getElementById('termTabs');
+    const termInput = document.getElementById('termInput');
+    const prefillCmd = document.getElementById('prefillCmd');
+    const inputHint = document.getElementById('inputHint');
+    const readonlyBanner = document.getElementById('readonlyBanner');
+    const linkTarget = document.getElementById('linkTarget');
+    const islandLink = document.getElementById('islandLink');
+
+    function clearTerm() { termContent.innerHTML = ''; }
+    function append(html) { const d = document.createElement('div'); d.className = 'term-line'; d.innerHTML = html; termContent.appendChild(d); termContent.scrollTop = termContent.scrollHeight; }
+
+    function jump(taskIdx) {
+      const t = TASKS[taskIdx];
+      clearTerm();
+      readonlyBanner.style.display = 'none';
+      termInput.style.display = 'none';
+      // 更新 tab
+      termTabs.innerHTML = '';
+      const tab = document.createElement('div');
+      tab.className = 'term-tab active';
+      if (tier === 3) {
+        tab.innerHTML = '<span class="dot log"></span><span class="name">log: ' + t.cmd.slice(0,16) + '</span>';
+      } else {
+        tab.innerHTML = '<span class="dot new"></span><span class="name">' + t.cmd.slice(0,20) + '</span>';
+      }
+      termTabs.appendChild(tab);
+
+      if (tier === 1) {
+        // 档1：空白终端
+        append('<span class="muted">// 跳转到终端面板（空白会话）</span>');
+        append('<span class="muted">// 原任务 ' + t.cmd + ' 的输出不可见（taskId 与 sessionId 无关联）</span>');
+        append('');
+        append('<span class="prompt">➜</span> <span class="path">~/polaris</span> <span class="cursor"></span>');
+        termInput.style.display = 'flex';
+        prefillCmd.textContent = '';
+        inputHint.textContent = '空白终端 · 需手动输入命令';
+      } else if (tier === 2) {
+        // 档2：预填命令
+        append('<span class="muted">// 跳转到终端面板 + 新会话 + 命令已预填</span>');
+        append('<span class="muted">// createSession({ name: "' + t.cmd + '", initialCommand: "' + t.cmd + '" })</span>');
+        append('');
+        termInput.style.display = 'flex';
+        prefillCmd.textContent = t.cmd;
+        inputHint.textContent = '回车执行 · 可编辑 · 原任务输出仍不可见';
+      } else if (tier === 3) {
+        // 档3：只读日志视图
+        readonlyBanner.style.display = 'flex';
+        append('<span class="muted">// router_dispatch("cap.bash", { action:"log", taskId: "bash_' + taskIdx + '" })</span>');
+        append('<span class="muted">// 日志快照来自 cap.bash TaskManager 内存 VecDeque</span>');
+        append('');
+        append('<span class="ai">[cap.bash log]</span> <span class="muted">taskId=bash_' + taskIdx + ' · ' + t.cmd + '</span>');
+        t.log.forEach(l => append('<span class="out">  ' + l + '</span>'));
+        append('');
+        if (t.status === 'running') {
+          append('<span class="warn">  [任务仍在运行 · 日志为快照，不实时更新]</span>');
+        } else {
+          append('<span class="ok">  [任务已结束 · exit 0]</span>');
+        }
+        append('<span class="muted">// 注意：只读视图，无法交互（不能敲 stdin）· 与 plan L141 边界冲突</span>');
+      }
+    }
+
+    // 任务卡点击
+    document.querySelectorAll('.task-line').forEach(el => {
+      el.addEventListener('click', () => jump(parseInt(el.dataset.task)));
+    });
+
+    // 档位切换
+    document.querySelectorAll('.tier-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        tier = parseInt(btn.dataset.tier);
+        linkTarget.textContent = tier === 1 || tier === 2 ? '终端' : (tier === 3 ? '日志视图' : '控制台');
+        // 自动跳转第一个任务演示
+        jump(0);
+      });
+    });
+
+    // 灵动岛底部链接
+    islandLink.addEventListener('click', () => jump(0));
+
+    // 初始演示档2 + 第一个任务
+    jump(0);
+  </script>
+</body>
+</html>

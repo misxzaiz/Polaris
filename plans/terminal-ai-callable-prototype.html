@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Polaris AI 可调用终端 · 原型 v5</title>
+<style>
+  :root {
+    --c-bg-base:        0 0 0;
+    --c-bg-elev:       26 26 31;
+    --c-bg-surface:    37 37 43;
+    --c-bg-hover:      45 45 52;
+    --c-border:       255 255 255;
+    --c-text-primary: 248 248 248;
+    --c-text-secondary: 180 180 184;
+    --c-text-muted:   109 109 112;
+    --c-text-tertiary: 92 96 114;
+    --c-primary:       59 130 246;
+    --c-status-info:   96 165 250;
+    --c-status-success:52 211 153;
+    --c-status-warning:251 191 36;
+    --c-status-danger: 248 113 113;
+    --c-accent-ai:    167 139 250;
+    --mono: "Consolas", "SF Mono", "Cascadia Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: rgb(var(--c-bg-base)); color: rgb(var(--c-text-primary)); font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 32px 24px 80px; line-height: 1.5; min-height: 100vh; }
+  h1 { font-size: 18px; margin-bottom: 6px; text-align: center; }
+  .sub { color: rgb(var(--c-text-muted)); font-size: 13px; margin-bottom: 36px; text-align: center; }
+  .section { max-width: 960px; margin: 0 auto 48px; }
+  .section-title { font-size: 11px; color: rgb(var(--c-text-tertiary)); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .section-title::before { content: '◆'; color: rgb(var(--c-status-info)); }
+  .section-title .meta { margin-left: auto; font-family: var(--mono); color: rgb(var(--c-text-muted)); text-transform: none; letter-spacing: 0; }
+
+  /* 统一终端面板 */
+  .term-frame { background: rgb(var(--c-bg-base)); border: 1px solid rgb(var(--c-border) / 0.08); border-radius: 10px; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+
+  /* 标签栏：人终端 + AI 任务统一在这里 */
+  .tab-bar { height: 36px; background: rgb(var(--c-bg-elev)); border-bottom: 1px solid rgb(var(--c-border) / 0.08); display: flex; align-items: stretch; flex-shrink: 0; }
+  .tab-strip { flex: 1; display: flex; overflow-x: auto; }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 0 12px; min-width: 120px; max-width: 240px; cursor: pointer; border-right: 1px solid rgb(var(--c-border) / 0.08); transition: background 0.12s ease-out; position: relative; }
+  .tab:hover { background: rgb(var(--c-bg-hover) / 0.5); }
+  .tab.active { background: rgb(var(--c-bg-base)); }
+  .tab .t-origin { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .tab .t-origin.human { background: rgb(var(--c-status-info)); }
+  .tab .t-origin.ai { background: rgb(var(--c-accent-ai)); }
+  .tab .t-name { flex: 1; font-size: 12px; color: rgb(var(--c-text-secondary)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tab.active .t-name { color: rgb(var(--c-text-primary)); }
+  .tab .t-status { font-size: 9px; font-family: var(--mono); padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+  .tab .t-status.running { color: rgb(var(--c-status-info)); background: rgba(var(--c-status-info), 0.12); }
+  .tab .t-status.done { color: rgb(var(--c-status-success)); background: rgba(var(--c-status-success), 0.12); }
+  .tab .t-status.fail { color: rgb(var(--c-status-danger)); background: rgba(var(--c-status-danger), 0.12); }
+  .tab .t-close { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 3px; color: rgb(var(--c-text-muted)); visibility: hidden; cursor: pointer; }
+  .tab:hover .t-close { visibility: visible; }
+  .tab .t-close:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .tab-actions { display: flex; align-items: stretch; }
+  .tab-action { width: 36px; display: grid; place-items: center; color: rgb(var(--c-text-secondary)); cursor: pointer; transition: background 0.12s, color 0.12s; }
+  .tab-action:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+
+  /* 终端内容 */
+  .term-content { height: 360px; background: rgb(var(--c-bg-base)); font-family: var(--mono); font-size: 13px; line-height: 1.45; padding: 12px 14px; overflow-y: auto; position: relative; }
+  .term-line { white-space: pre-wrap; color: rgb(var(--c-text-primary)); word-break: break-all; }
+  .term-line .c-prompt { color: rgb(var(--c-status-success)); }
+  .term-line .c-path { color: rgb(var(--c-status-info)); }
+  .term-line .c-cmd { color: rgb(var(--c-text-primary)); }
+  .term-line .c-out { color: rgb(var(--c-text-secondary)); }
+  .term-line .c-err { color: rgb(var(--c-status-danger)); }
+  .term-line .c-ok { color: rgb(var(--c-status-success)); }
+  .term-line .c-warn { color: rgb(var(--c-status-warning)); }
+  .term-line .c-muted { color: rgb(var(--c-text-muted)); }
+  .term-line .c-ai { color: rgb(var(--c-accent-ai)); }
+  .term-line .c-audit { color: rgb(var(--c-text-tertiary)); font-size: 11px; }
+  .term-cursor { display: inline-block; width: 7px; height: 14px; background: rgb(var(--c-text-primary)); vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+
+  /* 治理栏：权限/审计可视化 */
+  .gov-bar { background: rgb(var(--c-bg-elev)); border-top: 1px solid rgb(var(--c-border) / 0.08); padding: 8px 14px; display: flex; align-items: center; gap: 14px; font-size: 11px; flex-shrink: 0; }
+  .gov-item { display: flex; align-items: center; gap: 5px; color: rgb(var(--c-text-muted)); }
+  .gov-item .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .gov-item.ok .dot { background: rgb(var(--c-status-success)); box-shadow: 0 0 4px rgb(var(--c-status-success)); }
+  .gov-item.warn .dot { background: rgb(var(--c-status-warning)); box-shadow: 0 0 4px rgb(var(--c-status-warning)); }
+  .gov-item .v { color: rgb(var(--c-text-secondary)); font-family: var(--mono); }
+  .gov-spacer { flex: 1; }
+  .gov-audit { color: rgb(var(--c-text-tertiary)); font-family: var(--mono); font-size: 10px; }
+
+  /* 控制条 */
+  .ctrl-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; background: rgb(var(--c-bg-elev)); border: 1px solid rgb(var(--c-border)/0.08); border-radius: 8px; padding: 8px; }
+  .ctrl-btn { background: transparent; border: 1px solid rgb(var(--c-border)/0.1); color: rgb(var(--c-text-secondary)); border-radius: 6px; padding: 6px 12px; font-size: 11px; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+  .ctrl-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .ctrl-btn.ai { border-color: rgba(var(--c-accent-ai), 0.3); color: rgb(var(--c-accent-ai)); }
+  .ctrl-btn.ai:hover { background: rgba(var(--c-accent-ai), 0.1); border-color: rgba(var(--c-accent-ai), 0.5); }
+  .ctrl-btn.human { border-color: rgba(var(--c-status-info), 0.3); color: rgb(var(--c-status-info)); }
+  .ctrl-btn.human:hover { background: rgba(var(--c-status-info), 0.1); }
+
+  /* 缺口对比 */
+  .gap-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .gap-compare { grid-template-columns: 1fr; } }
+  .gap-col { background: rgb(var(--c-bg-elev)); border: 1px solid rgb(var(--c-border)/0.08); border-radius: 10px; padding: 16px; }
+  .gap-col.now { border-left: 3px solid rgb(var(--c-status-danger)); }
+  .gap-col.goal { border-left: 3px solid rgb(var(--c-status-success)); }
+  .gap-col .gtitle { font-size: 12px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .gap-col .gtitle .badge { font-size: 10px; padding: 2px 7px; border-radius: 4px; font-family: var(--mono); font-weight: 400; }
+  .gap-col.now .badge { background: rgba(var(--c-status-danger), 0.15); color: rgb(var(--c-status-danger)); }
+  .gap-col.goal .badge { background: rgba(var(--c-status-success), 0.15); color: rgb(var(--c-status-success)); }
+  .gap-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 6px 0; border-bottom: 1px dashed rgb(var(--c-border)/0.06); font-size: 11px; align-items: center; }
+  .gap-row:last-child { border-bottom: none; }
+  .gap-row .k { color: rgb(var(--c-text-secondary)); }
+  .gap-row .vv { font-family: var(--mono); font-size: 10px; }
+  .gap-row .vv.no { color: rgb(var(--c-status-danger)); }
+  .gap-row .vv.yes { color: rgb(var(--c-status-success)); }
+  .gap-row .vv.warn { color: rgb(var(--c-status-warning)); }
+
+  /* 方向卡片 */
+  .dirs { display: flex; flex-direction: column; gap: 10px; }
+  .dir { background: rgb(var(--c-bg-elev)); border: 1px solid rgb(var(--c-border)/0.08); border-radius: 10px; padding: 14px 16px; display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: start; transition: border-color 0.12s; }
+  .dir:hover { border-color: rgba(var(--c-status-info), 0.3); }
+  .dir .num { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; font-family: var(--mono); background: rgba(var(--c-status-info), 0.12); color: rgb(var(--c-status-info)); }
+  .dir .body { font-size: 12px; }
+  .dir .body .dt { font-weight: 600; color: rgb(var(--c-text-primary)); margin-bottom: 3px; }
+  .dir .body .dd { color: rgb(var(--c-text-secondary)); line-height: 1.6; }
+  .dir .body .dd code { font-family: var(--mono); color: rgb(var(--c-status-info)); font-size: 11px; background: rgb(var(--c-border)/0.06); padding: 1px 4px; border-radius: 3px; }
+  .dir .cost { font-size: 10px; font-family: var(--mono); color: rgb(var(--c-text-muted)); text-align: right; white-space: nowrap; }
+  .dir .cost .v { color: rgb(var(--c-status-success)); }
+  .dir .cost .r { color: rgb(var(--c-status-info)); }
+  .dir .cost .x { color: rgb(var(--c-status-danger)); }
+
+  .perf-note { max-width: 960px; margin: 0 auto; font-size: 11px; color: rgb(var(--c-text-tertiary)); line-height: 1.7; border-left: 2px solid rgba(var(--c-status-info), 0.4); padding: 8px 14px; background: rgba(var(--c-bg-elev), 0.5); border-radius: 0 8px 8px 0; }
+  .perf-note code { font-family: var(--mono); color: rgb(var(--c-status-info)); background: rgb(var(--c-border)/0.06); padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+  <h1>Polaris AI 可调用终端 · 原型</h1>
+  <div class="sub">统一命令面板 · 治理可视化 · 生命周期事件 · 流式输出 · 目标态演示</div>
+
+  <!-- 统一终端面板 -->
+  <div class="section">
+    <div class="section-title">统一命令面板 <span class="meta">人命令 + AI 任务同一标签栏</span></div>
+
+    <div class="ctrl-bar">
+      <button class="ctrl-btn human" data-act="human">人 · 敲一条命令</button>
+      <button class="ctrl-btn ai" data-act="ai-run">AI · 调用 bash 工具</button>
+      <button class="ctrl-btn ai" data-act="ai-long">AI · 跑长任务(build)</button>
+      <span style="flex:1"></span>
+      <button class="ctrl-btn" data-act="clear">清屏</button>
+      <button class="ctrl-btn" data-act="toggle-stream">切换流式输出</button>
+    </div>
+
+    <div class="term-frame">
+      <!-- 标签栏：人终端(蓝) + AI 任务(紫) 混排 -->
+      <div class="tab-bar">
+        <div class="tab-strip" id="tabStrip">
+          <div class="tab active" data-tab="human1"><span class="t-origin human"></span><span class="t-name">bash — polaris</span><span class="t-close">×</span></div>
+          <div class="tab" data-tab="ai1"><span class="t-origin ai"></span><span class="t-name">AI: pnpm typecheck</span><span class="t-status running">运行中</span><span class="t-close">×</span></div>
+          <div class="tab" data-tab="ai2"><span class="t-origin ai"></span><span class="t-name">AI: pnpm tauri:build</span><span class="t-status running">运行中</span><span class="t-close">×</span></div>
+          <div class="tab" data-tab="ai3"><span class="t-origin ai"></span><span class="t-name">AI: ls src/</span><span class="t-status done">exit 0</span><span class="t-close">×</span></div>
+        </div>
+        <div class="tab-actions">
+          <div class="tab-action" title="新建终端">+</div>
+        </div>
+      </div>
+
+      <!-- 终端内容 -->
+      <div class="term-content" id="termContent">
+        <div class="term-line"><span class="c-muted">// 统一命令面板 · 人(蓝)与 AI(紫)命令共存</span></div>
+        <div class="term-line"><span class="c-muted">// 每条命令标注来源 + 审计链路 + 权限状态</span></div>
+        <div class="term-line"> </div>
+        <div class="term-line"><span class="c-ai">[AI tool_call]</span> <span class="c-muted">bash.run</span> <span class="c-cmd">ls src/components/</span></div>
+        <div class="term-line"><span class="c-audit">  dispatch.start · permission=Allow(Plugin) · audit: dispatch.ok</span></div>
+        <div class="term-line"><span class="c-out">  Chat/  Common/  Diff/  Editor/  GitPanel/  Terminal/</div>
+        <div class="term-line"><span class="c-audit">  dispatch.end(ok) · exit 0 · 42ms · taskId=bash_8f3a</span></div>
+        <div class="term-line"> </div>
+        <div class="term-line"><span class="c-prompt">➜</span> <span class="c-path">~/polaris</span> <span class="c-cmd" id="liveCmd"></span><span class="term-cursor"></span></div>
+      </div>
+
+      <!-- 治理栏 -->
+      <div class="gov-bar">
+        <div class="gov-item ok"><span class="dot"></span>权限 gate <span class="v">on</span></div>
+        <div class="gov-item ok"><span class="dot"></span>审计链 <span class="v">dispatch.jsonl</span></div>
+        <div class="gov-item warn" id="streamState"><span class="dot"></span>流式输出 <span class="v">on</span></div>
+        <div class="gov-spacer"></div>
+        <div class="gov-audit" id="auditLive">最近: dispatch.ok cap.bash · 42ms</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 现状 vs 目标态对比 -->
+  <div class="section">
+    <div class="section-title">缺口对比 <span class="meta">现状(路径A/B独立) → 目标态(统一)</span></div>
+    <div class="gap-compare">
+      <div class="gap-col now">
+        <div class="gtitle">现状 · 双系统独立 <span class="badge">3 缺口</span></div>
+        <div class="gap-row"><span class="k">权限 gate</span><span class="vv no">绕过(恒Allow)</span></div>
+        <div class="gap-row"><span class="k">审计留痕</span><span class="vv no">不落链</span></div>
+        <div class="gap-row"><span class="k">实时输出</span><span class="vv no">快照(32K)</span></div>
+        <div class="gap-row"><span class="k">生命周期事件</span><span class="vv no">无(需轮询)</span></div>
+        <div class="gap-row"><span class="k">AI 看人命令</span><span class="vv no">看不到</span></div>
+        <div class="gap-row"><span class="k">人看 AI 命令</span><span class="vv warn">工具卡(truncate)</span></div>
+        <div class="gap-row"><span class="k">交互式 stdin</span><span class="vv warn">仅人终端</span></div>
+      </div>
+      <div class="gap-col goal">
+        <div class="gtitle">目标态 · 统一命令面板 <span class="badge">3 方向补齐</span></div>
+        <div class="gap-row"><span class="k">权限 gate</span><span class="vv yes">router_dispatch</span></div>
+        <div class="gap-row"><span class="k">审计留痕</span><span class="vv yes">dispatch.ok/error</span></div>
+        <div class="gap-row"><span class="k">实时输出</span><span class="vv yes">流式订阅</span></div>
+        <div class="gap-row"><span class="k">生命周期事件</span><span class="vv yes">started/exited/code</span></div>
+        <div class="gap-row"><span class="k">AI 看人命令</span><span class="vv yes">taskId 订阅</span></div>
+        <div class="gap-row"><span class="k">人看 AI 命令</span><span class="vv yes">统一面板</span></div>
+        <div class="gap-row"><span class="k">交互式 stdin</span><span class="vv warn">保留 pty 会话</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 三方向 -->
+  <div class="section">
+    <div class="section-title">重构方向 · 三步走 <span class="meta">确定性×收益÷成本</span></div>
+    <div class="dirs">
+      <div class="dir">
+        <div class="num">1</div>
+        <div class="body">
+          <div class="dt">BashTool 回归 RouterBus（治理前提）</div>
+          <div class="dd"><code>tools/bash.rs:83-102</code> 不再 <code>BashCapability::new()</code> 直造，改走 <code>router_dispatch</code>。获得权限 gate（AI 执行命令过 <code>permission.check()</code>）+ 审计落链。已立项 <code>router-governance-hardening-spec.md:25</code>。</div>
+        </div>
+        <div class="cost"><span class="r">收益</span> 高<br><span class="v">成本</span> 低</div>
+      </div>
+      <div class="dir">
+        <div class="num">2</div>
+        <div class="body">
+          <div class="dt">cap.bash 补生命周期事件</div>
+          <div class="dd">任务 <code>started/exited/code</code> 三事件经 EventBroadcaster 推前端。动态岛后台任务面板实时更新（不再轮询），AI 可订阅感知任务结束。补 <code>dynamic-island-change-summary-plan.md:104</code> 的 P3 项。</div>
+        </div>
+        <div class="cost"><span class="r">收益</span> 中<br><span class="v">成本</span> 中</div>
+      </div>
+      <div class="dir">
+        <div class="num">3</div>
+        <div class="body">
+          <div class="dt">流式输出回流（体验核心）</div>
+          <div class="dd">cap.bash <code>log</code> 改增量推送，AI 工具调用订阅流式 stdout。TerminalPanel 也订阅同一流 → AI 命令在终端实时可见。<strong>障碍</strong>：流式 tool result 与 <code>{role:tool,content:string}</code> 终态协议冲突，需协议扩展（§四 双边同步）。</div>
+        </div>
+        <div class="cost"><span class="r">收益</span> 高<br><span class="x">成本</span> 高</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="perf-note">
+    <strong style="color:rgb(var(--c-text-primary))">真实链路定位（来自实读摸排）</strong><br>
+    • BashTool 绕过总线：<code>src-tauri/src/ai/engine/simple_ai/tools/bash.rs:83-102</code>（<code>BashCapability::new()</code> 直造，<code>RealContext::new</code> 无 permission）<br>
+    • 工具注册：<code>tools/mod.rs:135-145</code> <code>ToolRegistry::with_builtins()</code><br>
+    • 执行+回流：<code>chat_loop.rs:655 dispatch</code> → <code>:692-696 push {role:tool,content}</code><br>
+    • 前端 block：<code>types/chat.ts:148-174 ToolCallBlock</code>（output 字段内联 result，无独立 ToolResultBlock）<br>
+    • 人终端：<code>terminalStore.ts:240-254</code> 走 Tauri IPC <code>terminal_*</code>，与 cap.bash 零交集<br>
+    • 已立项缺口：<code>plans/router-governance-hardening-spec.md:25</code>（BashTool 审批）、<code>plans/dynamic-island-change-summary-plan.md:104</code>（生命周期事件 P3）
+  </div>
+
+  <script>
+    const termContent = document.getElementById('termContent');
+    const liveCmd = document.getElementById('liveCmd');
+    const auditLive = document.getElementById('auditLive');
+    const streamState = document.getElementById('streamState');
+    let streamOn = true;
+
+    function append(html) {
+      const div = document.createElement('div');
+      div.className = 'term-line';
+      div.innerHTML = html;
+      termContent.insertBefore(div, liveCmd.parentElement);
+      termContent.scrollTop = termContent.scrollHeight;
+    }
+    function setAudit(text) { auditLive.textContent = '最近: ' + text; }
+
+    document.querySelectorAll('.ctrl-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const act = btn.dataset.act;
+        if (act === 'human') {
+          append('<span class="c-prompt">➜</span> <span class="c-path">~/polaris</span> <span class="c-cmd">git status --short</span>');
+          append('<span class="c-audit">  [人终端] 无审计 · permission=N/A · pty 会话</span>');
+          append('<span class="c-out"> M src/components/Chat/dynamic-island/DynamicIsland.css</span>');
+          append('<span class="c-out">?? plans/terminal-ai-prototype.html</span>');
+          append('');
+          setAudit('git status (人终端 · 不经 cap.bash)');
+        } else if (act === 'ai-run') {
+          const cmds = [['ls src/stores/', 'ConversationStore/  toastStore/  themeStore/  terminalStore.ts'],
+                        ['cat package.json | head -5', '{ "name": "polaris", "version": "10.5.8", "private": true,'],
+                        ['grep -rn "cap.bash" src-tauri/src/services/router/ | wc -l', '7']];
+          const [cmd, out] = cmds[Math.floor(Math.random()*cmds.length)];
+          append('<span class="c-ai">[AI tool_call]</span> <span class="c-muted">bash.run</span> <span class="c-cmd">' + cmd + '</span>');
+          append('<span class="c-audit">  dispatch.start · permission=Allow(Plugin) · audit: dispatch.ok</span>');
+          if (streamOn) {
+            // 流式：逐行输出
+            const lines = out.split('\n');
+            lines.forEach((l, i) => setTimeout(() => append('<span class="c-out">  ' + l + '</span>'), i * 150));
+            setTimeout(() => {
+              append('<span class="c-audit">  dispatch.end(ok) · exit 0 · ' + (80 + Math.floor(Math.random()*120)) + 'ms · taskId=bash_' + Math.random().toString(16).slice(2,6) + '</span>');
+              append('');
+              setAudit('dispatch.ok cap.bash · ' + cmd.slice(0,20));
+            }, lines.length * 150 + 100);
+          } else {
+            // 快照：一次性输出
+            append('<span class="c-audit">  [快照模式] 同步 wait · truncate 32K</span>');
+            append('<span class="c-out">  ' + out + '</span>');
+            append('<span class="c-audit">  dispatch.end(ok) · exit 0 · ' + (300 + Math.floor(Math.random()*400)) + 'ms</span>');
+            append('');
+            setAudit('dispatch.ok cap.bash (快照) · ' + cmd.slice(0,20));
+          }
+        } else if (act === 'ai-long') {
+          append('<span class="c-ai">[AI tool_call]</span> <span class="c-muted">bash.run(async)</span> <span class="c-cmd">pnpm tauri:build</span>');
+          append('<span class="c-audit">  dispatch.start · permission=Allow(Plugin) · taskId=bash_build_' + Math.random().toString(16).slice(2,6) + '</span>');
+          append('<span class="c-ai">[async task started]</span> <span class="c-muted">taskId=bash_build · 等待生命周期事件...</span>');
+          // 模拟生命周期事件
+          setTimeout(() => append('<span class="c-ok">[event: bash_task.started]</span> <span class="c-muted">building tauri app...</span>'), 300);
+          if (streamOn) {
+            const phases = ['Compiling vite...', 'Bundling...', 'Tauri: cargo build...', 'Generating MSI...', 'Signing...'];
+            phases.forEach((p, i) => setTimeout(() => append('<span class="c-out">  ' + p + '</span>'), 600 + i * 400));
+            setTimeout(() => {
+              append('<span class="c-ok">[event: bash_task.exited]</span> <span class="c-muted">code=0 · MSI 生成完成</span>');
+              append('<span class="c-audit">  dispatch.end(ok) · audit: dispatch.ok</span>');
+              append('');
+              setAudit('bash_task.exited code=0 · pnpm tauri:build');
+            }, 600 + phases.length * 400 + 200);
+          } else {
+            setTimeout(() => {
+              append('<span class="c-audit">  [无生命周期事件 · AI 需主动 log/status 轮询]</span>');
+              append('');
+              setAudit('async task 运行中 · 无事件推送');
+            }, 800);
+          }
+        } else if (act === 'clear') {
+          const prompt = liveCmd.parentElement;
+          termContent.innerHTML = '';
+          termContent.appendChild(prompt);
+        } else if (act === 'toggle-stream') {
+          streamOn = !streamOn;
+          streamState.querySelector('.v').textContent = streamOn ? 'on' : 'off';
+          streamState.classList.toggle('ok', streamOn);
+          streamState.classList.toggle('warn', !streamOn);
+        }
+      });
+    });
+
+    // 标签切换
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', e => {
+        if (e.target.classList.contains('t-close')) return;
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+      });
+    });
+  </script>
+</body>
+</html>

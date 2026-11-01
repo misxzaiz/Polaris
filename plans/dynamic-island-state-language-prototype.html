@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Polaris 灵动岛状态语言规范 · 原型 v2</title>
+<style>
+  /* ============================================================
+     真实 token：直接取自 src/index.css（暗色专属，项目无亮色主题）
+     RGB 三元组存储，与 tailwind.config.js 引用方式一致
+     ============================================================ */
+  :root {
+    --c-bg-base:        0 0 0;
+    --c-bg-elevated:   26 26 31;
+    --c-bg-surface:    37 37 43;
+    --c-border:       255 255 255;
+    --c-text-primary: 248 248 248;
+    --c-text-muted:   109 109 112;
+    --c-text-tertiary: 92 96 114;
+    --c-status-info:   96 165 250;   /* running 蓝 */
+    --c-status-success:52 211 153;   /* done/ready 绿 */
+    --c-status-warning:251 191 36;   /* urgent 琥珀 */
+    --c-status-danger: 248 113 113;  /* fail 红 */
+    --c-accent-ai:    167 139 250;   /* thinking 紫 */
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+    /* 状态 → 光色映射（与 DynamicIsland.css 状态类一致） */
+    --island-glow-ready:    rgb(var(--c-status-success));
+    --island-glow-running:  rgb(var(--c-status-info));
+    --island-glow-thinking: rgb(var(--c-accent-ai));
+    --island-glow-urgent:   rgb(var(--c-status-warning));
+    --island-glow-interrupt:rgb(var(--c-text-muted));
+    --island-glow-done:     rgb(var(--c-status-success));
+    --island-glow-fail:     rgb(var(--c-status-danger));
+
+    --island-aura-ready:    rgba(var(--c-status-success), 0.06);
+    --island-aura-running:  rgba(var(--c-status-info), 0.08);
+    --island-aura-thinking: rgba(var(--c-accent-ai), 0.08);
+    --island-aura-urgent:   rgba(var(--c-status-warning), 0.08);
+    --island-aura-interrupt:rgba(var(--c-text-muted), 0.05);
+    --island-aura-done:     rgba(var(--c-status-success), 0.06);
+    --island-aura-fail:     rgba(var(--c-status-danger), 0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: rgb(var(--c-bg-base));
+    color: rgb(var(--c-text-primary));
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 48px 24px 80px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  /* 顶部消息区背景纹理，模拟灵动岛挂载环境（贴顶居中） */
+  .stage {
+    position: relative;
+    background: rgb(var(--c-bg-elevated));
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    border-radius: 12px;
+    height: 220px;
+    max-width: 760px;
+    margin: 0 auto 40px;
+    overflow: hidden;
+  }
+  .stage::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 20% 30%, rgba(var(--c-accent-ai) / 0.04), transparent 60%),
+      radial-gradient(ellipse at 80% 70%, rgba(var(--c-status-info) / 0.03), transparent 60%);
+    pointer-events: none;
+  }
+  .stage-label {
+    position: absolute; bottom: 12px; left: 16px;
+    font-size: 11px; color: rgb(var(--c-text-tertiary));
+    font-family: var(--mono);
+  }
+
+  /* ============================================================
+     灵动岛本体——复刻 c78961a5 落地值（blur 14px + will-change + 光带）
+     ============================================================ */
+  .island-root {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    width: fit-content;
+    min-width: 220px;
+    max-width: min(440px, calc(100% - 32px));
+    border-radius: 0 0 14px 14px;
+    background: rgba(var(--c-bg-surface), 0.72);
+    border: none;
+    box-shadow:
+      0 10px 30px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      inset 0 -8px 24px var(--island-aura, transparent);
+    backdrop-filter: blur(14px) saturate(1.5);
+    -webkit-backdrop-filter: blur(14px) saturate(1.5);
+    will-change: transform;
+    overflow: hidden;
+    transition:
+      border-radius 0.42s cubic-bezier(0.34, 1.56, 0.64, 1),
+      width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  /* 底部状态光带 */
+  .island-root::before {
+    content: '';
+    position: absolute;
+    left: 16%; right: 16%;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--island-glow, rgb(var(--c-text-muted))), transparent);
+    opacity: 0.5;
+    transition: opacity 0.3s ease, background 0.3s ease;
+    pointer-events: none;
+  }
+  .island-root:hover::before { opacity: 0.85; }
+
+  /* compact 单行内容 */
+  .island-compact {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 14px;
+    cursor: pointer; user-select: none;
+    height: 32px;
+  }
+
+  /* 符号：核心点 + 波扩散 */
+  .island-sym {
+    position: relative;
+    width: 14px; height: 14px;
+    flex-shrink: 0;
+    display: grid; place-items: center;
+    will-change: transform;
+  }
+  .island-sym .island-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--island-glow, rgb(var(--c-status-info)));
+    box-shadow: 0 0 8px var(--island-glow, rgb(var(--c-status-info)));
+  }
+  .island-sym .island-wave {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    border: 1.5px solid var(--island-glow, rgb(var(--c-status-info)));
+    opacity: 0;
+  }
+  /* 动效∝强度：活动态才有波扩散；静止态（done/ready）只有静态点 */
+  .is-running  .island-sym .island-wave,
+  .is-thinking .island-sym .island-wave,
+  .is-urgent   .island-sym .island-wave,
+  .is-interrupt .island-sym .island-wave {
+    animation: island-wave 1.8s ease-out infinite;
+  }
+  .is-urgent   .island-sym .island-wave { animation-duration: 1.1s; }
+  .is-thinking .island-sym .island-wave { animation-duration: 2.4s; }
+  .is-running  .island-sym .island-dot { animation: island-breathe 1.6s ease-in-out infinite; }
+  .is-thinking .island-sym .island-dot { animation: island-breathe 2.8s ease-in-out infinite; }
+  .is-urgent   .island-sym .island-dot { animation: island-blink 0.7s steps(2) infinite; }
+
+  @keyframes island-wave {
+    0% { transform: scale(0.5); opacity: 0.7; }
+    100% { transform: scale(1.8); opacity: 0; }
+  }
+  @keyframes island-breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.35); }
+  }
+  @keyframes island-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0.3; }
+  }
+
+  /* 文案 */
+  .island-main {
+    font-size: 12px; color: rgb(var(--c-text-primary));
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+  }
+  .island-main .lbl { color: rgb(var(--c-text-muted)); }
+  .island-main .val { color: var(--island-glow, rgb(var(--c-text-primary))); font-weight: 500; }
+
+  /* 状态类 → 状态色（驱动光带 + 符号 + 光晕） */
+  .is-ready     { --island-glow: var(--island-glow-ready);     --island-aura: var(--island-aura-ready); }
+  .is-resident  { --island-glow: var(--island-glow-ready);     --island-aura: var(--island-aura-ready); }
+  .is-running   { --island-glow: var(--island-glow-running);   --island-aura: var(--island-aura-running); }
+  .is-thinking  { --island-glow: var(--island-glow-thinking);  --island-aura: var(--island-aura-thinking); }
+  .is-urgent    { --island-glow: var(--island-glow-urgent);    --island-aura: var(--island-aura-urgent); }
+  .is-interrupt { --island-glow: var(--island-glow-interrupt); --island-aura: var(--island-aura-interrupt); }
+  .is-done      { --island-glow: var(--island-glow-done);      --island-aura: var(--island-aura-done); }
+  .is-fail      { --island-glow: var(--island-glow-fail);      --island-aura: var(--island-aura-fail); }
+
+  /* ============================================================
+     控制台
+     ============================================================ */
+  h1 { font-size: 18px; margin-bottom: 6px; text-align: center; }
+  .sub { color: rgb(var(--c-text-muted)); font-size: 13px; margin-bottom: 32px; text-align: center; }
+  .section { max-width: 760px; margin: 0 auto 40px; }
+  .section-title {
+    font-size: 11px; color: rgb(var(--c-text-tertiary)); text-transform: uppercase;
+    letter-spacing: 0.08em; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::before { content: '◆'; color: rgb(var(--c-status-info)); }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    background: rgb(var(--c-bg-elevated));
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    border-radius: 10px; padding: 12px;
+  }
+  .state-btn {
+    background: transparent;
+    border: 1px solid rgb(var(--c-border) / 0.1);
+    color: rgb(var(--c-text-muted));
+    border-radius: 8px; padding: 8px 12px;
+    font-size: 12px; cursor: pointer; font-family: inherit;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 0.12s ease-out, color 0.12s ease-out, border-color 0.12s ease-out;
+  }
+  .state-btn:hover { background: rgb(var(--c-border) / 0.06); color: rgb(var(--c-text-primary)); }
+  .state-btn.active {
+    color: rgb(var(--c-text-primary));
+    border-color: var(--btn-glow, rgb(var(--c-status-info)));
+    box-shadow: inset 0 -8px 24px var(--btn-aura, transparent);
+  }
+  .state-btn .swatch {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--btn-glow, rgb(var(--c-text-muted)));
+    box-shadow: 0 0 6px var(--btn-glow, transparent);
+  }
+  .state-btn[data-state="ready"]     { --btn-glow: var(--island-glow-ready);     --btn-aura: var(--island-aura-ready); }
+  .state-btn[data-state="resident"]  { --btn-glow: var(--island-glow-ready);     --btn-aura: var(--island-aura-ready); }
+  .state-btn[data-state="running"]   { --btn-glow: var(--island-glow-running);   --btn-aura: var(--island-aura-running); }
+  .state-btn[data-state="thinking"]  { --btn-glow: var(--island-glow-thinking);  --btn-aura: var(--island-aura-thinking); }
+  .state-btn[data-state="urgent"]    { --btn-glow: var(--island-glow-urgent);    --btn-aura: var(--island-aura-urgent); }
+  .state-btn[data-state="interrupt"] { --btn-glow: var(--island-glow-interrupt); --btn-aura: var(--island-aura-interrupt); }
+  .state-btn[data-state="done"]      { --btn-glow: var(--island-glow-done);      --btn-aura: var(--island-aura-done); }
+  .state-btn[data-state="fail"]      { --btn-glow: var(--island-glow-fail);      --btn-aura: var(--island-aura-fail); }
+
+  .toggles {
+    display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap;
+  }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; color: rgb(var(--c-text-muted)); cursor: pointer;
+  }
+  .toggle input { accent-color: rgb(var(--c-status-info)); cursor: pointer; }
+
+  /* 状态规范表 */
+  table { border-collapse: collapse; font-size: 12px; width: 100%; }
+  th, td { padding: 8px 12px 8px 0; text-align: left; }
+  th { color: rgb(var(--c-text-tertiary)); font-weight: 500; font-size: 11px; }
+  td { color: rgb(var(--c-text-primary)); border-top: 1px solid rgb(var(--c-border) / 0.06); }
+  td.mono, th.mono { font-family: var(--mono); }
+  td .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    border: 1px solid rgb(var(--c-border) / 0.1);
+  }
+  td .pill .d {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--p-glow); box-shadow: 0 0 5px var(--p-glow);
+  }
+
+  /* 性能注脚 */
+  .perf-note {
+    max-width: 760px; margin: 0 auto;
+    font-size: 11px; color: rgb(var(--c-text-tertiary));
+    line-height: 1.7;
+    border-left: 2px solid rgb(var(--c-status-info) / 0.4);
+    padding: 8px 14px;
+    background: rgb(var(--c-bg-elevated) / 0.5);
+    border-radius: 0 8px 8px 0;
+  }
+  .perf-note code {
+    font-family: var(--mono); color: rgb(var(--c-status-info));
+    background: rgb(var(--c-border) / 0.06); padding: 1px 5px; border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+
+  <h1>Polaris 灵动岛 · 状态语言规范原型</h1>
+  <div class="sub">七态语义系统 · 颜色=状态 · 动效∝强度 · c78961a5 落地参照</div>
+
+  <!-- 实况舞台：灵动岛贴顶挂载 -->
+  <div class="stage">
+    <div id="island" class="island-root is-ready">
+      <div class="island-compact">
+        <span class="island-sym">
+          <span class="island-dot"></span>
+          <span class="island-wave"></span>
+        </span>
+        <span class="island-main">
+          <span class="lbl" id="iLabel">就绪</span>
+          <span class="val" id="iValue">· 12 项变更</span>
+        </span>
+      </div>
+    </div>
+    <div class="stage-label">// 灵动岛挂载点：SessionMessagesView 顶部居中 · z-float(30)</div>
+  </div>
+
+  <!-- 状态切换控制台 -->
+  <div class="section">
+    <div class="section-title">状态切换（点击切换灵动岛运行态）</div>
+    <div class="controls" id="controls">
+      <button class="state-btn active" data-state="ready"><span class="swatch"></span>就绪 ready</button>
+      <button class="state-btn" data-state="resident"><span class="swatch"></span>常驻 resident</button>
+      <button class="state-btn" data-state="running"><span class="swatch"></span>运行 running</button>
+      <button class="state-btn" data-state="thinking"><span class="swatch"></span>思考 thinking</button>
+      <button class="state-btn" data-state="urgent"><span class="swatch"></span>紧急 urgent</button>
+      <button class="state-btn" data-state="interrupt"><span class="swatch"></span>中断 interrupt</button>
+      <button class="state-btn" data-state="done"><span class="swatch"></span>完成 done</button>
+      <button class="state-btn" data-state="fail"><span class="swatch"></span>失败 fail</button>
+    </div>
+    <div class="toggles">
+      <label class="toggle"><input type="checkbox" id="blurToggle" checked /> backdrop-filter blur(14px)</label>
+      <label class="toggle"><input type="checkbox" id="reduceMotion" /> prefers-reduced-motion</label>
+    </div>
+  </div>
+
+  <!-- 状态语言规范表 -->
+  <div class="section">
+    <div class="section-title">状态语言规范（颜色 token · 动效曲线 · 强度档）</div>
+    <table>
+      <thead>
+        <tr>
+          <th>状态类</th>
+          <th>语义</th>
+          <th class="mono">--island-glow</th>
+          <th>动效</th>
+          <th>强度档</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="pill" style="--p-glow:var(--island-glow-ready)"><span class="d"></span>is-ready</span></td><td>就绪 · 空闲常驻</td><td class="mono">--c-status-success</td><td>静态点 · 无动效</td><td>0（静止）</td></tr>
+        <tr><td><span class="pill" style="--p-glow:var(--island-glow-ready)"><span class="d"></span>is-resident</span></td><td>常驻 · 折叠收尾</td><td class="mono">--c-status-success</td><td>静态点 · 无动效</td><td>0（静止）</td></tr>
+        <tr><td><span class="pill" style="--p-glow:var(--island-glow-running)"><span class="d"></span>is-running</span></td><td>运行中 · 工具执行</td><td class="mono">--c-status-info</td><td>wave 1.8s + breathe 1.6s</td><td>2（流动）</td></tr>
+        <tr><td><span class="pill" style="--p-glow:var(--island-glow-thinking)"><span class="d"></span>is-thinking</span></td><td>AI 思考 · 流式</td><td class="mono">--c-accent-ai</td><td>wave 2.4s + breathe 2.8s（慢呼吸）</td><td>1（缓）</td></tr>
+        <tr><td><span class="pill" style="--p-glow:var(--island-glow-urgent)"><span class="d"></span>is-urgent</span></td><td>需要你 · 审批/提问</td><td class="mono">--c-status-warning</td><td>wave 1.1s + blink 0.7s（快闪）</td><td>3（急促）</td></tr>
+        <tr><td><span class="pill" style="--p-glow:var(--island-glow-interrupt)"><span class="d"></span>is-interrupt</span></td><td>中断中 · 停止信号</td><td class="mono">--c-text-muted</td><td>wave 1.8s（仅扩散）</td><td>1（缓）</td></tr>
+        <tr><td><span class="pill" style="--p-glow:var(--island-glow-done)"><span class="d"></span>is-done</span></td><td>完成 · 5s 停留</td><td class="mono">--c-status-success</td><td>静态点 · 无动效</td><td>0（静止）</td></tr>
+        <tr><td><span class="pill" style="--p-glow:var(--island-glow-fail)"><span class="d"></span>is-fail</span></td><td>失败 · 错误终态</td><td class="mono">--c-status-danger</td><td>静态点 · 光晕加亮</td><td>0（静止）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 性能注脚 -->
+  <div class="perf-note">
+    <strong style="color:rgb(var(--c-text-primary))">性能基线（c78961a5 落地值）</strong><br>
+    • backdrop-filter: <code>blur(14px) saturate(1.5)</code>（原 24px 降档，采样核减半，视觉等效）<br>
+    • <code>will-change: transform</code> 常驻合成层，避免 backdrop 元素降级失效<br>
+    • transition 只列 <code>border-radius / width</code>，移除 box-shadow（绘制属性不过渡）<br>
+    • <code>min-width: 220px</code> 抑制 fit-content 轮播回流<br>
+    • 状态色由 <code>--island-glow / --island-aura</code> 自定义属性驱动，状态切换瞬时反馈<br>
+    • <code>@media (prefers-reduced-motion: reduce)</code> 关闭 backdrop 与 infinite 动画
+  </div>
+
+  <script>
+    const island = document.getElementById('island');
+    const label = document.getElementById('iLabel');
+    const value = document.getElementById('iValue');
+    const controls = document.getElementById('controls');
+
+    // 每个状态的展示文案（模拟 useRuntimeSummary 输出）
+    const STATE_COPY = {
+      ready:     { lbl: '就绪',          val: '· 12 项变更' },
+      resident:  { lbl: '已就绪',        val: '· 5 分钟前' },
+      running:   { lbl: '运行中',        val: '· 执行 cap.bash' },
+      thinking:  { lbl: '思考中',        val: '· 推理 8.2s' },
+      urgent:    { lbl: '需要你',        val: '· 2 项待审批' },
+      interrupt: { lbl: '中断中',        val: '· 停止信号已发' },
+      done:      { lbl: '完成',          val: '· 用时 2:35' },
+      fail:      { lbl: '失败',          val: '· exit code 1' },
+    };
+
+    const STATES = Object.keys(STATE_COPY);
+
+    function setState(s) {
+      // 清除所有状态类，只保留 island-root 基类
+      island.className = 'island-root is-' + s;
+      const copy = STATE_COPY[s];
+      label.textContent = copy.lbl;
+      value.textContent = copy.val;
+      // 同步按钮 active 态
+      controls.querySelectorAll('.state-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.state === s);
+      });
+    }
+
+    controls.addEventListener('click', e => {
+      const btn = e.target.closest('.state-btn');
+      if (!btn) return;
+      setState(btn.dataset.state);
+    });
+
+    // backdrop blur 开关（演示降级路径）
+    document.getElementById('blurToggle').addEventListener('change', e => {
+      island.style.backdropFilter = e.target.checked ? 'blur(14px) saturate(1.5)' : 'none';
+      island.style.webkitBackdropFilter = island.style.backdropFilter;
+    });
+
+    // prefers-reduced-motion 模拟（关 infinite 动画 + 关 backdrop）
+    document.getElementById('reduceMotion').addEventListener('change', e => {
+      const on = e.target.checked;
+      document.documentElement.style.setProperty('--rm', on ? '1' : '0');
+      if (on) {
+        document.body.classList.add('rm-on');
+      } else {
+        document.body.classList.remove('rm-on');
+      }
+    });
+  </script>
+
+  <!-- reduced-motion 降级样式（独立于主样式，演示完整降级路径） -->
+  <style>
+    body.rm-on .island-sym .island-wave,
+    body.rm-on .island-sym .island-dot { animation: none !important; }
+    body.rm-on .island-root { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+    body.rm-on .island-root::before { transition: none !important; }
+  </style>
+
+</body>
+</html>
