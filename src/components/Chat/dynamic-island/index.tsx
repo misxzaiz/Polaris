@@ -217,18 +217,35 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
   // 必须在 early return 之前调用，否则 isIdle 切换会导致 hook 数量不一致
   const marqueeRef = useRef<HTMLSpanElement>(null);
   const [marqueeScroll, setMarqueeScroll] = useState(true);
+  // 节流 scrollWidth 读取：思考文本每 token 变长，若每次同步读 scrollWidth（强制 reflow）
+  // + setState，高频卡顿。改为 200ms 节流，视觉无感知但 reflow 频率降一个数量级。
+  const marqueeMeasureRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const el = marqueeRef.current;
-    if (!el) return;
-    // 文本宽度 <= 视口宽度时不滚动
-    if (el.scrollWidth <= el.clientWidth) {
-      setMarqueeScroll(false);
-    } else {
-      setMarqueeScroll(true);
-    }
+    const measure = () => {
+      const el = marqueeRef.current;
+      if (!el) return;
+      if (el.scrollWidth <= el.clientWidth) {
+        setMarqueeScroll(false);
+      } else {
+        setMarqueeScroll(true);
+      }
+    };
+    // 首次立即测一次（进思考态时确立是否滚动），后续 token 变化节流
+    measure();
+    if (marqueeMeasureRef.current) clearTimeout(marqueeMeasureRef.current);
+    marqueeMeasureRef.current = setTimeout(measure, 200);
+    return () => {
+      if (marqueeMeasureRef.current) {
+        clearTimeout(marqueeMeasureRef.current);
+        marqueeMeasureRef.current = null;
+      }
+    };
   }, [thinking]);
+  // duration 档位化（非每 token 连续变）：文本长度跨档才换 duration，避免 CSS animation
+  // duration 每 token 变化导致动画从 0% 重启（用户感知「跳回起点」卡顿）。
+  // 档位：≤80 字 8s / ≤200 字 14s / >200 字 20s
   const marqueeDuration = thinking
-    ? Math.max(6, Math.min(20, thinking.length / 8))
+    ? thinking.length <= 80 ? 8 : thinking.length <= 200 ? 14 : 20
     : 14;
 
   // v5 视觉升级：root 状态类驱动 --island-glow / --island-aura（玻璃光带 + 双波符号）

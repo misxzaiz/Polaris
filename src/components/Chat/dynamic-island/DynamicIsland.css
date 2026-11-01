@@ -92,6 +92,14 @@
 .island-root.is-resident { --island-glow: rgb(var(--c-primary)); --island-aura: rgba(var(--c-primary), 0.05); }
 .island-root.is-running { --island-glow: rgb(var(--c-status-info)); --island-aura: rgba(var(--c-status-info), 0.08); }
 .island-root.is-thinking { --island-glow: rgb(var(--c-accent-ai)); --island-aura: rgba(var(--c-accent-ai), 0.08); }
+/* 思考态降级 backdrop：跑马灯文本每 token 变长触发 layout，叠 backdrop-filter 重采样
+ * 是思考态卡顿主因。思考态改实色背景（紫色光晕主导，视觉差异极小），关 backdrop-filter，
+ * 让文本变化只走普通 layout 而非 backdrop 重算。 */
+.island-root.is-thinking {
+  background: rgba(var(--c-bg-surface), 0.92);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 .island-root.is-urgent { --island-glow: rgb(var(--c-status-warning)); --island-aura: rgba(var(--c-status-warning), 0.08); }
 .island-root.is-interrupt { --island-glow: rgb(var(--c-text-muted)); --island-aura: rgba(var(--c-text-muted), 0.05); }
 .island-root.is-done { --island-glow: rgb(var(--c-primary)); --island-aura: rgba(var(--c-primary), 0.05); }
@@ -915,6 +923,9 @@
   align-items: center;
   mask-image: linear-gradient(90deg, transparent, #000 10px, #000 calc(100% - 10px), transparent);
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 10px, #000 calc(100% - 10px), transparent);
+  /* 思考态文本每 token 累积变长，隔离重排在子树内——不冒泡触发整岛（含 backdrop-filter）重排。
+   * contain: content = layout+paint 隔离；text 变化只重算本元素，不 invalidate 父链。 */
+  contain: content;
 }
 .island-marquee-text {
   display: inline-block;
