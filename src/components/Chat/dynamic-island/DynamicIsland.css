@@ -72,20 +72,20 @@
 /* ========== 状态类 → 状态色（驱动光带 + 符号 + 光晕） ==========
  * 状态优先级（index.tsx 已按此判定）：urgent > fail > done/resident > thinking > running
  * 颜色对齐主题 token，不硬编码 hex：
- * - running → --c-status-info（青蓝系，与运行语义一致）
+ * - running → --c-status-info（青蓝系，活动态流动，与运行语义一致）
  * - thinking → --c-accent-ai（紫）
  * - urgent → --c-status-warning（琥珀）
  * - fail → --c-status-danger（红）
- * - done/ready → --c-status-success（绿）
+ * - done/ready → --c-primary（蓝，平静态融于整体主色，不抢眼；绿留给真正成功完成的瞬时反馈）
  * - interrupt → --c-text-muted（灰）
  */
 .island-root.is-ready,
-.island-root.is-resident { --island-glow: rgb(var(--c-status-success)); --island-aura: rgba(var(--c-status-success), 0.06); }
+.island-root.is-resident { --island-glow: rgb(var(--c-primary)); --island-aura: rgba(var(--c-primary), 0.05); }
 .island-root.is-running { --island-glow: rgb(var(--c-status-info)); --island-aura: rgba(var(--c-status-info), 0.08); }
 .island-root.is-thinking { --island-glow: rgb(var(--c-accent-ai)); --island-aura: rgba(var(--c-accent-ai), 0.08); }
 .island-root.is-urgent { --island-glow: rgb(var(--c-status-warning)); --island-aura: rgba(var(--c-status-warning), 0.08); }
 .island-root.is-interrupt { --island-glow: rgb(var(--c-text-muted)); --island-aura: rgba(var(--c-text-muted), 0.05); }
-.island-root.is-done { --island-glow: rgb(var(--c-status-success)); --island-aura: rgba(var(--c-status-success), 0.06); }
+.island-root.is-done { --island-glow: rgb(var(--c-primary)); --island-aura: rgba(var(--c-primary), 0.05); }
 .island-root.is-fail { --island-glow: rgb(var(--c-status-danger)); --island-aura: rgba(var(--c-status-danger), 0.08); }
 
 /* ========== compact 条 ========== */
