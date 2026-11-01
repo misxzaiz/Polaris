@@ -642,6 +642,13 @@
     },
     "moveToFront": "Move to front"
   },
+  "deleteSessionConfirm": {
+    "label": "Delete session",
+    "title": "Delete session?",
+    "message": "Delete session \"{{title}}\"? This cannot be undone. The conversation history and local records will be removed.",
+    "runningWarning": "This session is still running; deleting it will stop the reply in progress.",
+    "confirm": "Delete"
+  },
   "emptyState": {
     "startChat": "Start chatting"
   },

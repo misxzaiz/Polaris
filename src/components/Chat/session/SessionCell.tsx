@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square, ArrowUpToLine } from 'lucide-react';
 import { SessionMessagesView } from '../messages/SessionMessagesView';
+import { SessionDeleteConfirm, type SessionDeleteTarget } from '@/components/Common/SessionDeleteConfirm';
 import { useSessionMetadataList, useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager';
 import { useSessionStreaming, useSessionHasPendingQuestion, useSessionHasPendingCards } from '@/stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
@@ -55,7 +56,7 @@ export const SessionCell = memo(function SessionCell({
   onEditMessage,
 }: SessionCellProps) {
   const { t } = useTranslation('chat');
-  const { switchSession, deleteSession } = useSessionManagerActions();
+  const { switchSession } = useSessionManagerActions();
 
   const chatDisplay = useConfigStore((state) => state.config?.chatDisplay);
   const chatDisplayStyle = useMemo(() => getChatDisplayStyleVars(chatDisplay), [chatDisplay]);
@@ -74,6 +75,9 @@ export const SessionCell = memo(function SessionCell({
   // 工作区菜单状态
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
   const badgeRef = useRef<HTMLButtonElement>(null);
+
+  // 删除确认弹窗（U1）：不可逆删除（内存 store + 磁盘 JSONL + 后端消息库）必须先过二次确认
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<SessionDeleteTarget | null>(null);
 
   // 获取工作区信息
   const workspace = useWorkspaceStore(state =>
@@ -98,11 +102,11 @@ export const SessionCell = memo(function SessionCell({
     }
   }, [isActive, sessionId, switchSession]);
 
-  // 关闭格子：删除会话（会自动从多窗口移除）
+  // 关闭格子：先二次确认，再删除会话（会自动从多窗口移除）
   const handleClose = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteSession(sessionId);
-  }, [sessionId, deleteSession]);
+    setDeleteConfirmTarget({ sessionId, title: sessionMetadata?.title });
+  }, [sessionId, sessionMetadata]);
 
   // 中断当前会话的 AI 回复
   const handleInterrupt = useCallback((e: React.MouseEvent) => {
@@ -248,6 +252,12 @@ export const SessionCell = memo(function SessionCell({
           onClose={() => setShowWorkspaceMenu(false)}
         />
       )}
+
+      {/* 删除确认弹窗（U1） */}
+      <SessionDeleteConfirm
+        target={deleteConfirmTarget}
+        onCancel={() => setDeleteConfirmTarget(null)}
+      />
     </>
   );
 });
