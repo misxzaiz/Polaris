@@ -1620,8 +1620,26 @@ export function ChatInput({
 
   const canSend = (value.trim() || attachments.length > 0 || contextBlocksRef.current.length > 0) && !disabled
   // 是否有可提交草稿（与 canSend 内容判定同源）。
-  // 用于按钮状态机：流式 + 有草稿 → 显示发送键（点击入队）；流式 + 空 → 显示中断键。
+  // 用于按钮状态机：流式 + 有草稿 → 停止键与发送键并排（发送键点击入队）；流式 + 空 → 显示中断键。
   const hasDraftToSubmit = value.trim() || attachments.length > 0 || contextBlocksRef.current.length > 0
+
+  // 中断/停止按钮元素：流式期间的紧急出口。
+  // 根因（U2，perf-ux-round2）：原状态机在「流式+有草稿」时用发送键整体替换中断键，
+  // 唯一停止手段只剩无 UI 提示的 ESC（handleKeyDown 的 Escape 分支），紧急出口消失。
+  // 抽出共用元素后两形态并存：空输入独占按钮位（原语义不变）；
+  // 有草稿时与发送键并排（16px 图标 + p-1.5 = 28px 命中区 ≥ 24px，窄面板不挤压）。
+  const interruptButton = isStreaming && onInterrupt && (
+    <button
+      onClick={onInterrupt}
+      disabled={isInterrupting}
+      className="shrink-0 p-1.5 rounded-full bg-danger text-white hover:bg-danger-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-soft"
+      title={isInterrupting ? t('input.interrupting', '正在中断…') : t('input.interrupt')}
+    >
+      {isInterrupting
+        ? <Loader2 size={16} className="animate-spin" />
+        : <IconStop size={16} />}
+    </button>
+  )
 
   return (
     <div data-theme-panel className="chat-input-root border-t border-border bg-background-elevated relative" ref={containerRef} style={chatDisplayStyle}>
@@ -2095,22 +2113,13 @@ export function ChatInput({
               {statusBarSlot && value.length > 0 && (
                 <span className="hidden sm:inline-flex text-[11px] text-text-tertiary tabular-nums px-1">{value.length}</span>
               )}
-              {/* 发送/中断按钮
+              {/* 发送/中断/停止按钮
                   状态机（对齐 ZCode showStopControl = canStop && !hasDraftToSubmit）：
-                  - 流式 + 有草稿 → 发送键（handleSend 的 isStreaming 分支自动入队）
+                  - 流式 + 有草稿 → 停止键与发送键并排（发送键走 handleSend 的 isStreaming 分支自动入队）
                   - 流式 + 空输入 → 中断键
                   - 空闲 + 有内容 → 发送键（直接发送） */}
-              {isStreaming && onInterrupt && !hasDraftToSubmit ? (
-                <button
-                  onClick={onInterrupt}
-                  disabled={isInterrupting}
-                  className="shrink-0 p-1.5 rounded-full bg-danger text-white hover:bg-danger-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-soft"
-                  title={isInterrupting ? t('input.interrupting', '正在中断…') : t('input.interrupt')}
-                >
-                  {isInterrupting
-                    ? <Loader2 size={16} className="animate-spin" />
-                    : <IconStop size={16} />}
-                </button>
+              {interruptButton && !hasDraftToSubmit ? (
+                interruptButton
               ) : (
                 <button
                   onClick={handleSend}
@@ -2121,6 +2130,10 @@ export function ChatInput({
                   <IconSend size={16} />
                 </button>
               )}
+              {/* U2：流式+有草稿时停止键常驻——原三元把中断键整体替换为发送键后，
+                  紧急出口只剩无 UI 提示的 ESC；此处并排补回，直连同一
+                  onInterrupt/isInterrupting 中断链路，不改队列入队语义 */}
+              {interruptButton && hasDraftToSubmit ? interruptButton : null}
             </div>
           </div>
         </div>
