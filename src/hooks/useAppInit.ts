@@ -20,7 +20,6 @@ import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { useTerminalStore } from '@/stores/terminalStore';
 import { usePluginStore } from '@/stores/pluginStore';
 import { usePluginServiceStore } from '@/stores/pluginServiceStore';
-import { useLspStore } from '@/stores/lspStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { bootstrapEngines } from '../core/engine-bootstrap';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
@@ -32,7 +31,6 @@ import { currentMode } from '@/services/transport';
 import { pluginRegistry } from '../plugin-system';
 import { applyPluginStyles } from '../plugin-system/styles';
 import { browserClearOrphanedSessions } from '@/services/tauri/browserService';
-import { preloadLanguageExtensions } from '@/components/Editor/Editor';
 
 const log = createLogger('AppInit');
 
@@ -142,9 +140,14 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     // 默认关闭（零预加载，打开文件时按扩展名单点 import）。
     if (useConfigStore.getState().config?.performance?.codeEditorLanguages) {
       const runPreload = () => {
-        preloadLanguageExtensions().catch((e) =>
-          log.warn('Editor language preload failed', { error: String(e) }),
-        );
+        // FE-2: 改动态 import——静态 import Editor.tsx 会把 @codemirror 全家
+        // （manualChunks 钉入单一 codemirror chunk，~1MB）拽回首载；
+        // 预热调用点本就在异步 idle 回调中，加载时机后移不改变语义。
+        import('@/components/Editor/Editor')
+          .then(({ preloadLanguageExtensions }) => preloadLanguageExtensions())
+          .catch((e) =>
+            log.warn('Editor language preload failed', { error: String(e) }),
+          );
       };
       // 优先 idle 时预加载，避免与首屏渲染抢资源；不支持 requestIdleCallback 时立即降级
       if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
@@ -229,6 +232,11 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 // 预加载设置相关数据
     try {
       setInitPhase('正在预加载语言包...');
+      // FE-2: lspStore 静态绑定 @codemirror/lsp-client、@codemirror/view 与
+      // ctrlHoverLink（components/Editor 域），静态 import 会把 codemirror chunk
+      // 拽回首载；改动态 import 使其随 codemirror 一并移出首载。
+      // 初始化本就在 async 流程内，加载时机后移不改变启动时序。
+      const { useLspStore } = await import('@/stores/lspStore');
       await Promise.all([
         useSnippetStore.getState().loadSnippets(),
         useSkillStore.getState().loadSkills(),
@@ -310,7 +318,11 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       cleanupCliListeners();
       perfHotSwitchCleanupRef.current?.();
       // 关闭所有 LSP 语言服务器进程，避免遗留子进程
-      void useLspStore.getState().deactivateAll();
+      // FE-2: lspStore 已改动态加载（切断首载静态链），unmount 清理同样走动态
+      // import；清理本为 fire-and-forget，失败仅告警不阻塞卸载流程。
+      void import('@/stores/lspStore')
+        .then(({ useLspStore }) => useLspStore.getState().deactivateAll())
+        .catch((e) => log.warn('LSP cleanup failed', { error: String(e) }));
       disconnectTransport();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only init, all deps are stable refs

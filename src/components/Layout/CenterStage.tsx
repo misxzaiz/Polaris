@@ -4,7 +4,7 @@
  * 包含 TabBar 和 TabContent,支持 Editor 和 DiffViewer 切换
  */
 
-import { ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { ReactNode, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, FileDiff, FileText, Image as ImageIcon, GitPullRequest, Rows3, Columns2, Globe2, Pin } from 'lucide-react'
 import { useTabStore, Tab } from '@/stores/tabStore'
@@ -12,7 +12,14 @@ import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useFileExplorerStore } from '@/stores/fileExplorerStore'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
-import { EditorPanel, BreadcrumbBar } from '@/components/Editor'
+// FE-2: BreadcrumbBar 是轻组件，走深度路径绕过 Editor barrel——barrel 一旦静态绑定
+// EditorPanel/CodeMirrorEditor 会把 @codemirror 全家（单一 codemirror chunk，~1MB）拽回首载。
+import { BreadcrumbBar } from '@/components/Editor/BreadcrumbBar'
+// FE-2: EditorPanel 静态链（EditorPanel → Editor.tsx → @codemirror/*）是 CenterStage
+// 常规布局必渲染路径，改 React.lazy 移出首载。fallback 用 null：TabContent case 'editor'
+// 的容器 flex-1 自带尺寸约束（尺寸由外层 flex 决定而非内容），加载完成前后占位不变，
+// 不引起布局跳动——比 loading 文案更稳，无文本闪烁。
+const EditorPanel = lazy(() => import('@/components/Editor/EditorPanel').then(m => ({ default: m.EditorPanel })))
 import { TabContextMenu } from './TabContextMenu'
 import { ImagePreview } from '@/components/Preview/ImagePreview'
 import { VideoPreview } from '@/components/Preview/VideoPreview'
@@ -488,7 +495,9 @@ export function TabContent({ className = '' }: TabContentProps) {
     case 'editor':
       return (
         <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
-          <EditorPanel filePath={activeTab.filePath} />
+          <Suspense fallback={null}>
+            <EditorPanel filePath={activeTab.filePath} />
+          </Suspense>
         </div>
       )
 

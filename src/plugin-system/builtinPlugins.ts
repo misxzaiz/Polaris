@@ -4,7 +4,6 @@ import { pluginPanelRegistry } from './panelRegistry'
 import { chatCardRegistry } from './chatCardRegistry'
 import { fileExplorerToolbarSlot } from './fileExplorerToolbarSlot'
 import { GitStatusIndicator } from '@/components/FileExplorer/GitStatusIndicator'
-import { registerGitEditorExtensions } from './editor'
 import { computerPluginManifest } from '@/plugins/computer/manifest'
 import { requirementPluginManifest } from '@/plugins/requirement/manifest'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
@@ -123,7 +122,13 @@ const corePluginManifest: PolarisPluginManifest = {
 export function registerBuiltinPlugins(): void {
   pluginRegistry.register(corePluginManifest)
   // Git 编辑器集成（gutter / blame / 改动导航）注册到 editor extension slot
-  registerGitEditorExtensions()
+  // FE-2: ./editor 静态绑定 gitGutter/blameHover/changeNavigator 的 @codemirror
+  // 值引用，经 plugin-system barrel（App.tsx 静态 import pluginRegistry）会把
+  // codemirror chunk（~1MB）拽回首载；改动态 import。消费方 Editor.tsx 位于
+  // 编辑器懒 chunk，collectExtensions 调用时序恒晚于本注册微任务。
+  void import('./editor').then(({ registerGitEditorExtensions }) =>
+    registerGitEditorExtensions(),
+  )
   pluginRegistry.register(todoPluginManifest)
   pluginRegistry.register(requirementPluginManifest)
   pluginRegistry.register(prdPreviewPluginManifest)
