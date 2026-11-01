@@ -14,7 +14,6 @@ import { useThemeStore } from './themeStore';
 import { getBuiltInThemeByShortName } from '@/data/builtInThemes';
 import { fsWatchStop } from '@/services/tauri/fileService';
 import { schedulerStop, schedulerStart } from '@/services/tauri/schedulerService';
-import { useLspStore } from '@/stores/lspStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 const log = createLogger('ConfigStore');
@@ -416,20 +415,33 @@ function handlePerfSwitch(prev: PerformanceFeatures, next: PerformanceFeatures):
   // lspIndex：true → false 时关闭所有 workspace 索引引擎
   if (prev.lspIndex && !next.lspIndex) {
     perfLog.info('lspIndex 关闭，释放索引引擎');
-    const { openedWorkspaces, ensureClose } = useLspStore.getState();
-    openedWorkspaces.forEach((ws) => {
-      void ensureClose(ws);
-    });
-    if (openedWorkspaces.size === 0) {
-      perfLog.debug('lspIndex 关闭时无已打开 workspace');
-    }
+    // FE-2: lspStore 静态绑定 @codemirror/lsp-client、@codemirror/view 与
+    // ctrlHoverLink，静态 import 会把 codemirror chunk（~1MB）拽回首载；
+    // 改动态 import 切断链路。热切换本为 fire-and-forget，加载延迟不改变语义。
+    void import('@/stores/lspStore')
+      .then(({ useLspStore }) => {
+        const { openedWorkspaces, ensureClose } = useLspStore.getState();
+        openedWorkspaces.forEach((ws) => {
+          void ensureClose(ws);
+        });
+        if (openedWorkspaces.size === 0) {
+          perfLog.debug('lspIndex 关闭时无已打开 workspace');
+        }
+      })
+      .catch((err) => {
+        perfLog.warn('加载 lspStore 失败，跳过索引引擎关闭', { error: String(err) });
+      });
   }
   // lspIndex：false → true 时热开启当前 workspace
   if (!prev.lspIndex && next.lspIndex) {
     perfLog.info('lspIndex 开启，热启动索引引擎');
     const ws = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
     if (ws) {
-      void useLspStore.getState().ensureOpen(ws);
+      void import('@/stores/lspStore')
+        .then(({ useLspStore }) => useLspStore.getState().ensureOpen(ws))
+        .catch((err) => {
+          perfLog.warn('加载 lspStore 失败，索引引擎未开启', { error: String(err) });
+        });
     }
   }
 

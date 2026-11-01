@@ -8,12 +8,16 @@ const log = createLogger('App');
 
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelTabStrip, CenterStage, RightPanel } from './components/Layout';
-import { NarrowTabOverlay } from './components/Editor';
 import { ChatInput, ChatStatusBar, CompactHandoffProgress, ErrorBanner, CompactHandoffButton, MultiWindowMenu, NewSessionButton } from './components/Chat';
 import type { EditMode } from './components/Chat';
 // 条件渲染的重组件统一懒加载，避免首帧解析 400+ 模块的 Chat barrel 传递依赖
 const SessionHistoryPanelLazy = lazy(() => import('./components/Chat/session/SessionHistoryPanel').then(m => ({ default: m.SessionHistoryPanel })));
 const MultiSessionGridLazy = lazy(() => import('./components/Chat/session/MultiSessionGrid').then(m => ({ default: m.MultiSessionGrid })));
+// FE-2: NarrowTabOverlay 原经 Editor barrel 静态 import，会把 EditorPanel/Editor.tsx
+// 传导的 @codemirror 全家（manualChunks 钉入单一 codemirror chunk，~1MB）拽回首载。
+// 它仅 isCompact && narrowTabId 时渲染，改 React.lazy 移出首载；overlay 场景
+// fallback 用 null，对齐本文件 FileSearchModal/SymbolPalette 等既有 Suspense 范式。
+const NarrowTabOverlayLazy = lazy(() => import('./components/Editor/NarrowTabOverlay').then(m => ({ default: m.NarrowTabOverlay })));
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { RightSlideOver } from './components/Common/RightSlideOver';
 import { SelectionContextMenu } from './components/Translate';
@@ -361,7 +365,9 @@ function App() {
                 与 LeftPanelDrawer 同构。关闭只清信号，不销毁 tab；
                 窗口拖宽后 CenterStage 接管同一批 tab。 */}
             {isCompact && narrowTabId && (
-              <NarrowTabOverlay />
+              <Suspense fallback={null}>
+                <NarrowTabOverlayLazy />
+              </Suspense>
             )}
 
             {/* 终端全屏时让位，不渲染编辑器 */}
