@@ -713,7 +713,7 @@ body {
 
 /* 上下文芯片悬停效果 */
 .context-chip {
-  transition: all 150ms ease-out;
+  transition: transform 150ms ease-out, box-shadow 150ms ease-out;
 }
 
 .context-chip:hover {
@@ -728,7 +728,7 @@ body {
 
 /* 发送按钮悬停发光效果增强 */
 .send-button {
-  transition: all 150ms ease-out;
+  transition: transform 150ms ease-out, box-shadow 150ms ease-out;
 }
 
 .send-button:not(:disabled):hover {
@@ -1996,7 +1996,7 @@ body {
 
 /* 小屏模式过渡 */
 .compact-mode-transition {
-  transition: all 0.2s ease-out;
+  transition: transform 0.2s ease-out, opacity 0.2s ease-out, width 0.2s ease-out;
 }
 
 /* 输入框聚焦效果 */
@@ -2249,6 +2249,36 @@ html.focus-mode .chat-prose:hover > blockquote:not(:hover) {
 }
 .git-inline-toggle:hover {
   text-decoration: underline;
+}
+
+/* ============================================
+   ThinkingBlock 流式动画（原内联 <style> 提全局，避免每思考块重复注入 keyframes）
+   - think-glow：用 filter: drop-shadow（合成属性）替代 box-shadow（绘制属性），
+     流式期数十秒持续动画不再每帧重绘边框光晕。
+   - think-dot：transform + opacity，合成友好。
+   ============================================ */
+@keyframes think-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.10));
+    border-color: rgba(59, 130, 246, 0.15);
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.22));
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+}
+@keyframes think-dot {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+/* 流式思考态容器：挂 think-glow，显式提升合成层（drop-shadow + transform 在合成层才高效） */
+.thinking-streaming {
+  animation: think-glow 2s ease-in-out infinite;
+  will-change: filter;
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-streaming { animation: none; }
+  [style*="think-dot"] { animation: none !important; opacity: 0.7; }
 }
 
 

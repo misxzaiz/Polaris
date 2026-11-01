@@ -69,35 +69,17 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
 
   return (
     <>
-      {/* 自定义动画 keyframes */}
-      <style>{`
-        @keyframes think-glow {
-          0%, 100% {
-            box-shadow: 0 0 6px rgba(59, 130, 246, 0.06);
-            border-color: rgba(59, 130, 246, 0.15);
-          }
-          50% {
-            box-shadow: 0 0 14px rgba(59, 130, 246, 0.15);
-            border-color: rgba(59, 130, 246, 0.3);
-          }
-        }
-        @keyframes think-dot {
-          0%, 100% { opacity: 0.4; transform: scale(1); }
-          50% { opacity: 1; transform: scale(1.25); }
-        }
-      `}</style>
       <div
         className={
           compact
             ? 'border-b border-border last:border-b-0'
             : `my-2 rounded-lg overflow-hidden border transition-colors bg-background-surface ${
                 isStreaming
-                  ? 'bg-background-base'
+                  ? 'bg-background-base thinking-streaming'
                   : 'border-border bg-background-elevated'
               }`
         }
         style={!compact && isStreaming ? {
-          animation: 'think-glow 2s ease-in-out infinite',
           borderColor: 'rgba(59, 130, 246, 0.15)',
         } : {}}
       >

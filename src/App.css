@@ -182,6 +182,10 @@
     repeating-linear-gradient(-45deg, transparent, transparent 85px, rgba(220,38,38,0.02) 85px, rgba(220,38,38,0.02) 86px),
     repeating-linear-gradient(135deg, transparent, transparent 100px, rgba(59,130,246,0.03) 100px, rgba(59,130,246,0.03) 101px),
     repeating-linear-gradient(45deg, transparent, transparent 100px, rgba(59,130,246,0.02) 100px, rgba(59,130,246,0.02) 101px);
+  /* web-pulse 对 opacity 做 4s infinite 动画；inset:0 全屏覆盖，未提升合成层时
+   * 每帧在主层上做 opacity 合成。will-change: opacity 显式提升为独立合成层，
+   * 让动画只在该层完成，不与消息流/面板的绘制竞争。 */
+  will-change: opacity;
   animation: web-pulse 4s ease-in-out infinite;
 }
 
@@ -205,6 +209,10 @@
     radial-gradient(ellipse at 15% 50%, rgba(220,38,38,0.08) 0%, transparent 50%),
     radial-gradient(ellipse at 85% 30%, rgba(59,130,246,0.15) 0%, transparent 50%),
     radial-gradient(ellipse at 50% 100%, rgba(59,130,246,0.05) 0%, transparent 40%);
+  /* 全屏 3 层 radial-gradient 静态背景，未提升合成层时滚动/重绘会重新光栅化。
+   * 父级 .theme-root 有 isolation: isolate 可能打破合成上下文缓存。
+   * translateZ(0) 强制提升独立层，gradient 只光栅化一次后复用。装饰层 pointer-events:none 无副作用。 */
+  transform: translateZ(0);
 }
 
 /* 蛛网纹理脉冲动画 */
@@ -872,7 +880,7 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s ease-out, color 0.15s ease-out, border-color 0.15s ease-out;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;

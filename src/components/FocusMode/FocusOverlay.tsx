@@ -96,7 +96,9 @@ export function FocusOverlay() {
         background: `radial-gradient(circle ${spotClearRadius}px at var(--mx, 50%) var(--my, 50%), transparent 0%, transparent 55%, rgba(8,10,16,.82) 100%)`,
         backdropFilter: spotBlur > 0 ? `blur(${spotBlur}px)` : 'none',
         WebkitBackdropFilter: spotBlur > 0 ? `blur(${spotBlur}px)` : 'none',
-        transition: 'background .08s linear',
+        // 不设 transition：--mx/--my 每 rAF 帧更新 → background 每帧重算，
+        // 叠 transition 会让浏览器在每帧间插值 background（绘制属性），反比瞬时更新更卡。
+        // 鼠标聚光灯本就该逐帧跟随，平滑感应通过对鼠标坐标做插值，而非过渡 background 属性。
       }}
     />,
     document.body,

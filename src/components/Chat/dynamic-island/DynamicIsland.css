@@ -27,10 +27,15 @@
   transform: translateX(-50%);
   z-index: var(--z-float, 30);
   width: fit-content;
-  min-width: 120px;
+  /* min-width 220px：compact 态轮播文案长度变化时，fit-content 宽度随之变化 → 触发 layout 回流。
+   * 固定下限让多数文案变化落在区间内不触发 width 重算（width 是 layout 属性，cost 远高于 transform）。
+   * min-width 120 → 220 覆盖「符号 + 一行文案 + 数值」典型宽度，展开态由 .island-expanded 覆盖为 max。 */
+  min-width: 220px;
   max-width: min(440px, calc(100% - 32px));
   border-radius: 0 0 14px 14px;
-  /* 玻璃质感：用半透明 + backdrop-filter 替代硬编码背景，与背景融合 */
+  /* 玻璃质感：用半透明 + backdrop-filter 替代硬编码背景，与背景融合。
+   * blur 14px（非 24px）：backdrop-filter 成本∝半径，14px 视觉等效但采样核减半；
+   * 配合 will-change: transform 让岛常驻独立合成层，避免背后消息流滚动时反复重采样。 */
   background: rgba(var(--c-bg-surface), 0.72);
   /* 无 border 线（HIG：边缘融于背景）；底部状态光带由 ::before 定义边界 */
   border: none;
@@ -38,12 +43,16 @@
     0 10px 30px rgba(0, 0, 0, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
     inset 0 -8px 24px var(--island-aura, transparent);
-  backdrop-filter: blur(24px) saturate(1.5);
-  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  /* 岛用 translateX(-50%) 居中，本就在合成层；显式声明避免状态切换时反复提升/降级。
+   * backdrop-filter 元素一旦被强制降级回非合成层，blur 会整体失效（视觉崩坏），will-change 是保底。 */
+  will-change: transform;
   overflow: hidden;
+  /* transition 只列合成/变换属性：box-shadow 是绘制属性，过渡会触发整岛重绘（状态切换高频），
+   * 移出列表让状态色瞬时变化（状态语义本就该即时反馈，不应缓动）。 */
   transition:
     border-radius 0.42s cubic-bezier(0.34, 1.56, 0.64, 1),
-    box-shadow 0.3s ease,
     width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 /* 底部状态光带：取代硬 border，状态色随 --island-glow 变化流动 */
@@ -110,6 +119,8 @@
   width: 14px;
   height: 14px;
   flex-shrink: 0;
+  /* wave/breathe 是 transform infinite 动画，常驻合成层避免每帧提升/降级 */
+  will-change: transform;
   display: grid;
   place-items: center;
 }
@@ -352,7 +363,8 @@
   align-items: center;
   justify-content: center;
   padding: 0;
-  transition: all 0.12s;
+  /* 显式属性：all 会监听 width/height/padding 等 layout 属性，hover 仅变 background+color，列这两项即可 */
+  transition: background 0.12s ease-out, color 0.12s ease-out;
 }
 .island-close:hover {
   background: rgba(255, 255, 255, 0.08);
@@ -522,7 +534,8 @@
   background: transparent;
   color: rgb(var(--c-text-secondary));
   cursor: pointer;
-  transition: all 0.12s;
+  /* 显式属性：按钮 hover 仅变 background+color，无 layout 变化，无需 all */
+  transition: background 0.12s ease-out, color 0.12s ease-out;
   display: inline-flex;
   align-items: center;
   gap: 4px;
