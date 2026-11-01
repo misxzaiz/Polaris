@@ -55,9 +55,16 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
   // 面板是否可见（type 非 none）。children 保活：不可见时外壳隐藏，内容仍挂载
   const panelVisible = useViewStore((state) => state.leftPanelType !== 'none')
 
-  // 拖拽处理（无限制）
+  // 拖拽处理。宽度钳位 200–600px，照抄 RightPanel.handleResize 的
+  // Math.max/Math.min 范式（此前为「无限制」，可把左栏拖到近乎全屏或拖成极窄）：
+  // - 下限取 200 而非更小的值：与本面板 flexible 态的 min-w-[200px] 及右栏拖宽
+  //   下限（Math.max(200, ...)）一致，同一面板两种形态共用一个最小宽，不产生
+  //   「停靠态能拖到 160、自适应态却至少 200」的割裂。
+  // - 上限 600 收紧于右栏的 1200：左栏是文件树/Git/终端等导航辅助列，超过
+  //   600px 会持续挤压编辑器主工作区；右栏为 AI 对话，有更宽的阅读需求。
   const handleResize = (delta: number) => {
-    setWidth(width + delta)
+    const newWidth = Math.max(200, Math.min(600, width + delta))
+    setWidth(newWidth)
   }
 
   // 抽屉形态：全屏展开态 + Escape 关闭

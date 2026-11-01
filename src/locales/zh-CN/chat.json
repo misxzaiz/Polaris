@@ -641,6 +641,13 @@
     },
     "moveToFront": "前置"
   },
+  "deleteSessionConfirm": {
+    "label": "删除会话",
+    "title": "删除会话？",
+    "message": "确定删除会话「{{title}}」吗？该操作不可恢复，会话历史与本地记录将一并删除。",
+    "runningWarning": "该会话正在运行，删除将终止回复。",
+    "confirm": "删除"
+  },
   "emptyState": {
     "startChat": "开始对话吧"
   },

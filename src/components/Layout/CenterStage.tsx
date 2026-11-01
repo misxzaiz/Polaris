@@ -279,6 +279,11 @@ export function TabBar({ className = '' }: TabBarProps) {
         {tabs.map((tab) => {
           const isDirty = checkTabDirty(tab)
           return (
+            // 根因修复：标签最小宽必须是静态字面量类。原写法
+            // `min-w-[${tab.pinned ? '48' : '120'}]` 是插值类，Tailwind JIT
+            // 扫不到该候选（且缺 px 单位），产物中不存在对应 CSS，最小宽度
+            // 一直静默失效。改为条件二选一的字面量类：min-w-12 = 48px
+            // （Tailwind 原生 spacing 刻度）；非固定标签保留 120px 精确值。
             <div
               key={tab.id}
               draggable
@@ -311,7 +316,7 @@ export function TabBar({ className = '' }: TabBarProps) {
                 dragTabIdRef.current = null
               }}
               onContextMenu={(e) => handleContextMenu(e, tab.id)}
-              className={`group flex items-center gap-2 px-3 py-1.5 rounded-t-md min-w-[${tab.pinned ? '48' : '120'}] max-w-[200px] cursor-pointer transition-all select-none ${
+              className={`group flex items-center gap-2 px-3 py-1.5 rounded-t-md ${tab.pinned ? 'min-w-12' : 'min-w-[120px]'} max-w-[200px] cursor-pointer transition-all select-none ${
                 activeTabId === tab.id
                   ? 'bg-background-base text-text-primary border-t-2 border-primary'
                   : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'

@@ -7,12 +7,16 @@
  *
  * 设计：非模态浮层（不打断当前工作），队列逐条展示；组件自持队列与订阅，
  * 无全局 store（审批是瞬时交互，无需跨组件状态）。
+ * 卡片展示 capability/action/caller/resource 全量元信息（超长可点击展开）；
+ * 拒绝回执与审批失败走 toastStore 轻提示，不留「点了没反应」的静默态。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ShieldAlert, Check, X } from 'lucide-react';
 import { listen, invoke } from '@/services/transport';
 import { createLogger } from '@/utils/logger';
+import { cn } from '@/utils/cn';
+import { useToastStore } from '@/stores/toastStore';
 
 const log = createLogger('PermissionPromptHost');
 
@@ -28,6 +32,8 @@ interface PermissionPromptEvent {
 
 interface PendingPrompt extends PermissionPromptEvent {
   resolving: boolean
+  /** capability/resource 元信息超长截断的展开态（点击切换），长路径/长 caller 也能看全 */
+  expanded: boolean
 }
 
 /** 动作的人类可读名（覆盖已知高危动作；未知动作原样展示） */
@@ -50,7 +56,7 @@ export function PermissionPromptHost() {
       setQueue((q) =>
         q.some((p) => p.requestId === payload.requestId)
           ? q
-          : [...q, { ...payload, resolving: false }],
+          : [...q, { ...payload, resolving: false, expanded: false }],
       )
     }).then((fn) => {
       if (disposed.current) {
@@ -69,14 +75,23 @@ export function PermissionPromptHost() {
     setQueue((q) => q.map((p) => (p.requestId === requestId ? { ...p, resolving: true } : p)))
     try {
       await invoke('respond_permission_request', { requestId, approved })
-    } catch (error) {
-      log.warn('respond_permission_request 失败', {
-        requestId,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
+      // 根因：拒绝后卡片随即消失，用户无从确认裁决是否生效；用 toast 轻提示回执
+      if (!approved) {
+        useToastStore.getState().info('已拒绝', 'AI 将收到拒绝结果')
+      }
       setQueue((q) => q.filter((p) => p.requestId !== requestId))
+    } catch (error) {
+      // 根因：此前失败只写日志且卡片直接消失，用户不知道拒绝是否生效也无法重试；
+      // 改为错误 toast + 保留卡片（解除 resolving 锁）允许再次裁决
+      const detail = error instanceof Error ? error.message : String(error)
+      useToastStore.getState().error('权限审批操作失败', detail)
+      setQueue((q) => q.map((p) => (p.requestId === requestId ? { ...p, resolving: false } : p)))
+      log.warn('respond_permission_request 失败', { requestId, error: detail })
     }
+  }, [])
+
+  const toggleExpanded = useCallback((requestId: string) => {
+    setQueue((q) => q.map((p) => (p.requestId === requestId ? { ...p, expanded: !p.expanded } : p)))
   }, [])
 
   if (queue.length === 0) return null
@@ -87,8 +102,12 @@ export function PermissionPromptHost() {
       data-testid="permission-prompt-host"
     >
       {queue.map((p) => {
+        // 未知动作兜底带 capability 名，不再含糊的「执行受控操作」
         const actionLabel =
-          (p.action && ACTION_LABELS[p.action]) || p.action || '执行受控操作'
+          (p.action && ACTION_LABELS[p.action]) || p.action || `受控操作（${p.capability}）`
+        const metaText = `${p.capability}${p.action ? ` · ${p.action}` : ''}${p.caller ? ` · 来自 ${p.caller}` : ''}`
+        // truncate 的展开途径：点击元信息区切换换行展示，截断态辅以 hover title
+        const metaLineClass = p.expanded ? 'whitespace-normal break-all' : 'truncate'
         return (
           <div
             key={p.requestId}
@@ -100,11 +119,16 @@ export function PermissionPromptHost() {
                 <div className="text-[13px] font-medium text-text-primary">
                   AI 请求执行：{actionLabel}
                 </div>
-                <div className="mt-1 truncate text-[11px] text-text-secondary">
-                  {p.capability}
-                  {p.action ? ` · ${p.action}` : ''}
-                  {p.caller ? ` · 来自 ${p.caller}` : ''}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(p.requestId)}
+                  className="mt-1 block w-full text-left text-[11px] text-text-secondary"
+                  title={p.expanded ? undefined : `${metaText} · ${p.resource}`}
+                >
+                  <span className={cn('block', metaLineClass)}>{metaText}</span>
+                  {/* resource 是本次权限的作用对象（如文件路径），单列一行小字 */}
+                  <span className={cn('block', metaLineClass)}>{p.resource}</span>
+                </button>
               </div>
             </div>
             <div className="mt-2.5 flex justify-end gap-2">

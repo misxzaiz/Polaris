@@ -14,6 +14,7 @@ import { cn } from '@/utils/cn'
 import { Plus } from 'lucide-react'
 import { SessionTab } from './SessionTab'
 import { CreateSessionModal } from './CreateSessionModal'
+import { SessionDeleteConfirm, type SessionDeleteTarget } from '@/components/Common/SessionDeleteConfirm'
 import {
   useSessionMetadataList,
   useActiveSessionId,
@@ -36,13 +37,16 @@ export const SessionTabs = memo(function SessionTabs({ onSessionSelect }: Sessio
   // 数据源：使用 multiSessionIds 而不是所有会话
   const multiSessionIds = useViewStore(state => state.multiSessionIds)
   const activeSessionId = useActiveSessionId()
-  const { deleteSession, switchSession } = useSessionManagerActions()
+  const { switchSession } = useSessionManagerActions()
 
   // 滚动容器 ref
   const containerRef = useRef<HTMLDivElement>(null)
 
   // 弹窗状态
   const [showCreateModal, setShowCreateModal] = useState(false)
+
+  // 删除确认弹窗（U1）：不可逆删除必须二次确认
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<SessionDeleteTarget | null>(null)
 
   // 获取所有会话元数据
   const allSessionMetadata = useSessionMetadataList()
@@ -67,10 +71,11 @@ export const SessionTabs = memo(function SessionTabs({ onSessionSelect }: Sessio
     onSessionSelect?.(sessionId)
   }, [switchSession, onSessionSelect])
 
-  // 关闭会话：删除会话（会自动从多窗口移除）
+  // 关闭会话：先二次确认，再删除（会自动从多窗口移除）
   const handleClose = useCallback((sessionId: string) => {
-    deleteSession(sessionId)
-  }, [deleteSession])
+    const meta = allSessionMetadata.find(s => s.id === sessionId)
+    setDeleteConfirmTarget({ sessionId, title: meta?.title })
+  }, [allSessionMetadata])
 
   // 如果没有可见会话，显示新建按钮
   if (visibleSessions.length === 0) {
@@ -133,6 +138,11 @@ export const SessionTabs = memo(function SessionTabs({ onSessionSelect }: Sessio
       {showCreateModal && (
         <CreateSessionModal onClose={() => setShowCreateModal(false)} />
       )}
+      {/* 删除确认弹窗（U1） */}
+      <SessionDeleteConfirm
+        target={deleteConfirmTarget}
+        onCancel={() => setDeleteConfirmTarget(null)}
+      />
     </>
   )
 })

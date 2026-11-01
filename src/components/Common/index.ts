@@ -11,6 +11,8 @@ export { ErrorBoundary } from './ErrorBoundary';
 export { DropdownMenu } from './DropdownMenu';
 export { ToastContainer } from './Toast';
 export { ConfirmDialog } from './ConfirmDialog';
+export { SessionDeleteConfirm } from './SessionDeleteConfirm';
+export type { SessionDeleteTarget } from './SessionDeleteConfirm';
 export { UnsavedDialog } from './UnsavedDialog';
 export { JsonTreeView } from './JsonTreeView';
 export { Modal } from './Modal';
