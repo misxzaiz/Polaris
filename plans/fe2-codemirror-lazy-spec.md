@@ -75,3 +75,34 @@ pnpm build                            # 产 dist
 1. **builtinPlugins.ts:129 动态 import 竞态窗口（low）**：`void import('./editor')` 为 fire-and-forget，与 Editor.tsx `collectExtensions` 的同步快照存在理论竞态——启动即恢复文件 tab 的极速首开若早于微任务注册完成，会丢 git gutter/blame/导航扩展（重开文件可恢复）。实际窗口毫秒级（editor barrel chunk 远小于 codemirror chunk，并行加载几乎必然先完成）。后续可改 `await` 或注册失败重试。
 2. **useAppInit.ts lspStore await 与同 try 块耦合（low）**：`await import('@/stores/lspStore')` 在共享 try 块内，chunk 加载异常会连带跳过同块内 snippet/skill/integration 的 Promise.all（catch 仅 warn）。同类动态加载（cleanup、configStore）均为独立 catch 链，可对齐。极端场景、影响可控。
 3. 边 3 注记已回填（见 §二 表格）。
+
+---
+
+## 九、附：并行会话独立 spec 对照保全（2026-11-01）
+
+> 本轮有并行会话独立推进同一目标（其 plans/perf-ux-round2-plan.md 亦评选 FE-2，并在 worktrees/fe2-verify 复核了本分支实现，其独立撰写的 spec 曾暂存主仓 plans/ 未跟踪）。为不丢其成果，独有内容并入如下；两边结论一致、切法兼容。
+
+### 并行版九边全清单（grep 实测，src/ 全仓）
+
+| # | 链 | 处理 |
+|---|---|---|
+| ① | App.tsx:11 → Editor/index.ts barrel → NarrowTabOverlay → EditorPanel → Editor.tsx | NarrowTabOverlay 改 React.lazy + Suspense(null) |
+| ② | App.tsx → Layout/CenterStage.tsx:15 → barrel → EditorPanel → Editor.tsx | EditorPanel 改 lazy + Suspense(null)；BreadcrumbBar 深度路径 import |
+| ③ | Editor/index.ts barrel re-export 7 符号连坐 | 移除传导 CodeMirror 的 3 个 re-export，保留轻组件 |
+| ④⑤ | EditorPanel.tsx:6/8 → Editor.tsx / MarkdownEditor | 不动（位于懒 chunk 内部） |
+| ⑥ | hooks/useAppInit.ts:35 → Editor/Editor.tsx（preloadLanguageExtensions） | 改动态 import()（preload 调用点本就异步） |
+| ⑦ | useAppInit.ts:23 → stores/lspStore → @codemirror/lsp-client、@codemirror/view、ctrlHoverLink | useAppInit 改动态 import('@/stores/lspStore')（init Promise.all 处 + unmount cleanup 处） |
+| ⑧ | stores/index → configStore.ts:17 → lspStore | configStore 性能热切换两处改动态 import |
+| ⑨ | App.tsx:49 → plugin-system/index.ts:43 → builtinPlugins.ts:7 → editor/ → gitGutter/blameHover/changeNavigator → @codemirror/state、@codemirror/view | builtinPlugins 改动态 import('./editor') |
+
+type-only 引用（StatusBar.tsx、types/fileEditor.ts、editorExtensionRegistry.ts、lspService.ts）编译期擦除，不构成边，不动。
+
+### 所有权与时序（并行版论证）
+
+- lspStore 唯一所有者不变，仅加载时机从「模块求值」变「首次使用时动态 import」；configStore 热切换与 useAppInit 的 LSP 初始化/清理均为 fire-and-forget 异步语义，时序不变。
+- builtinPlugins 的 git 扩展注册改为微任务异步：消费方 Editor.tsx 在懒 chunk 内，用户打开文件的加载时序恒晚于启动微任务，collectExtensions 不会早于注册（该论断的残余风险见 §八-1）。
+- 依赖方向不变：Editor 域 → store/service；本次只删「main → Editor 域」的静态边。
+
+### 回滚
+
+单 commit（perf(editor) 6e64fcdc），`git revert` 即可整体回滚；spec 文档独立 commit 不受影响。
