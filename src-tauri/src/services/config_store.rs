@@ -1010,6 +1010,7 @@ impl OldConfig {
             voice_notification: None,
             voice_commands: None,
             web: Default::default(),
+            log_retention: Default::default(),
             dispatch: Default::default(),
             chat_display: Default::default(),
             ui_control_enabled: false,

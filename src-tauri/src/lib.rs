@@ -553,6 +553,12 @@ pub fn run() {
     let mut config_store = ConfigStore::new()
         .expect("无法初始化配置存储");
 
+    // DS-1 启动期日志保留清扫（plans/ds1-log-pipeline-spec.md）：后台线程非阻塞，
+    // 配置化可关（logRetention.enabled=false 整体跳过）。对齐 audit 归档
+    // 「启动期治理不阻塞启动」先例；此时 tokio runtime 尚未创建，故 sweep
+    // 内部走 std::thread（见 spawn_retention_sweep 注释）。
+    Logger::spawn_retention_sweep(config_store.get().log_retention.clone());
+
     // Dev-only: 环境变量覆盖 Web 鉴权 token（仅内存，不持久化）。
     // `tauri:dev:web` 注入 POLARIS_DEV_WEB_TOKEN=98279829++，使 dev 桌面端 Web server
     // 用固定 token 鉴权，浏览器访问 9827 时登录 token 稳定为 98279829++。
@@ -1423,6 +1429,10 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     // 初始化配置存储
     let mut config_store = ConfigStore::new()
         .expect("无法初始化配置存储");
+
+    // DS-1 启动期日志保留清扫（plans/ds1-log-pipeline-spec.md）：web-only bin
+    // 同样有日志目录，与桌面装配点同纪律（后台线程非阻塞、配置化可关）。
+    Logger::spawn_retention_sweep(config_store.get().log_retention.clone());
 
     // CLI token 覆盖（优先级: CLI args > 环境变量 > 配置文件）。
     // 仅内存覆盖，不持久化到 config.json。

@@ -12,7 +12,8 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{
@@ -28,6 +29,64 @@ use crate::services::data_root::data_root;
 use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
+
+// ============================================================================
+// 解析失败告警的 10s 窗口去重（DS-1 日志管道治理，plans/ds1-log-pipeline-spec.md）
+// ============================================================================
+
+/// 解析失败 warn 的去重窗口时长。复用 sqlite.rs `observe_slow`（加固 H-3）
+/// 的既有模式：10s 窗口内首条照发 warn，其余合并计数落 debug。
+const PARSE_WARN_WINDOW: Duration = Duration::from_secs(10);
+
+/// 解析失败告警去重状态（按 engine_id 一槽）。纯逻辑，单测见文件底部。
+#[derive(Debug, Default)]
+struct ParseWarnWindow {
+    /// 当前窗口起点；None = 尚未有任何解析失败
+    window_start: Option<Instant>,
+    /// 当前窗口内已被抑制（降为 debug）的行数
+    suppressed: u64,
+}
+
+/// 单条解析失败行的告警决策。
+#[derive(Debug, PartialEq)]
+enum ParseWarnDecision {
+    /// 发 warn：新窗口首条。`prev_suppressed` = 上一窗口被抑制的总数（供汇总）。
+    Emit { prev_suppressed: u64 },
+    /// 抑制为 debug：窗口内重复。`suppressed_so_far` = 本窗口累计抑制数。
+    Suppress { suppressed_so_far: u64 },
+}
+
+impl ParseWarnWindow {
+    /// 记录一次解析失败，返回告警决策（发 warn 或抑制为 debug）。
+    fn record(&mut self, now: Instant) -> ParseWarnDecision {
+        match self.window_start {
+            Some(start) if now.duration_since(start) < PARSE_WARN_WINDOW => {
+                self.suppressed += 1;
+                ParseWarnDecision::Suppress {
+                    suppressed_so_far: self.suppressed,
+                }
+            }
+            _ => {
+                let prev = self.suppressed;
+                self.window_start = Some(now);
+                self.suppressed = 0;
+                ParseWarnDecision::Emit {
+                    prev_suppressed: prev,
+                }
+            }
+        }
+    }
+
+    /// 读循环退出时取走末窗口的抑制计数（诊断汇总用，取后清零）。
+    fn drain(&mut self) -> u64 {
+        std::mem::take(&mut self.suppressed)
+    }
+}
+
+/// 进程级去重表：engine_id → 窗口状态。多引擎/多会话的读循环并发运行在
+/// 各自线程上，共用一张表；10s 窗口只在解析失败时写入（低频），Mutex 足够
+/// （spec §六风险表：去重状态引入锁竞争的风险可忽略）。
+static PARSE_WARN_STATES: OnceLock<Mutex<HashMap<String, ParseWarnWindow>>> = OnceLock::new();
 
 /// 插件引擎运行器
 pub struct PluginEngineRunner {
@@ -730,6 +789,11 @@ impl PluginEngineRunner {
 
 
     /// 启动后台线程读取 RPC stdout 事件
+    ///
+    /// DS-1 日志管道治理（plans/ds1-log-pipeline-spec.md）：本函数的 stdout
+    /// 读循环曾是 2026-08-09 单日 84MB 日志洪水的源头——每次 `read_line Ok`
+    /// 打一条 info、每条解析失败打一条 warn（均带预览）。逐行 info 已降级为
+    /// debug；解析失败 warn 走 10s 窗口去重（见 [`PARSE_WARN_STATES`]）。
     fn spawn_event_reader(
         &self,
         mut child: Child,
@@ -847,7 +911,10 @@ impl PluginEngineRunner {
                         break;
                     }
                     Ok(n) => {
-                        tracing::info!(
+                        // DS-1（plans/ds1-log-pipeline-spec.md）：逐行 info 是
+                        // 洪水日 84MB/天 的第一源头（每行一条含 200 字符预览），
+                        // 降级为 debug（AGENTS.md §六：debug 高频诊断，生产不落盘）。
+                        tracing::debug!(
                             "[PluginEngine:{}] stdout read_line 返回 {} 字节: {:?}",
                             engine_id, n, line_buf.chars().take(200).collect::<String>()
                         );
@@ -867,8 +934,44 @@ impl PluginEngineRunner {
                 line_count += 1;
 
                 let Some(pi_line) = super::pi_parser::PiRpcLine::parse_line(trimmed) else {
-                    let preview: String = trimmed.chars().take(300).collect();
-                    tracing::warn!("[PluginEngine:{}] 无法解析 stdout 行: {}", engine_id, preview);
+                    // DS-1（plans/ds1-log-pipeline-spec.md）：逐行 warn 是洪水日
+                    // 84MB/天 的第二源头（引擎输出非 JSONL 内容时每行一条含
+                    // 300 字符预览）。复用 sqlite.rs observe_slow 的 10s 窗口
+                    // 去重模式：首条照发 warn 保诊断，窗口内合并计数落 debug；
+                    // 状态按 engine_id 分槽（多引擎/多会话并发读循环共享一张
+                    // 进程级表，Mutex 串行化极低频写，无竞争热点）。
+                    let decision = {
+                        let states = PARSE_WARN_STATES.get_or_init(|| {
+                            Mutex::new(HashMap::new())
+                        });
+                        let mut guard = states.lock().unwrap();
+                        guard
+                            .entry(engine_id.clone())
+                            .or_default()
+                            .record(Instant::now())
+                    };
+                    match decision {
+                        ParseWarnDecision::Emit { prev_suppressed } => {
+                            let preview: String = trimmed.chars().take(300).collect();
+                            tracing::warn!(
+                                "[PluginEngine:{}] 无法解析 stdout 行(上一窗口已抑制 {} 条): {}",
+                                engine_id, prev_suppressed, preview
+                            );
+                        }
+                        ParseWarnDecision::Suppress { suppressed_so_far } => {
+                            // 评审加固：preview 移入 debug! 字段惰性求值——tracing 字段
+                            // 表达式仅在事件启用时求值，生产默认 debug 关，洪水期
+                            // 每条被抑制的行省一次 300 字符 String 分配
+                            tracing::debug!(
+                                "[PluginEngine:{}] 无法解析 stdout 行(10s 窗口内已抑制 {} 条): {}",
+                                engine_id,
+                                suppressed_so_far,
+                                preview = tracing::field::display(
+                                    trimmed.chars().take(300).collect::<String>()
+                                )
+                            );
+                        }
+                    }
                     continue;
                 };
                 known_event_count += 1;
@@ -931,6 +1034,19 @@ impl PluginEngineRunner {
             }
 
             // 收尾
+            // DS-1：读循环结束时把末窗口被抑制的解析失败行数落一条汇总，
+            // 保证去重不吞掉诊断可见性（warn 保首条 + 计数，spec §七）。
+            let tail_suppressed = {
+                let states = PARSE_WARN_STATES.get_or_init(|| Mutex::new(HashMap::new()));
+                let mut guard = states.lock().unwrap();
+                guard.get_mut(&engine_id).map(|w| w.drain()).unwrap_or(0)
+            };
+            if tail_suppressed > 0 {
+                tracing::warn!(
+                    "[PluginEngine:{}] 读循环结束，末窗口共 {} 行 stdout 无法解析（已按 10s 窗口去重）",
+                    engine_id, tail_suppressed
+                );
+            }
             if !agent_ended && line_count > 0 {
                 tracing::warn!(
                     "[PluginEngine:{}] reader 循环退出但未收到 agent_end，session={}",
@@ -1242,5 +1358,79 @@ impl AIEngine for PluginEngineRunner {
 
     fn has_active_session(&self, session_id: &str) -> bool {
         self.sessions.get(session_id).is_some()
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 首条解析失败：新窗口，发 warn（prev_suppressed 为 0）
+    #[test]
+    fn first_parse_failure_emits_warn() {
+        let mut w = ParseWarnWindow::default();
+        let d = w.record(Instant::now());
+        assert_eq!(
+            d,
+            ParseWarnDecision::Emit {
+                prev_suppressed: 0
+            }
+        );
+    }
+
+    /// 10s 窗口内重复失败：抑制为 debug，计数递增（诊断可见性不丢）
+    #[test]
+    fn failures_within_window_are_suppressed_with_count() {
+        let mut w = ParseWarnWindow::default();
+        let t0 = Instant::now();
+        assert!(matches!(
+            w.record(t0),
+            ParseWarnDecision::Emit { .. }
+        ));
+        assert_eq!(
+            w.record(t0 + Duration::from_secs(3)),
+            ParseWarnDecision::Suppress {
+                suppressed_so_far: 1
+            }
+        );
+        assert_eq!(
+            w.record(t0 + Duration::from_secs(9)),
+            ParseWarnDecision::Suppress {
+                suppressed_so_far: 2
+            }
+        );
+        // 窗口边界：首条后 10s 整（>= 窗口）即新窗口
+        assert!(matches!(
+            w.record(t0 + PARSE_WARN_WINDOW),
+            ParseWarnDecision::Emit { .. }
+        ));
+    }
+
+    /// 跨窗口再失败：发 warn 且携带上一窗口被抑制的总数（汇总可见）
+    #[test]
+    fn new_window_emits_with_prev_suppressed_total() {
+        let mut w = ParseWarnWindow::default();
+        let t0 = Instant::now();
+        let _ = w.record(t0);
+        let _ = w.record(t0 + Duration::from_secs(1));
+        let _ = w.record(t0 + Duration::from_secs(2));
+        let d = w.record(t0 + PARSE_WARN_WINDOW + Duration::from_secs(1));
+        assert_eq!(
+            d,
+            ParseWarnDecision::Emit {
+                prev_suppressed: 2
+            }
+        );
+    }
+
+    /// drain：取走当前窗口抑制计数并清零（读循环退出汇总用）
+    #[test]
+    fn drain_takes_and_resets_suppressed_count() {
+        let mut w = ParseWarnWindow::default();
+        let t0 = Instant::now();
+        let _ = w.record(t0);
+        let _ = w.record(t0 + Duration::from_secs(1));
+        let _ = w.record(t0 + Duration::from_secs(2));
+        assert_eq!(w.drain(), 2);
+        assert_eq!(w.drain(), 0, "drain 后清零");
     }
 }
