@@ -6,7 +6,7 @@
 
 import { memo } from 'react'
 import { cn } from '@/utils/cn'
-import { StatusSymbol } from './StatusSymbol'
+import { StatusSymbol, statusConfig } from './StatusSymbol'
 import type { SessionStatus } from '@/types/session'
 
 interface QuickSwitchTriggerProps {
@@ -62,12 +62,9 @@ export const QuickSwitchTrigger = memo(function QuickSwitchTrigger({
         className={cn(
           'absolute left-0 top-2 bottom-2 w-0.5 rounded-l',
           'transition-all duration-300',
-          // 根据状态显示不同颜色
-          status === 'running' && 'bg-success shadow-[0_0_6px_rgba(52,211,153,0.5)]',
-          status === 'waiting' && 'bg-info shadow-[0_0_6px_rgba(96,165,250,0.5)]',
-          status === 'error' && 'bg-danger shadow-[0_0_6px_rgba(248,113,113,0.5)]',
-          status === 'idle' && 'bg-text-muted',
-          status === 'background-running' && 'bg-text-tertiary shadow-[0_0_4px_rgba(142,142,147,0.3)]'
+          // 单一映射源：复用 StatusSymbol.statusConfig，消除逐字重复映射与 rgba 硬编码（主题切换不跟随）
+          statusConfig[status].color,
+          statusConfig[status].glow
         )}
       />
 

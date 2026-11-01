@@ -252,9 +252,9 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
                   : 'hover:bg-background-hover/50 border border-transparent'
               )}
             >
-              {/* 活跃指示条 */}
+              {/* 活跃指示条（glow 走 --c-primary token，rgba 硬编码会导致主题切换不跟随） */}
               {session.isActive && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-primary rounded-full shadow-[0_0_6px_rgba(59,130,246,0.4)]" />
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-primary rounded-full shadow-[0_0_6px_rgb(var(--c-primary)/0.4)]" />
               )}
 
               {/* 状态符号 */}

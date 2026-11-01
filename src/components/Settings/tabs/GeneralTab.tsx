@@ -248,10 +248,13 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1 pr-4">
               <div className="flex items-center gap-2">
+                {/* 根因：bg-green 无对应 token（tailwind.config.js 未定义 green，默认调色板亦无 DEFAULT），
+                    类静默失效致圆点无底色；glow 的 rgba(166,227,161) 硬编码切主题不跟随
+                    （Shenzhen 主题 success=0 230 180≠硬编码值）。改用 success 语义 token。 */}
                 <span
                   className={`w-2 h-2 rounded-full shrink-0 ${
                     mobileConnection.connected
-                      ? 'bg-green shadow-[0_0_6px_rgba(166,227,161,0.5)]'
+                      ? 'bg-success shadow-[0_0_6px_rgb(var(--c-status-success)/0.5)]'
                       : 'bg-text-tertiary'
                   }`}
                 />

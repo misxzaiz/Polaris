@@ -31,12 +31,19 @@ const sizeConfig = {
   },
 }
 
-const statusConfig: Record<SessionStatus, { color: string; glow?: string }> = {
+/**
+ * 状态 → 色 + 光效的唯一映射源（供 QuickSwitchTrigger 等复用，禁止再内联一份）。
+ * 根因：Trigger 曾内联逐字相同的 status→color+glow 条件，且 glow 用 rgba 硬编码，
+ * 主题切换不跟随（如 Shenzhen 主题 success=0 230 180 / info=0 217 255 与硬编码值不符）。
+ * 依据：tailwind.config.js 语义色 success/info/danger 均映射 --c-status-*，
+ * glow 改用 rgb(var(--c-status-xxx)/α) token 形式（先例见 VoiceOrb.tsx 的 shadow 写法）。
+ */
+export const statusConfig: Record<SessionStatus, { color: string; glow?: string }> = {
   idle: { color: 'bg-text-muted' },
-  running: { color: 'bg-success', glow: 'shadow-[0_0_6px_rgba(52,211,153,0.5)]' },
-  waiting: { color: 'bg-info', glow: 'shadow-[0_0_6px_rgba(96,165,250,0.5)]' },
-  error: { color: 'bg-danger', glow: 'shadow-[0_0_6px_rgba(248,113,113,0.5)]' },
-  'background-running': { color: 'bg-text-tertiary', glow: 'shadow-[0_0_4px_rgba(142,142,147,0.3)]' },
+  running: { color: 'bg-success', glow: 'shadow-[0_0_6px_rgb(var(--c-status-success)/0.5)]' },
+  waiting: { color: 'bg-info', glow: 'shadow-[0_0_6px_rgb(var(--c-status-info)/0.5)]' },
+  error: { color: 'bg-danger', glow: 'shadow-[0_0_6px_rgb(var(--c-status-danger)/0.5)]' },
+  'background-running': { color: 'bg-text-tertiary', glow: 'shadow-[0_0_4px_rgb(var(--c-text-tertiary)/0.3)]' },
 }
 
 export function StatusSymbol({ status, size = 'sm', className }: StatusSymbolProps) {

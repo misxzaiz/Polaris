@@ -563,11 +563,12 @@
 .island-btn-primary {
   background: rgb(var(--c-primary));
   border-color: rgb(var(--c-primary));
-  color: #fff;
+  /* 按钮文字色走 --c-on-primary：主题可按主色明暗指定文字色（如 Shenzhen 亮青主色配暗字），#fff 硬编码会在切主题后对比度失衡 */
+  color: rgb(var(--c-on-primary));
 }
 .island-btn-primary:hover {
   background: rgb(var(--c-status-info));
-  color: #fff;
+  color: rgb(var(--c-on-primary));
 }
 .island-btn-danger {
   color: rgb(var(--c-status-danger));
@@ -1035,7 +1036,8 @@
   padding: 0 4px;
   border-radius: 8px;
   background: rgb(var(--c-primary));
-  color: #fff;
+  /* 同 .island-btn-primary：主色底上的文字色走 --c-on-primary，跟随主题 */
+  color: rgb(var(--c-on-primary));
   font-variant-numeric: tabular-nums;
 }
 
