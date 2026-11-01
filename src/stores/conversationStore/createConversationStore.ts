@@ -326,6 +326,12 @@ export function createConversationStore(
   // 3. 超时保护：STREAM_FLUSH_INTERVAL 内没有段落结束也 flush
   let _textBuffer = ''
   let _paragraphTimer: ReturnType<typeof setTimeout> | null = null
+  // thinking 缓冲：与 _textBuffer 严格对称（C2 spec plans/c2-thinking-buffer-spec.md §二）。
+  // 根因：原 appendThinkingBlock 逐 delta 执行 set() 全量 blocks 数组拷贝 +
+  // `content: lastBlock.content + content` 全量字符串重拼（O(n²)），长思考流
+  // （≥1000 delta）是流式渲染卡顿主因。修法：delta 期间只做 O(1) 缓冲追加，
+  // 由 50ms 定时 / 类型切换点 / 收束点一次性落块（触发点全部对齐 text 范式）。
+  let _thinkingBuffer = ''
   // 预生成的 assistant 消息 id（sendMessage 时分配，传给后端 + createCurrentAssistantMessage adopt）。
   // 消除 id 漂移：同一轮回复在前端 currentMessage 和后端 turn_persist 用同一个 id。
   let _pendingAssistantMessageId: string | null = null
@@ -412,7 +418,11 @@ export function createConversationStore(
       },
 
       finishMessage: () => {
-        // 先 flush 所有缓冲的文本
+        // 先 flush 所有缓冲内容（thinking + text）：收束点兜底，缓冲不丢字。
+        // 中断场景同样覆盖——中断终止统一经 session_end → finishMessage
+        // （C2 spec §二；session_end 处理序：finishMessage 先于 isStreaming=false）。
+        // flush 顺序 thinking→text 与 50ms 定时回调一致，保持块时序。
+        if (_thinkingBuffer) get()._flushThinkingBuffer()
         if (_textBuffer) get()._flushTextBuffer()
 
         // 清除定时器
@@ -796,6 +806,11 @@ export function createConversationStore(
       // 3. 超时保护：200ms 内没有段落结束也 flush
       // 效果：渲染更像"事件级"，一个段落一次渲染，减少视觉跳动
       appendTextBlock: (content) => {
+        // 类型切换点：thinking 缓冲先落块（C2 spec §二——正文到达即思考阶段结束，
+        // 缓冲中的思考内容必须在 text 落块前完整落块；下方 fold 检查随后自然看到
+        // 已落块的 thinking 并折叠，与既有 fold 行为无缝衔接）
+        if (_thinkingBuffer) get()._flushThinkingBuffer()
+
         // 正文开始出现：若此前有 thinking 且尚未折叠，立即折叠（思考阶段结束）。
         // 首段正文 token 一到即收起思考面板；fold 幂等，仅在有未折叠 thinking 时产出新数组并 set。
         const preState = get()
@@ -858,9 +873,11 @@ export function createConversationStore(
           }
           get()._flushTextBuffer()
         } else if (!_paragraphTimer) {
-          // 启动超时保护定时器
+          // 启动超时保护定时器（thinking 与 text 共享同一节拍：一次 flush 先 thinking
+          // 后 text，保持块时序——C2 spec §二；缓冲为空的一侧 flush 内部 no-op）
           _paragraphTimer = setTimeout(() => {
             _paragraphTimer = null
+            get()._flushThinkingBuffer()
             get()._flushTextBuffer()
           }, STREAM_FLUSH_INTERVAL)
         }
@@ -928,37 +945,105 @@ export function createConversationStore(
         // flush 时机由 appendTextBlock 中的段落检测 (\n\n) 或超时保护触发
       },
 
-      appendThinkingBlock: (content) => {
-        // 先 flush 文本缓冲区，确保文本不丢失
-        if (_textBuffer) get()._flushTextBuffer()
+      /**
+       * 内部方法：将缓冲区 thinking 内容一次性 flush 到 Zustand store。
+       * 与 _flushTextBuffer 严格对称（C2 spec §二）：原 appendThinkingBlock 的块操纵
+       * 逻辑（fold/merge/create currentMessage）整体迁入此处，仅把入参从每 delta
+       * content 改为 flush 时一次性 buffer 内容；streamingUpdateCounter 仍由 flush
+       * 触发 +1，delta 期间不再逐条自增。
+       * 注意：不清 _paragraphTimer——定时器为 thinking/text 共享，清空是
+       * _flushTextBuffer 的职责（thinking 落块后同窗 text 仍可能待落块）。
+       */
+      _flushThinkingBuffer: () => {
+        // 取出缓冲区内容并重置（delta 期间仅 O(1) 追加，此处一次性落块）
+        const bufferToFlush = _thinkingBuffer
+        _thinkingBuffer = ''
+        if (!bufferToFlush) return
 
-        const { currentMessage, streamingUpdateCounter } = get()
-        const block = { type: 'thinking' as const, content }
-        if (!currentMessage) {
-          set({
-            currentMessage: createCurrentAssistantMessage([block]),
-            streamingUpdateCounter: streamingUpdateCounter + 1,
-          })
+        const state = get()
+        if (!state.currentMessage) {
+          if (!state.isStreaming) {
+            // session_end 已到达，迟到的 thinking delta 追加到最后一条助手消息
+            // （与 _flushTextBuffer 的迟到防御同等处理，不允许静默丢弃——C2 spec §二复核红线）。
+            // 迟到新增块直接置 collapsed：消息已归档收束，不得再以展开态重开思考面板。
+            const { messages } = get()
+            const lastIdx = messages.length - 1
+            if (lastIdx >= 0 && messages[lastIdx].type === 'assistant') {
+              const lastMsg = messages[lastIdx]
+              const blocks = [...lastMsg.blocks]
+              const lastBlock = blocks[blocks.length - 1]
+              if (lastBlock?.type === 'thinking') {
+                blocks[blocks.length - 1] = { ...lastBlock, content: lastBlock.content + bufferToFlush }
+              } else {
+                blocks.push({ type: 'thinking', content: bufferToFlush, collapsed: true })
+              }
+              const newMessages = [...messages]
+              newMessages[lastIdx] = { ...lastMsg, blocks }
+              set({ messages: newMessages })
+            }
+          } else {
+            // 首次创建消息（首 token 立即落块，思考首响不延迟）
+            set({
+              currentMessage: createCurrentAssistantMessage([{ type: 'thinking', content: bufferToFlush }]),
+              streamingUpdateCounter: state.streamingUpdateCounter + 1,
+            })
+          }
         } else {
           const blocks = (() => {
-            const lastBlock = currentMessage.blocks[currentMessage.blocks.length - 1]
+            const lastBlock = state.currentMessage.blocks[state.currentMessage.blocks.length - 1]
             if (lastBlock?.type === 'thinking') {
               // 同一思考流：合并内容，保持自身展开
-              const merged = [...currentMessage.blocks]
-              merged[merged.length - 1] = { ...lastBlock, content: lastBlock.content + content }
+              const merged = [...state.currentMessage.blocks]
+              merged[merged.length - 1] = { ...lastBlock, content: lastBlock.content + bufferToFlush }
               return merged
             }
             // 新增思考块 = 上一阶段已完成，折叠此前的思考块
-            return [...foldThinkingBlocks(currentMessage.blocks), block]
+            return [...foldThinkingBlocks(state.currentMessage.blocks), { type: 'thinking' as const, content: bufferToFlush }]
           })()
           set({
-            currentMessage: { ...currentMessage, blocks },
-            streamingUpdateCounter: streamingUpdateCounter + 1,
+            currentMessage: { ...state.currentMessage, blocks },
+            streamingUpdateCounter: state.streamingUpdateCounter + 1,
           })
         }
       },
 
+      appendThinkingBlock: (content) => {
+        // 类型切换点：先 flush 文本缓冲区，确保正文先落块（保持 text→thinking 块时序）。
+        // 注意：此处不做 thinking 缓冲 flush——thinking delta 逐条到达，入口 flush 会
+        // 退化为逐 delta set，破坏缓冲节奏；缓冲内容由 flush 时的 merge 逻辑合并。
+        if (_textBuffer) get()._flushTextBuffer()
+
+        // 追加到闭包级缓冲（O(1)，不触发 set）——与 _textBuffer 严格对称。
+        // 50ms 丢失窗口语义与 _textBuffer 完全一致（已被接受的风险面：
+        // 进程崩溃/页面关闭时窗口内内容丢失，磁盘归档由后端 turn_persist 兜底）。
+        _thinkingBuffer += content
+
+        const state = get()
+
+        // 首 token 立即落块（首响不延迟，与 appendTextBlock 首段立即 flush 对称）。
+        // 同时覆盖迟到 token 防御：isStreaming=false 时 currentMessage 必为 null，
+        // _flushThinkingBuffer 内部走「追加到最后一条助手消息」分支，不静默丢弃。
+        if (!state.currentMessage) {
+          get()._flushThinkingBuffer()
+          return
+        }
+
+        // 50ms 超时保护（与 text 共享 _paragraphTimer 与 STREAM_FLUSH_INTERVAL）：
+        // 一次 flush 先 thinking 后 text，保持块时序；定时器挂起中则无需重复调度
+        if (!_paragraphTimer) {
+          _paragraphTimer = setTimeout(() => {
+            _paragraphTimer = null
+            get()._flushThinkingBuffer()
+            get()._flushTextBuffer()
+          }, STREAM_FLUSH_INTERVAL)
+        }
+      },
+
       appendToolCallBlock: (toolId, toolName, input) => {
+        // 类型切换点：thinking 缓冲先落块（工具卡到达 = 思考阶段结束，缓冲内容不得
+        // 滞后到工具卡之后），再 flush 文本缓冲区——保持 thinking→text→tool_call
+        // 块时序（C2 spec §二：现只 flush text，须补 thinking）
+        if (_thinkingBuffer) get()._flushThinkingBuffer()
         // 先 flush 文本缓冲区
         if (_textBuffer) get()._flushTextBuffer()
 
@@ -1105,6 +1190,9 @@ export function createConversationStore(
       },
 
       appendArtifactPreviewBlock: (artifact) => {
+        // 类型切换点：thinking 缓冲先落块再落卡片类块，保持块时序（C2 spec §二，
+        // 与本入口既有的 text flush 同范式）
+        if (_thinkingBuffer) get()._flushThinkingBuffer()
         if (_textBuffer) get()._flushTextBuffer()
 
         const { currentMessage, streamingUpdateCounter } = get()
@@ -1265,6 +1353,9 @@ export function createConversationStore(
 
       // ===== Form（表单工具） =====
       appendFormBlock: (block) => {
+        // 类型切换点：thinking 缓冲先落块再落卡片类块，保持块时序（C2 spec §二，
+        // 与本入口既有的 text flush 同范式）
+        if (_thinkingBuffer) get()._flushThinkingBuffer()
         if (_textBuffer) get()._flushTextBuffer()
 
         const { currentMessage, formBlockMap, streamingUpdateCounter } = get()
@@ -1353,6 +1444,9 @@ export function createConversationStore(
 
       // ===== PluginCard =====
       appendPluginCardBlock: (block) => {
+        // 类型切换点：thinking 缓冲先落块再落卡片类块，保持块时序（C2 spec §二，
+        // 与本入口既有的 text flush 同范式）
+        if (_thinkingBuffer) get()._flushThinkingBuffer()
         if (_textBuffer) get()._flushTextBuffer()
 
         const { currentMessage, pluginCardBlockMap, streamingUpdateCounter } = get()
@@ -1407,6 +1501,9 @@ export function createConversationStore(
       },
 
       appendContextCompactBlock: (trigger, preTokens, postTokens) => {
+        // 类型切换点：thinking 缓冲先落块再落卡片类块，保持块时序（C2 spec §二，
+        // 与本入口既有的 text flush 同范式）
+        if (_thinkingBuffer) get()._flushThinkingBuffer()
         if (_textBuffer) get()._flushTextBuffer()
 
         const block: import('../../types/chat').ContextCompactBlock = {
@@ -3005,6 +3102,8 @@ export function createConversationStore(
           _paragraphTimer = null
         }
         _textBuffer = ''
+        // thinking 缓冲同步清空（与 _textBuffer 对称：dispose 后不应残留跨会话内容）
+        _thinkingBuffer = ''
 
         // 清理压缩器快照
         compactor.clearSnapshots()

@@ -565,6 +565,8 @@ export interface ConversationActions {
   appendTextBlock: (content: string) => void
   /** 内部方法：将缓冲区文本 flush 到 store（流式优化，减少 set() 频率） */
   _flushTextBuffer: () => void
+  /** 内部方法：将缓冲区 thinking 内容 flush 到 store（与 _flushTextBuffer 严格对称，C2 缓冲方案） */
+  _flushThinkingBuffer: () => void
   appendThinkingBlock: (content: string) => void
   appendToolCallBlock: (toolId: string, toolName: string, input: Record<string, unknown>) => void
   updateToolCallBlock: (toolId: string, status: ToolStatus, output?: string, error?: string) => void
