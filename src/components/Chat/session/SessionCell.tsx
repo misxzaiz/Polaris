@@ -13,7 +13,6 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square, ArrowUpToLine } from 'lucide-react';
 import { SessionMessagesView } from '../messages/SessionMessagesView';
-import { SessionDeleteConfirm, type SessionDeleteTarget } from '@/components/Common/SessionDeleteConfirm';
 import { useSessionMetadataList, useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager';
 import { useSessionStreaming, useSessionHasPendingQuestion, useSessionHasPendingCards } from '@/stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
@@ -76,9 +75,6 @@ export const SessionCell = memo(function SessionCell({
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
   const badgeRef = useRef<HTMLButtonElement>(null);
 
-  // 删除确认弹窗（U1）：不可逆删除（内存 store + 磁盘 JSONL + 后端消息库）必须先过二次确认
-  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<SessionDeleteTarget | null>(null);
-
   // 获取工作区信息
   const workspace = useWorkspaceStore(state =>
     sessionMetadata?.workspaceId
@@ -102,11 +98,19 @@ export const SessionCell = memo(function SessionCell({
     }
   }, [isActive, sessionId, switchSession]);
 
-  // 关闭格子：先二次确认，再删除会话（会自动从多窗口移除）
+  // 关闭格子：仅从多窗口视图移除（关闭窗口，不删除会话）。
+  // 会话数据（内存 store / JSONL / 后端消息）保留，可从历史面板或快速切换恢复。
+  // 失活协调：被关的是活跃会话时，切到视图内剩余首个，避免主区域悬空。
   const handleClose = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setDeleteConfirmTarget({ sessionId, title: sessionMetadata?.title });
-  }, [sessionId, sessionMetadata]);
+    useViewStore.getState().removeFromMultiView(sessionId);
+    if (isActive) {
+      const remaining = useViewStore.getState().multiSessionIds;
+      if (remaining.length > 0) {
+        switchSession(remaining[0]);
+      }
+    }
+  }, [sessionId, isActive, switchSession]);
 
   // 中断当前会话的 AI 回复
   const handleInterrupt = useCallback((e: React.MouseEvent) => {
@@ -228,11 +232,11 @@ export const SessionCell = memo(function SessionCell({
           {/* 状态图标 */}
           <StatusIcon className={clsx('w-3.5 h-3.5 shrink-0', statusConfig.className)} />
 
-          {/* 删除会话按钮（点击弹二次确认，非「关闭」——语义纠正见 U1） */}
+          {/* 关闭窗口按钮（仅从多窗口视图移除，不删除会话；可从历史/快速切换恢复） */}
           <button
             onClick={handleClose}
             className="shrink-0 p-0.5 rounded ml-1 text-text-muted hover:text-text-primary hover:bg-background-hover transition-colors"
-            title={t('deleteSessionConfirm.label')}
+            title={t('sessionCell.closeWindow', { defaultValue: '关闭窗口' })}
           >
             <X className="w-3 h-3" />
           </button>
@@ -252,12 +256,6 @@ export const SessionCell = memo(function SessionCell({
           onClose={() => setShowWorkspaceMenu(false)}
         />
       )}
-
-      {/* 删除确认弹窗（U1） */}
-      <SessionDeleteConfirm
-        target={deleteConfirmTarget}
-        onCancel={() => setDeleteConfirmTarget(null)}
-      />
     </>
   );
 });

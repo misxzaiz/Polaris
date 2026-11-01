@@ -14,7 +14,6 @@ import { cn } from '@/utils/cn'
 import { Plus } from 'lucide-react'
 import { SessionTab } from './SessionTab'
 import { CreateSessionModal } from './CreateSessionModal'
-import { SessionDeleteConfirm, type SessionDeleteTarget } from '@/components/Common/SessionDeleteConfirm'
 import {
   useSessionMetadataList,
   useActiveSessionId,
@@ -45,9 +44,6 @@ export const SessionTabs = memo(function SessionTabs({ onSessionSelect }: Sessio
   // 弹窗状态
   const [showCreateModal, setShowCreateModal] = useState(false)
 
-  // 删除确认弹窗（U1）：不可逆删除必须二次确认
-  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<SessionDeleteTarget | null>(null)
-
   // 获取所有会话元数据
   const allSessionMetadata = useSessionMetadataList()
 
@@ -71,11 +67,17 @@ export const SessionTabs = memo(function SessionTabs({ onSessionSelect }: Sessio
     onSessionSelect?.(sessionId)
   }, [switchSession, onSessionSelect])
 
-  // 关闭会话：先二次确认，再删除（会自动从多窗口移除）
+  // 关闭会话：仅从多窗口视图移除（关闭窗口，不删除会话）。
+  // 失活协调：被关的是活跃会话时，切到视图内剩余首个。
   const handleClose = useCallback((sessionId: string) => {
-    const meta = allSessionMetadata.find(s => s.id === sessionId)
-    setDeleteConfirmTarget({ sessionId, title: meta?.title })
-  }, [allSessionMetadata])
+    useViewStore.getState().removeFromMultiView(sessionId)
+    if (activeSessionId === sessionId) {
+      const remaining = useViewStore.getState().multiSessionIds
+      if (remaining.length > 0) {
+        switchSession(remaining[0])
+      }
+    }
+  }, [activeSessionId, switchSession])
 
   // 如果没有可见会话，显示新建按钮
   if (visibleSessions.length === 0) {
@@ -138,11 +140,6 @@ export const SessionTabs = memo(function SessionTabs({ onSessionSelect }: Sessio
       {showCreateModal && (
         <CreateSessionModal onClose={() => setShowCreateModal(false)} />
       )}
-      {/* 删除确认弹窗（U1） */}
-      <SessionDeleteConfirm
-        target={deleteConfirmTarget}
-        onCancel={() => setDeleteConfirmTarget(null)}
-      />
     </>
   )
 })

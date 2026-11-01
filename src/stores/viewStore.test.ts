@@ -95,3 +95,39 @@ describe('viewStore 左侧面板 tab strip 状态', () => {
     })
   })
 })
+
+/**
+ * removeFromMultiView ——「关闭窗口」语义单测
+ * spec: plans/chat-window-close-vs-delete-spec.md
+ * 窗口 X 只做视图移除：过滤 multiSessionIds、清展开态，不碰会话数据。
+ */
+describe('viewStore removeFromMultiView（关闭窗口，不删除会话）', () => {
+  beforeEach(() => {
+    useViewStore.setState({
+      multiSessionIds: ['s1', 's2', 's3'],
+      expandSessionId: null,
+    })
+  })
+
+  it('从 multiSessionIds 过滤目标会话，其余不变', () => {
+    useViewStore.getState().removeFromMultiView('s2')
+    expect(useViewStore.getState().multiSessionIds).toEqual(['s1', 's3'])
+  })
+
+  it('移除的是展开会话时清空 expandSessionId', () => {
+    useViewStore.setState({ expandSessionId: 's2' })
+    useViewStore.getState().removeFromMultiView('s2')
+    expect(useViewStore.getState().expandSessionId).toBeNull()
+  })
+
+  it('移除非展开会话时保留 expandSessionId', () => {
+    useViewStore.setState({ expandSessionId: 's1' })
+    useViewStore.getState().removeFromMultiView('s2')
+    expect(useViewStore.getState().expandSessionId).toBe('s1')
+  })
+
+  it('移除不存在的会话为空操作', () => {
+    useViewStore.getState().removeFromMultiView('nope')
+    expect(useViewStore.getState().multiSessionIds).toEqual(['s1', 's2', 's3'])
+  })
+})

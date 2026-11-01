@@ -20,7 +20,6 @@ import {
   useSessionManagerActions,
   useActiveSessionMessages,
 } from '@/stores/conversationStore'
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useWorkspaceStore, useViewStore, useToastStore } from '@/stores'
 import { exportToMarkdown, generateFileName } from '@/services/chatExport'
 import { getHandoffEligibility, handoffSessionToNewSession } from '@/services/sessionHandoff'
@@ -39,11 +38,12 @@ const HIDE_DELAY = 150
 const PINNED_STORAGE_KEY = 'quick-switch-panel-pinned'
 
 /**
- * 低价值会话阈值：消息数 ≤ 此值的近空会话删除时跳过确认（保持轻快）。
- * UX-4（plans/ux4-delete-confirm-spec.md）：删除会话是三重硬删（内存 + JSONL + 后端消息库），
- * 只有能可靠取到消息数才允许跳过——store 不存在（取不到）一律弹确认，宁多勿漏。
+ * 删除会话：三重硬删（内存 store + JSONL + 后端消息库），不可逆，一律二次确认。
+ * 此前的 LOW_VALUE_MESSAGE_COUNT（≤2 免确认）分支已移除：它依据内存 store 瞬时
+ * messages.length 判定，在分页 hydrate 未完成 / 后台会话 / 流式时序下会偏小，
+ * 导致带内容的会话被零确认硬删。窗口 X 已改为纯「关闭窗口」（removeFromMultiView），
+ * 删除会话动作集中在快速切换面板与历史面板，统一走确认。
  */
-const LOW_VALUE_MESSAGE_COUNT = 2
 
 /** 删除确认目标（含展示标题） */
 interface DeleteConfirmTarget {
@@ -188,18 +188,11 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
     // 切换后保持面板展开，用户可能需要连续切换
   }, [switchSession])
 
-  // 删除会话（UX-4：先确认再删——deleteSession 同步 dispose 内存并硬删 JSONL 与后端消息库，
-  // 见 sessionStoreManager.deleteSession，不可逆；仅内存 store 可靠取到 ≤2 条消息的近空会话跳过确认）
+  // 删除会话（不可逆硬删：内存 store + 磁盘 JSONL + 后端消息库，一律二次确认）
   const handleDeleteSession = useCallback((sessionId: string) => {
-    const store = sessionStoreManager.getState().stores.get(sessionId)
-    const messageCount = store ? store.getState().messages.length : null
-    if (messageCount !== null && messageCount <= LOW_VALUE_MESSAGE_COUNT) {
-      deleteSession(sessionId)
-      return
-    }
     const session = sessions.find((s) => s.id === sessionId)
     setDeleteConfirmTarget({ id: sessionId, title: session?.title ?? sessionId })
-  }, [deleteSession, sessions])
+  }, [sessions])
 
   // 确认框「确定」：先关框再执行删除（ConfirmDialog 的 onConfirm 在退场动画结束后触发一次，
   // exit() 幂等，天然防重复提交；不引入 loading 新语义，保持原有时序）

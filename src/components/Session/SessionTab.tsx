@@ -119,7 +119,7 @@ export const SessionTab = memo(function SessionTab({
           <Loader2 className="w-3 h-3 text-primary animate-spin shrink-0" />
         )}
 
-        {/* 关闭按钮 - 占 10% */}
+        {/* 关闭窗口按钮 - 仅从多窗口视图移除，不删除会话（占 10%） */}
         {canClose && (
           <button
             onClick={(e) => {
@@ -131,7 +131,7 @@ export const SessionTab = memo(function SessionTab({
               'text-text-muted hover:text-text-primary hover:bg-background-hover',
               'opacity-0 group-hover:opacity-100 transition-opacity'
             )}
-            title="关闭会话"
+            title={t('sessionCell.closeWindow', { defaultValue: '关闭窗口' })}
           >
             <X className="w-3.5 h-3.5" />
           </button>
