@@ -33,9 +33,9 @@
 ### 目标
 
 1. **启动期保留清扫**：日志目录内按保留策略删除过期/超限的历史日志文件。
-   - config.json 新增（serde default，旧配置零改动兼容）：
+   - config.json 新增（serde default，旧配置零改动兼容；**磁盘键为 camelCase**，随 Config 全局 `rename_all="camelCase"` 约定——评审修正，勿写 snake_case）：
      ```json
-     "log_retention": { "enabled": true, "max_age_days": 14, "max_total_mb": 500 }
+     "logRetention": { "enabled": true, "maxAgeDays": 14, "maxTotalMb": 500 }
      ```
    - 规则：`enabled=false` 整体跳过；删除「最后修改时间早于 now−max_age_days」的日志文件；再按总量（max_total_mb）从最旧起删到限内；**当日活跃文件永不删**（Windows 文件锁 + 在写）；只匹配本应用日志命名前缀（`instance::log_filename()` 的公共前缀 + rolling 日期后缀形态，实施时确认实际文件名模式），误伤面为零。
    - 删除失败（如被另一实例占用）跳过并计数，不 panic、不阻塞启动。
