@@ -44,6 +44,26 @@ barrel index.ts 本体不动；其他组件对 barrel 的引用不动（懒侧�
 ## 回滚
 单文件单提交（perf(chat)），`git revert <commit>` 即可整体回滚；spec 提交独立（docs(plans)）。
 
+## 门禁 build+签名断言失败排查（2026-11-02 补充，存量判定）
+门禁输出 sigs={toolCallBlock:true, noHighlightRe:true, clm:true, codemirror:true}。
+checkout 49ee538d 重建基线（产物 hash main-ZD4X8tHd.js 与初次基线完全一致，构建确定性成立），
+用同一探针脚本（polaris-fea-gateprobe.mjs）做字节级 before/after 对照：
+
+| 探针 | 基线 49ee538d | 改造后 2f64872e | 判定 |
+|---|---|---|---|
+| toolCallBlock（小写） | 3 处 | 2 处 | 存量：i18n 词典键 `src/locales/zh-CN/chat.json:373` / `en-US/chat.json:374`（`toolCallBlock:"工具调用"`），基线多出的是 errorBlock.toolCallBlock 键引用（随子树移出净减 1） |
+| ToolCallBlock（大写） | 11 处 | 11 处 | 存量：store 方法名属性（eventHandler.ts / messageCompactor.ts:295），两侧构成同构 |
+| codemirror | 1 处 @277 | 1 处 @277 | 存量：main 顶部 Vite 懒 chunk URL 清单中的 `"assets/codemirror-QIEbWpZC.js"` 字符串，非代码；`CodeMirror` 探针基线/改造后均 0（codemirror 代码本体两侧都不在 main）——**回归不成立** |
+| noHighlightRe / C_LINE_COMMENT_MODE | 2 / 9 处 | 2 / 9 处 | 存量：highlight.js core 真实代码经 App.tsx:10 Layout barrel → CenterStage → DiffViewer → WordDiffSegment → syntaxHighlight 静态入 main，与 Chat barrel 无关 |
+| missingRequired | true | **false** | FE-A 实际生效的唯一渲染栈签名（源头 chatBlocks/FormCard.tsx） |
+
+结论：门禁三项失败全部为存量或结构性误报，与 FE-A 改动无因果——
+① toolCallBlock/codemirror 探针匹配的是 i18n 词典键与懒 chunk URL 清单字符串，
+任何 import 图改动都无法使其变 false（前者改键名需同步改消费方 UI 逻辑，后者只要
+codemirror manualChunk 存在且被任一懒 chunk 引用就必然出现在 main 依赖清单）；
+② noHighlightRe/clm 的根因在 Layout barrel 边（FE-C，见下），基线即如此。
+mainSize 1272605 vs 实测 1332966 为 utf8 字符数与磁盘字节数之差（中文串），同一文件。
+
 ## 后续项（不在本案扩散）
 - **FE-C（建议）**：App.tsx:10 Layout barrel 同样传导 DiffViewer→highlight.js（~数十kB+
   hljs core）进 main；可复制本案范式对 Layout barrel 切边或对 DiffViewer 做 lazy。
