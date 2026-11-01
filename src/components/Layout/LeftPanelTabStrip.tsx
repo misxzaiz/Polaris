@@ -1,7 +1,8 @@
 /**
  * LeftPanelTabStrip —— 左侧面板高密度顶部 Tab strip（方案 A²）
  *
- * 高信息密度设计：32px 高、11px 字、tab 贴合内容宽度（flex:none + 白字宽度
+ * 高信息密度设计：40px 高（与同排 CenterStage 标签栏 / TopMenuBar 的 h-10
+ * 对齐，border-b 同处一条水平线）、11px 字、tab 贴合内容宽度（flex:none + 白字宽度
  * 由内容撑开）零多余空白；固定核心 tab（files/git/browser/terminal，PINNED）
  * + MRU 追加 tab（从 ⋯ 溢出打开，可关闭）+ 溢出 ⋯ 分组网格 popover。
  *
@@ -112,9 +113,12 @@ export function LeftPanelTabStrip({ activePanelType }: LeftPanelTabStripProps) {
   }, [ctxMenu])
 
   return (
+    // h-10 对齐：同排 CenterStage 标签栏与 TopMenuBar 均为 h-10，此前 h-8 使
+    // 本条 border-b 比相邻栏抬高 8px 错位。内部按钮/滚动容器均为 items-stretch
+    // + 自身 items-center 垂直居中，高度变化后无需再调内部尺寸。
     <div
       data-theme-panel
-      className="flex h-8 shrink-0 items-stretch border-b border-border bg-background-elevated select-none"
+      className="flex h-10 shrink-0 items-stretch border-b border-border bg-background-elevated select-none"
     >
       {/* 关闭侧栏按钮（彻底隐藏，无半开 rail）；重新展开走 ActivityBar / 工具切换器 */}
       <button
