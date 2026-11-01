@@ -3865,6 +3865,7 @@ mod browser_script_tests {
     }
 
     #[test]
+    #[cfg(feature = "tauri-app")] // 随 parse_action_index（tauri-app 专属 fn，:3722）同门控
     fn parse_action_index_rejects_negative() {
         assert_eq!(parse_action_index(&serde_json::json!({})).unwrap(), None);
         assert_eq!(
@@ -3875,6 +3876,7 @@ mod browser_script_tests {
     }
 
     #[test]
+    #[cfg(feature = "tauri-app")] // 随 non_empty_target（tauri-app 专属 fn，:3732）同门控
     fn non_empty_target_trims_and_truncates() {
         assert_eq!(non_empty_target("   "), None);
         let long = "x".repeat(200);
@@ -3944,6 +3946,7 @@ mod browser_script_tests {
     }
 
     #[test]
+    #[cfg(feature = "tauri-app")] // 随 is_downloadable_url（tauri-app 专属 fn，:1465）同门控，保 no-default 测试车道可编译
     fn downloadable_url_detection() {
         // Phase 4：白名单收窄到可执行文件（安全兜底，转外部浏览器）
         assert!(is_downloadable_url("https://example.com/setup.exe"));

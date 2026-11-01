@@ -87,6 +87,7 @@ let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/
         scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&std::path::PathBuf::from("/tmp"))),
+        #[cfg(feature = "lsp-index")] // 字段本身按 feature 门控（state.rs lsp_index_service），测试字面量同步门控，保 no-default 测试车道可编译
         lsp_index_service: crate::services::lsp_index::IndexService::new(),
         event_broadcast: crate::web::EventBroadcaster::new(256),
         #[cfg(feature = "tauri-app")]
