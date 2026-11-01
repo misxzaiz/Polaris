@@ -222,20 +222,40 @@
   display: flex;
 }
 
-/* ========== 展开面板 ========== */
+/* ========== 展开面板 ==========
+ * 限高容器 + 内层滚动：文件/任务多时整面板可下拉，不再 overflow:hidden 裁掉内容。
+ * max-height 用视口相对，避免小屏固定 540px 溢出视口、大屏浪费空间。
+ */
 .island-panel {
   max-height: 0;
   overflow: hidden;
   transition: max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
 }
 .island-expanded .island-panel {
-  max-height: 540px;
+  max-height: min(540px, 70vh);
 }
 .island-panel-inner {
   padding: 0 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* 整面板滚动：内容超出时在此下拉。单卡内 diff/detail 局部滚动保留，不嵌套打架。 */
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  scrollbar-width: thin;
+}
+.island-panel-inner::-webkit-scrollbar {
+  width: 6px;
+}
+.island-panel-inner::-webkit-scrollbar-thumb {
+  background: rgba(var(--c-border), 0.25);
+  border-radius: 3px;
+}
+.island-panel-inner::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* 面板头 */
