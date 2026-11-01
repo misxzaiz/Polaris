@@ -25,7 +25,8 @@ import { isUserMessage, type UserChatMessage } from '@/types/chat'
  * 而 sendMessage 入参类型为完整 Attachment（types/attachment.ts:20）。
  * 因此这里只回传存储态真实拥有的字段：
  * - 缺失的二进制内容不伪造：空 content 附件到后端 process_attachments 会被
- *   warn+continue 跳过（src-tauri ai_chat_core.rs:262-268 图片 / 417-422 文件），不会崩；
+ *   warn 后跳过、不会崩（src-tauri ai_chat_core.rs:262-268 图片分支为 warn+continue，
+ *   419-423 文件分支为 warn 后跳过写入、无 continue 语句——效果等价，措辞按实读修正）；
  * - source/status 是 Attachment 类型必填、但 sendMessage 的两处消费（userMessage
  *   展示映射与 attachmentsForBackend 后端载荷映射）都不读取，仅前端输入溯源用，
  *   以中性值补齐满足类型；

@@ -228,11 +228,11 @@ export const SessionCell = memo(function SessionCell({
           {/* 状态图标 */}
           <StatusIcon className={clsx('w-3.5 h-3.5 shrink-0', statusConfig.className)} />
 
-          {/* 关闭按钮 */}
+          {/* 删除会话按钮（点击弹二次确认，非「关闭」——语义纠正见 U1） */}
           <button
             onClick={handleClose}
             className="shrink-0 p-0.5 rounded ml-1 text-text-muted hover:text-text-primary hover:bg-background-hover transition-colors"
-            title={t('sessionCell.close')}
+            title={t('deleteSessionConfirm.label')}
           >
             <X className="w-3 h-3" />
           </button>
