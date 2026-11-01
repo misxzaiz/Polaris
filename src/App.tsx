@@ -8,8 +8,18 @@ const log = createLogger('App');
 
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelTabStrip, CenterStage, RightPanel } from './components/Layout';
-import { ChatInput, ChatStatusBar, CompactHandoffProgress, ErrorBanner, CompactHandoffButton, MultiWindowMenu, NewSessionButton } from './components/Chat';
-import type { EditMode } from './components/Chat';
+// FE-A: 此前经 './components/Chat' barrel 静态导入 7 组件，barrel re-export 的渲染子树
+// （renderChatMessage/SessionMessagesView/MessageSearchPanel → chatBlocks/chatBubbles/tool-calls
+// 约 1 万行）因「懒 chunk 反向 import main」被拽进入口 chunk（main 内出现 ToolCallBlock/
+// noHighlightRe 等仅懒侧使用的标识）。改深度路径直引断开传导，见 plans/fea-chat-barrel-spec.md。
+import { ChatInput } from './components/Chat/input/ChatInput';
+import type { EditMode } from './components/Chat/input/ChatInput';
+import { ChatStatusBar } from './components/Chat/common/ChatStatusBar';
+import { ErrorBanner } from './components/Chat/common/ErrorBanner';
+import { CompactHandoffButton } from './components/Chat/compact-handoff/CompactHandoffButton';
+import { CompactHandoffProgress } from './components/Chat/compact-handoff/CompactHandoffProgress';
+import { MultiWindowMenu } from './components/Chat/session/MultiWindowMenu';
+import { NewSessionButton } from './components/Chat/session/NewSessionButton';
 // 条件渲染的重组件统一懒加载，避免首帧解析 400+ 模块的 Chat barrel 传递依赖
 const SessionHistoryPanelLazy = lazy(() => import('./components/Chat/session/SessionHistoryPanel').then(m => ({ default: m.SessionHistoryPanel })));
 const MultiSessionGridLazy = lazy(() => import('./components/Chat/session/MultiSessionGrid').then(m => ({ default: m.MultiSessionGrid })));
