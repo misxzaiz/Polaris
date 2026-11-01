@@ -235,7 +235,18 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setSelectedScriptId(script.id);
-                  setContextMenu({ visible: true, x: e.clientX, y: e.clientY, scriptId: script.id });
+                  // 右键菜单是 fixed 定位，而左面板 wrapper 以 contain:paint 成为
+                  // containing block（面板坐标域，见 plans/panel-coordinate-domain.md），
+                  // fixed 坐标基准从视口变为面板——clientX/Y 必须减去域墙原点换算，
+                  // 否则菜单整体偏移面板左上角坐标。
+                  const domainEl = (e.currentTarget as HTMLElement).closest('[data-panel-coordinate-domain]');
+                  const domainRect = domainEl?.getBoundingClientRect();
+                  setContextMenu({
+                    visible: true,
+                    x: e.clientX - (domainRect?.left ?? 0),
+                    y: e.clientY - (domainRect?.top ?? 0),
+                    scriptId: script.id,
+                  });
                 }}
                 className={`w-full text-left px-3 py-2 border-b border-[#303030] ${active ? 'bg-[#263347]' : 'hover:bg-[#2d2d2d]'}`}
               >

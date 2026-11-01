@@ -292,6 +292,16 @@ export function LeftPanelContent({
 
   // 渲染所有已挂载面板，各包一个显隐 wrapper：切换只切 display，不卸载。
   // wrapper 显隐：active 面板 h-full 撑满，其余 display:none（保活常驻 DOM）。
+  //
+  // 域墙：每个面板 wrapper 自成「层叠域 + 坐标域」（见 plans/panel-coordinate-domain.md）
+  // - isolation: isolate（aa27251e 引入）：层叠域——面板内浮层不与兄弟面板/外部互相叠盖，
+  //   对外整个面板是一颗原子绘制单元。
+  // - contain: paint：坐标域——成为全部 fixed/absolute 后代的 containing block，
+  //   面板内 `fixed inset-0` 弹窗（GitPanel PushDialog/BranchDialogs、Todo/Requirement/
+  //   Terminal 的 Modal 等）自动退化为面板相对定位：遮罩与卡片只覆盖面板矩形，
+  //   不再全窗口居中，也不再与右侧聊天区（DOM 序靠后的 relative 内容）争绘制序。
+  // - data-panel-coordinate-domain：域墙标记，供面板内跟随鼠标的 fixed 浮层
+  //   （终端脚本右键菜单）把 clientX/Y 视口坐标换算为域相对坐标。
   const panels: ReactNode[] = []
   const panelTypes = [...Object.keys(builtinPanels), ...pluginPanelRegistry.listPanelTypes()]
   const seen = new Set<string>()
@@ -302,7 +312,12 @@ export function LeftPanelContent({
     const isActive = p === active
     const isBuiltin = p in builtinPanels
     panels.push(
-      <div key={p} className={isActive ? 'flex-1 min-w-0 min-h-0' : 'hidden'} style={{ isolation: 'isolate' }}>
+      <div
+        key={p}
+        className={isActive ? 'flex-1 min-w-0 min-h-0' : 'hidden'}
+        data-panel-coordinate-domain
+        style={{ isolation: 'isolate', contain: 'paint' }}
+      >
         {isBuiltin ? builtinPanels[p] : <PluginPanelHost panelType={p} onSendToChat={onSendToChat} />}
       </div>
     )
