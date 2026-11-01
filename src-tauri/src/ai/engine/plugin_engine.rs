@@ -959,10 +959,16 @@ impl PluginEngineRunner {
                             );
                         }
                         ParseWarnDecision::Suppress { suppressed_so_far } => {
-                            let preview: String = trimmed.chars().take(300).collect();
+                            // 评审加固：preview 移入 debug! 字段惰性求值——tracing 字段
+                            // 表达式仅在事件启用时求值，生产默认 debug 关，洪水期
+                            // 每条被抑制的行省一次 300 字符 String 分配
                             tracing::debug!(
                                 "[PluginEngine:{}] 无法解析 stdout 行(10s 窗口内已抑制 {} 条): {}",
-                                engine_id, suppressed_so_far, preview
+                                engine_id,
+                                suppressed_so_far,
+                                preview = tracing::field::display(
+                                    trimmed.chars().take(300).collect::<String>()
+                                )
                             );
                         }
                     }

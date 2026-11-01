@@ -184,7 +184,12 @@ pub fn plan_retention(
         return plan;
     }
     let limit_bytes = cfg.max_total_mb.saturating_mul(1024 * 1024);
-    let cutoff = now - Duration::from_secs(cfg.max_age_days.saturating_mul(86_400));
+    // 评审加固：maxAgeDays 异常巨大（如手改 config 填了 15 万+）会使 SystemTime
+    // 下溢 panic——checked_sub 失败时退化为 UNIX_EPOCH cutoff（对一切真实文件
+    // 均判未过期），按龄删除变 no-op，总量策略照常，清扫线程不死。
+    let cutoff = now
+        .checked_sub(Duration::from_secs(cfg.max_age_days.saturating_mul(86_400)))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
     let today = local_date(now);
 
     // (mtime, path, size, expired)，已剔除不匹配与当日文件
@@ -411,6 +416,21 @@ mod tests {
         let plan = plan_retention(files, now, &cfg(true, 14, 500), BASE);
         assert!(plan.to_delete.is_empty());
         assert_eq!(plan.bytes_freed, 0);
+    }
+
+    /// 等值边界：mtime 恰等于 cutoff 不删（过期判定为严格小于；评审加固补测）
+    #[test]
+    fn plan_keeps_file_at_exact_cutoff_boundary() {
+        let now = SystemTime::now();
+        // 与 plan_retention 内 cutoff 公式逐字节一致：now - max_age_days*86400s
+        let cutoff = now.checked_sub(Duration::from_secs(14 * 86_400)).unwrap();
+        let files = vec![(f("app.log.2026-10-18"), cutoff, 1000)];
+        let plan = plan_retention(files, now, &cfg(true, 14, 500), BASE);
+        assert!(
+            plan.to_delete.is_empty(),
+            "mtime == cutoff 应判未过期（严格小于语义）"
+        );
+        assert_eq!(plan.skipped, 0);
     }
 
     /// 当日活跃文件永不删：即使总量超限（max_total_mb 压到只剩当日文件）也绝不删
