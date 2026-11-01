@@ -137,12 +137,16 @@ fn open_connection() -> Result<Connection> {
 }
 
 fn tune_pragmas(conn: &Connection) {
+    // busy_timeout 必须先于 journal_mode=WAL：WAL 切换需独占锁，多实例并发
+    // 首次 open 时无 busy_timeout 会立即 `database is locked`（对齐
+    // session_db.rs:135 范式；此前 WAL 先行属反序）。错误保持 `let _ =`
+    // 容忍语义不变：索引库可重建，pragma 失败不阻断主流程。
+    let _ = conn.pragma_update(None, "busy_timeout", 5000);
     let _ = conn.pragma_update(None, "journal_mode", "WAL");
     let _ = conn.pragma_update(None, "synchronous", "NORMAL");
-    // 多实例：两个 polaris.exe 同时写同一份 index.db 时，WAL 允许读写并发，
-    // 但写-写冲突仍需等待对方提交。无 busy_timeout 时会立即返回
-    // `database is locked`，因此显式设置重试窗口。
-    let _ = conn.pragma_update(None, "busy_timeout", 5000);
+    // WAL 尺寸上限（对齐 storage/sqlite.rs 楔死治理）：无上限时高频写域的
+    // WAL 可无界膨胀（kv 域曾 200MB 楔死先例），checkpoint 时自动修剪。
+    let _ = conn.pragma_update(None, "journal_size_limit", 64 * 1024 * 1024_i64);
 }
 
 fn read_schema_version(conn: &Connection) -> Result<i64> {

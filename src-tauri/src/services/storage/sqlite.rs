@@ -5,7 +5,8 @@
 //! 沿用 sky 成熟部分：
 //! - 按域分库 `stores/<domain>.db`（不是一个大库，域间隔离）
 //! - `domain_audit` 表内嵌各域 DB（同库；审计写走事务连接）
-//! - WAL 模式 + `synchronous NORMAL` + busy_timeout（对齐 dialog_index 惯例）
+//! - WAL 模式 + `synchronous NORMAL` + busy_timeout（设置顺序对齐 session_db
+//!   范式：busy_timeout 先于 WAL 切换，另设 journal_size_limit 防 WAL 无界膨胀）
 //! - FTS5 外部内容表，可丢弃可重建（绝不做增量索引）
 //!
 //! 补全 sky 骨架缺失（生产级）：
@@ -90,6 +91,11 @@ impl SqliteStorage {
         let db_path = self.get_domain_db_path(domain);
         let conn = Connection::open(&db_path)
             .map_err(|e| format!("打开 {} 数据库失败: {}", domain, e))?;
+        // busy_timeout 必须先于 journal_mode=WAL：WAL 切换需独占锁，多连接并发
+        // 首次 open 时无 busy_timeout 会立即 `database is locked`（对齐
+        // session_db.rs:135 范式；此前 WAL 先行属反序，多实例场景有竞窗）。
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| format!("设置 busy_timeout 失败: {}", e))?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| format!("设置 WAL 失败: {}", e))?;
         conn.pragma_update(None, "synchronous", "NORMAL")
@@ -99,8 +105,6 @@ impl SqliteStorage {
         // SQLite 在 checkpoint 时自动把 WAL 修剪到该值以内。
         conn.pragma_update(None, "journal_size_limit", 64 * 1024 * 1024_i64)
             .map_err(|e| format!("设置 journal_size_limit 失败: {}", e))?;
-        conn.busy_timeout(std::time::Duration::from_secs(5))
-            .map_err(|e| format!("设置 busy_timeout 失败: {}", e))?;
         conn.execute_batch(SCHEMA_SQL)
             .map_err(|e| format!("建表失败: {}", e))?;
         Ok(conn)

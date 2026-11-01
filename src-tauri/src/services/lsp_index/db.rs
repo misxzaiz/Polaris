@@ -77,13 +77,17 @@ impl IndexDb {
     }
 
     fn tune_pragmas(conn: &Connection) -> Result<()> {
+        // busy_timeout 必须先于 journal_mode=WAL：WAL 切换需独占锁，多实例并发
+        // 首次建索引时无 busy_timeout 会立即 `database is locked`（对齐
+        // session_db.rs:135 范式；此前 WAL 先行属反序）。
+        conn.pragma_update(None, "busy_timeout", 5000).ok();
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| AppError::StateError(format!("WAL 切换失败: {}", e)))?;
         conn.pragma_update(None, "synchronous", "NORMAL")
             .map_err(|e| AppError::StateError(format!("synchronous 设置失败: {}", e)))?;
-        // 多实例：两个 polaris.exe 同时对同一工作区建索引时，写-写冲突需等待
-        // 对方提交。无 busy_timeout 会立即返回 `database is locked`。
-        conn.pragma_update(None, "busy_timeout", 5000).ok();
+        // WAL 尺寸上限（对齐 storage/sqlite.rs 楔死治理）：无上限时高频写域的
+        // WAL 可无界膨胀（kv 域曾 200MB 楔死先例），checkpoint 时自动修剪。
+        conn.pragma_update(None, "journal_size_limit", 64 * 1024 * 1024_i64).ok();
         // 额外提升大批量写入吞吐
         conn.pragma_update(None, "temp_store", "MEMORY").ok();
         conn.pragma_update(None, "cache_size", -16_000).ok(); // ~16MB cache
