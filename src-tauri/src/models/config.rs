@@ -1341,6 +1341,50 @@ pub struct CapOverrideConfig {
     pub allow: Vec<String>,
 }
 
+/// 日志保留策略（DS-1 日志管道治理，plans/ds1-log-pipeline-spec.md）。
+///
+/// 生产数据根 `logs/` 实测 954.6MB/102 文件（占数据根 ~73%），logger 仅有按天
+/// 轮转、零保留策略。本段控制启动期保留清扫：删除过期/超限的历史日志文件。
+///
+/// serde 全字段 default（结构体级 `#[serde(default)]` + 字段级 default 函数），
+/// 旧 config.json 无此段时零改动兼容（enabled=true / 14 天 / 500MB 温和默认）。
+/// 不可逆删除必须可关（AGENTS.md 原则：删除类治理须 config 逃生门）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LogRetentionConfig {
+    /// 是否启用启动期保留清扫（false = 整体跳过，一个文件都不动）
+    #[serde(default = "default_log_retention_enabled")]
+    pub enabled: bool,
+    /// 文件最后修改时间早于 now − max_age_days 的日志文件删除
+    #[serde(default = "default_log_retention_max_age_days")]
+    pub max_age_days: u64,
+    /// 日志目录内本应用日志总大小上限（MB），超限从最旧起删（当日活跃文件除外）
+    #[serde(default = "default_log_retention_max_total_mb")]
+    pub max_total_mb: u64,
+}
+
+impl Default for LogRetentionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_log_retention_enabled(),
+            max_age_days: default_log_retention_max_age_days(),
+            max_total_mb: default_log_retention_max_total_mb(),
+        }
+    }
+}
+
+fn default_log_retention_enabled() -> bool {
+    true
+}
+
+fn default_log_retention_max_age_days() -> u64 {
+    14
+}
+
+fn default_log_retention_max_total_mb() -> u64 {
+    500
+}
+
 /// 应用配置（新版本）
 ///
 /// 使用嵌套结构，支持多个 AI 引擎
@@ -1445,6 +1489,11 @@ pub struct Config {
     /// Web 访问层配置
     #[serde(default)]
     pub web: WebConfig,
+
+    /// 日志保留策略（启动期清扫；DS-1 日志管道治理，plans/ds1-log-pipeline-spec.md）。
+    /// serde 全 default，旧 config.json 无此段时零改动兼容。
+    #[serde(default)]
+    pub log_retention: LogRetentionConfig,
 
     /// 派发任务配置（dispatch_task MCP 策略/结果注入/队员预设）
     #[serde(default)]
@@ -1629,6 +1678,7 @@ impl Default for Config {
             voice_notification: None,
             voice_commands: None,
             web: WebConfig::default(),
+            log_retention: LogRetentionConfig::default(),
             dispatch: DispatchConfig::default(),
             chat_display: ChatDisplaySettings::default(),
             ui_control_enabled: false,
