@@ -31,6 +31,7 @@ import { ForkIndicator } from './ForkIndicator'
 import { SessionTree } from './SessionTree'
 import { ForkSessionDialog } from './ForkSessionDialog'
 import { SessionPreviewModal } from './SessionPreviewModal'
+import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import { RemoteSessionsStrip, RemoteSessionOverlay } from './RemoteSessionsPanel'
 import { getEngineFullName } from '@/utils/engineDisplay'
 import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
@@ -53,6 +54,13 @@ type ViewMode = 'list' | 'tree'
 
 /** 日期分组顺序 */
 const DATE_GROUP_ORDER: DateGroup[] = ['today', 'yesterday', 'thisWeek', 'earlier']
+
+/**
+ * 低价值会话阈值：消息数 ≤ 此值的近空会话删除时跳过确认（保持轻快）。
+ * UX-4（plans/ux4-delete-confirm-spec.md）：历史条目带后端索引的 messageCount（historyService.ts
+ * UnifiedHistoryItem），判定可靠；与 QuickSwitchPanel 同一阈值语义（其侧取不到内存 store 时一律确认）。
+ */
+const LOW_VALUE_MESSAGE_COUNT = 2
 
 async function resolveForkWorkspaceId(
   item: UnifiedHistoryItem,
@@ -206,6 +214,8 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [forkTarget, setForkTarget] = useState<UnifiedHistoryItem | null>(null)
   const [previewTarget, setPreviewTarget] = useState<UnifiedHistoryItem | null>(null)
+  // 删除会话确认框目标（UX-4：删除不可逆，先确认再删；null = 关闭）
+  const [deleteTarget, setDeleteTarget] = useState<UnifiedHistoryItem | null>(null)
   const [refreshTick, setRefreshTick] = useState(0)
   /** 选中的特定工作区 ID（null 表示未指定，按 scope 推算） */
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
@@ -416,6 +426,15 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         message: e instanceof Error ? e.message : String(e),
       })
     }
+  }
+
+  // 删除会话入口（UX-4：硬删不可逆，先弹确认；仅后端索引可靠标明 ≤2 条消息的近空会话跳过确认）
+  const requestDelete = (item: UnifiedHistoryItem) => {
+    if (item.messageCount <= LOW_VALUE_MESSAGE_COUNT) {
+      void handleDelete(item)
+      return
+    }
+    setDeleteTarget(item)
   }
 
   // 加载会话消息（用于 Fork）
@@ -706,7 +725,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           </button>
           {canDelete && (
             <button
-              onClick={() => handleDelete(item)}
+              onClick={() => requestDelete(item)}
               className="p-1.5 rounded-md hover:bg-danger/10 text-text-tertiary hover:text-danger transition-colors opacity-0 group-hover:opacity-100"
               title={t('history.deleteSession')}
             >
@@ -1016,6 +1035,33 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           sourceSession={forkTarget}
           onConfirm={(branchName) => handleFork(forkTarget, branchName)}
           onCancel={() => setForkTarget(null)}
+        />
+      )}
+
+      {/* 删除会话确认框（UX-4）：展示标题/消息数与不可逆后果；onConfirm 在退场动画结束后触发一次
+          （exit() 幂等，天然防重复提交），先关框再执行删除，保持原有时序。
+          文案用 t(key, 中文默认) 既有模式（key 未入库时回退默认中文）；按钮文案为字符串，
+          ConfirmDialog 原语内部默认走 common 命名空间，本组件 t 绑定 chat 命名空间不通用 */}
+      {deleteTarget && (
+        <ConfirmDialog
+          title={t('history.deleteSession')}
+          message={t(
+            'history.deleteConfirmMessage',
+            `将永久删除会话「${deleteTarget.title}」（共 ${deleteTarget.messageCount} 条消息），本地记录与消息库记录将被清除且无法恢复。`,
+          )}
+          confirmText={t('history.deleteConfirmAction', '删除')}
+          cancelText={t('history.deleteCancelAction', '取消')}
+          type="danger"
+          losses={[
+            t('history.deleteLossMessages', `会话「${deleteTarget.title}」的全部消息记录`),
+            t('history.deleteLossStorage', '本地存档与后端消息库数据'),
+          ]}
+          onConfirm={() => {
+            const item = deleteTarget
+            setDeleteTarget(null)
+            void handleDelete(item)
+          }}
+          onCancel={() => setDeleteTarget(null)}
         />
       )}
 
