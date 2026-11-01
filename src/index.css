@@ -503,6 +503,11 @@ body {
   padding: var(--chat-bubble-padding-y) var(--chat-bubble-padding-x);
   border-radius: var(--chat-bubble-radius);
   font-family: var(--chat-font-family);
+  /* 渐变与光晕引用主题 token --c-primary，主题切换（dark/warm/light）时气泡自动跟随，
+   * 不在对话设置里另开颜色维度（避免与主题系统多写路径）。 */
+  background: linear-gradient(135deg, rgb(var(--c-primary)), rgb(var(--c-primary-600)));
+  color: rgb(var(--c-on-primary));
+  box-shadow: 0 0 24px rgb(var(--c-primary) / 0.15);
 }
 
 .chat-user-text,

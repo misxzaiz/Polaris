@@ -117,9 +117,7 @@ export const UserBubble = memo(function UserBubble({
               </button>
             )}
           </div>
-          <div className="chat-user-bubble
-                      bg-gradient-to-br from-primary to-primary-600
-                      text-white shadow-glow">
+          <div className="chat-user-bubble">
             {/* 附件列表 */}
             {message.attachments && message.attachments.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2 pb-2 border-b border-white/20">
