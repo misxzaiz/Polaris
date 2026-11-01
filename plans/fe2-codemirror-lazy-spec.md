@@ -16,7 +16,7 @@ CodeMirror 全家（view/state/lsp-client/language 包 ~1MB）被 5 条静态边
 |---|---|---|
 | 1 | `App.tsx:11` `import { NarrowTabOverlay } from './components/Editor'`（barrel :6 静态拖出 CodeMirrorEditor） | 改直引 `from './Editor/NarrowTabOverlay'`，绕开 barrel |
 | 2 | `CenterStage.tsx:15` `import { EditorPanel, BreadcrumbBar } from '@/components/Editor'` | 拆两条：`BreadcrumbBar` 直引 `@/components/Editor/BreadcrumbBar`（实施时验证其自身不引 codemirror）；`EditorPanel` 改 `React.lazy` + `<Suspense fallback={<编辑区骨架/>}>`（骨架=纯 div 占位，无新依赖）。CenterStage 本体**不动**（首帧 UI，不 lazy 组件本体） |
-| 3 | `NarrowTabOverlay.tsx:25` `import { EditorPanel } from './EditorPanel'` | 同款 `React.lazy` + Suspense（overlay 仅窄屏浮 tab 打开时才挂载，启动不触达） |
+| 3 | `NarrowTabOverlay.tsx:25` `import { EditorPanel } from './EditorPanel'` | 同款 `React.lazy` + Suspense（overlay 仅窄屏浮 tab 打开时才挂载，启动不触达）。**实施取舍**：未单独改造——边 1 已把 NarrowTabOverlay 本体整体 lazy，本边随之进入懒 chunk（懒 chunk 内部静态引不影响首载，dist 断言证实），无需重复 lazy |
 | 4 | `useAppInit.ts:35` 静态引 `preloadLanguageExtensions`（:145 idle 时调用） | 改动态 `import('@/components/Editor/Editor').then(m => m.preloadLanguageExtensions()).catch(...)`，照抄 `configStore.ts:440` 先例；移除顶部静态 import |
 | 5 | `lspStore.ts:11-17` 顶层值引 `@codemirror/lsp-client`（LSPClient/languageServerSupport/serverDiagnostics）+ `@codemirror/view`（EditorView/keymap）；`import type { Extension } from '@codemirror/state'` 是纯类型（擦除，不动） | 模块级惰性加载器：`let codemirrorDeps: Promise<{...}> \| null = null; function ensureCodemirrorDeps() { return (codemirrorDeps ??= Promise.all([import('@codemirror/lsp-client'), import('@codemirror/view')]).then(([lsp, view]) => ({...lsp, ...view}))); }`；所有用点改 `await ensureCodemirrorDeps()`（store actions 本就是 async 场景；实施者逐用点核实同步用点，如有则改造或说明） |
 
@@ -67,3 +67,11 @@ pnpm build                            # 产 dist
 4. **增量边 ⑥⑧⑨（评审清单外，grep 实测补切）**：useAppInit.ts:35 静态引 `Editor/Editor.tsx`（preloadLanguageExtensions）；configStore.ts:17 静态引 lspStore；plugin-system/index.ts:43 → builtinPlugins.ts:7 → editor/gitGutter 等的 `@codemirror/state`、`@codemirror/view` 值引用。任一残留都会经 manualChunks 把整个 codemirror chunk 拽回首载。
 
 验证（本 worktree 实测）：`pnpm typecheck` 零错误；改动六文件 eslint 0 error；`pnpm build` 后 dist/index.html modulepreload 仅 utils/react-vendor/tauri 三项、入口 main chunk 无指向 codemirror 的静态 import 语句（仅动态 import 的 `__vite__mapDeps` 映射串）。§四断言 c（基线重建比 raw 差值）未跑，留验收官复跑。
+
+---
+
+## 八、独立复核后续项（2026-11-01 复核 verdict=pass，三项 low 均不阻塞合并）
+
+1. **builtinPlugins.ts:129 动态 import 竞态窗口（low）**：`void import('./editor')` 为 fire-and-forget，与 Editor.tsx `collectExtensions` 的同步快照存在理论竞态——启动即恢复文件 tab 的极速首开若早于微任务注册完成，会丢 git gutter/blame/导航扩展（重开文件可恢复）。实际窗口毫秒级（editor barrel chunk 远小于 codemirror chunk，并行加载几乎必然先完成）。后续可改 `await` 或注册失败重试。
+2. **useAppInit.ts lspStore await 与同 try 块耦合（low）**：`await import('@/stores/lspStore')` 在共享 try 块内，chunk 加载异常会连带跳过同块内 snippet/skill/integration 的 Promise.all（catch 仅 warn）。同类动态加载（cleanup、configStore）均为独立 catch 链，可对齐。极端场景、影响可控。
+3. 边 3 注记已回填（见 §二 表格）。
