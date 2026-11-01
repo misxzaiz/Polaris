@@ -20,14 +20,34 @@ barrel index.ts 本体不动；其他组件对 barrel 的引用不动（懒侧�
 - index.html 首载：main + utils(72.66kB) + react-vendor(324.88kB) + tauri(18.32kB) modulepreload
   + index.css(207.60kB)，JS 合计 2,042,934 B
 
-## 验收
-1. grep src/：main 入口链（App.tsx/main.tsx）零 `'./components/Chat'` / `'@/components/Chat'` 静态 import（type-only 也不留）。
-2. 改造后 build：4 项签名全 false；main 体积下降，记录 bundleAfter。
-3. `pnpm typecheck` 零错误。
+## 验收（实测结果 2026-11-01）
+1. grep src/：Chat 子树外零 `'./components/Chat'` / `'@/components/Chat'` 静态 import（type-only 也不留）——已达成。
+2. main 1,617,089B → 1,332,966B（-284,123B/-17.6%；gzip 485.60→409.55kB）；
+   首载 JS 2,042,934B → 1,758,817B；CSS 207.60→186.40kB（form/Card 样式随子树移出）。
+3. 签名对照（同探针 before/after）：
+   - form.missingRequired：true → **false**（源头 chatBlocks/FormCard.tsx，子树移出实锤）
+   - noHighlightRe / C_LINE_COMMENT_MODE：true → true（残留，归因见下）
+   - ToolCallBlock：11 处 → 11 处（探针污染，见下）
+4. `pnpm typecheck` 零错误；`pnpm lint` 0 errors（87 warnings 为存量）。
+
+## 残留签名归因（实测，均非 Chat barrel 传导）
+- **noHighlightRe / C_LINE_COMMENT_MODE**（highlight.js core 导出名）：
+  静态闭包遍历（423 模块）证实路径为
+  `App.tsx:10 './components/Layout' barrel → CenterStage.tsx → DiffViewer.tsx
+  → UnifiedDiffRow.tsx → WordDiffSegment.tsx → utils/syntaxHighlight.ts → utils/highlight.ts`
+  ——改造前即存在，属 Layout barrel 边，不在本案范围。
+- **ToolCallBlock×11**：探针测的是字符串。main 内 11 处全部为 main 侧固有方法名属性
+  （conversationStore/eventHandler.ts 的 updateToolCallBlock×3、updateToolCallBlockDiff×2、
+  updateToolCallBlockPatch×2、appendToolCallBlock×2 + utils/messageCompactor.ts:295
+  compactToolCallBlock×2），组件本体标识符在产物中被 minify，两侧计数相同属预期。
 
 ## 回滚
 单文件单提交（perf(chat)），`git revert <commit>` 即可整体回滚；spec 提交独立（docs(plans)）。
 
 ## 后续项（不在本案扩散）
-- 若直引后 ChatInput 等符号内部仍传导 sibling barrel，另行立项。
+- **FE-C（建议）**：App.tsx:10 Layout barrel 同样传导 DiffViewer→highlight.js（~数十kB+
+  hljs core）进 main；可复制本案范式对 Layout barrel 切边或对 DiffViewer 做 lazy。
 - barrel 本体的 re-export 面收敛（renderChatMessage 等）另行评估。
+- 直引的 7 组件内部未见反向 sibling barrel 传导（ChatInput 仅引 input/ 内 sibling 与
+  compact-handoff/PendingBriefingCard 深路径；ChatStatusBar 引 session/SessionConfigSelector
+  深路径）。
