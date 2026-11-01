@@ -9,97 +9,160 @@
  * - 全部图标使用 lucide-react 组件，无 emoji
  */
 
-/* ========== 容器：贴顶形态 ========== */
+/* ========== 容器：贴顶形态（HIG-faithful v5 视觉升级） ==========
+ * 设计原则（Apple Dynamic Island HIG）：
+ * - Morph 形态：宽度 fit-content 由内容驱动，spring 回弹曲线
+ * - 极简密度：折叠态 = 符号 + 一行文案 + 数值
+ * - 柔光边缘：无 border，backdrop-filter blur+saturate 融于背景
+ * - 状态=颜色+动效：运行青蓝流动 / 思考紫呼吸 / urgent 琥珀快闪 / 完成绿沉静
+ * - 动效∝强度：活动态流动，静止态几乎无动效
+ *
+ * 状态色经 --island-glow / --island-aura 自定义属性传递，由 root 状态类驱动
+ * （is-running / is-thinking / is-urgent / is-interrupt / is-done / is-ready / is-fail）。
+ */
 .island-root {
   position: absolute;
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  /* 30（--z-float）：聊天区浮层档。
-     低于全局浮层（ToolSwitcher/LeftPanel/LeftPanelDrawer/RadialMenu 等 z-popover(50)）
-     与侧边栏抽屉（z-overlay 40）。岛挂在 DOM 靠后的聊天区，若与侧边栏同级或更高
-     会按数值/DOM 序反压侧边栏（用户可见 bug：开侧边栏时岛仍浮在上层）。 */
   z-index: var(--z-float, 30);
-  /* 宽度自适配：内容驱动，不再固定 440px */
   width: fit-content;
   min-width: 120px;
   max-width: min(440px, calc(100% - 32px));
   border-radius: 0 0 14px 14px;
-  /* 亮两档浮层 + 内高光 + 阴影，与背景分离 */
-  background: rgb(38 38 46);
-  border: 1px solid rgba(var(--c-border), 0.16);
-  border-top: none;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  /* 玻璃质感：用半透明 + backdrop-filter 替代硬编码背景，与背景融合 */
+  background: rgba(var(--c-bg-surface), 0.72);
+  /* 无 border 线（HIG：边缘融于背景）；底部状态光带由 ::before 定义边界 */
+  border: none;
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -8px 24px var(--island-aura, transparent);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
   overflow: hidden;
   transition:
-    border-radius 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
-    box-shadow 0.2s,
+    border-radius 0.42s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.3s ease,
     width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* 底部状态光带：取代硬 border，状态色随 --island-glow 变化流动 */
+.island-root::before {
+  content: '';
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--island-glow, rgb(var(--c-text-muted))), transparent);
+  opacity: 0.5;
+  transition: opacity 0.3s ease, background 0.3s ease;
+  pointer-events: none;
+}
+.island-root:hover::before {
+  opacity: 0.85;
 }
 .island-root.island-expanded {
   border-radius: 0 0 18px 18px;
-  /* 展开态固定宽度，不被 fit-content 压窄 */
   width: min(440px, calc(100% - 32px));
 }
 /* v3 常驻变更：collapsed 收尾后转为常驻形态，不再有 island-exiting 淡出隐藏 */
+
+/* ========== 状态类 → 状态色（驱动光带 + 符号 + 光晕） ==========
+ * 状态优先级（index.tsx 已按此判定）：urgent > fail > done/resident > thinking > running
+ * 颜色对齐主题 token，不硬编码 hex：
+ * - running → --c-status-info（青蓝系，与运行语义一致）
+ * - thinking → --c-accent-ai（紫）
+ * - urgent → --c-status-warning（琥珀）
+ * - fail → --c-status-danger（红）
+ * - done/ready → --c-status-success（绿）
+ * - interrupt → --c-text-muted（灰）
+ */
+.island-root.is-ready,
+.island-root.is-resident { --island-glow: rgb(var(--c-status-success)); --island-aura: rgba(var(--c-status-success), 0.06); }
+.island-root.is-running { --island-glow: rgb(var(--c-status-info)); --island-aura: rgba(var(--c-status-info), 0.08); }
+.island-root.is-thinking { --island-glow: rgb(var(--c-accent-ai)); --island-aura: rgba(var(--c-accent-ai), 0.08); }
+.island-root.is-urgent { --island-glow: rgb(var(--c-status-warning)); --island-aura: rgba(var(--c-status-warning), 0.08); }
+.island-root.is-interrupt { --island-glow: rgb(var(--c-text-muted)); --island-aura: rgba(var(--c-text-muted), 0.05); }
+.island-root.is-done { --island-glow: rgb(var(--c-status-success)); --island-aura: rgba(var(--c-status-success), 0.06); }
+.island-root.is-fail { --island-glow: rgb(var(--c-status-danger)); --island-aura: rgba(var(--c-status-danger), 0.08); }
 
 /* ========== compact 条 ========== */
 .island-compact {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 28px;
+  height: 30px;
   padding: 0 12px;
   cursor: pointer;
   user-select: none;
 }
 .island-collapsed .island-compact {
-  height: 24px;
+  height: 26px;
 }
 
-/* 状态点 */
+/* 符号：核心点 + 双波扩散（取代单点 + pulse ring）
+ * 状态色取 --island-glow，由 root 状态类驱动；动效强度∝状态强度
+ * （活动态流动 / urgent 快闪 / thinking 慢呼吸 / 静止态几乎无动效） */
+.island-sym {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+.island-sym .island-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--island-glow, rgb(var(--c-status-info)));
+  box-shadow: 0 0 8px var(--island-glow, rgb(var(--c-status-info)));
+}
+.island-collapsed .island-sym .island-dot {
+  width: 6px;
+  height: 6px;
+}
+.island-sym .island-wave {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--island-glow, rgb(var(--c-status-info)));
+  opacity: 0;
+}
+/* 活动态才有波扩散；静止态（done/ready）只有静态点 */
+.is-running .island-sym .island-wave,
+.is-thinking .island-sym .island-wave,
+.is-urgent .island-sym .island-wave,
+.is-interrupt .island-sym .island-wave {
+  animation: island-wave 1.8s ease-out infinite;
+}
+.is-urgent .island-sym .island-wave { animation-duration: 1.1s; }
+.is-thinking .island-sym .island-wave { animation-duration: 2.4s; }
+.is-running .island-sym .island-dot { animation: island-breathe 1.6s ease-in-out infinite; }
+.is-thinking .island-sym .island-dot { animation: island-breathe 2.8s ease-in-out infinite; }
+.is-urgent .island-sym .island-dot { animation: island-blink 0.7s steps(2) infinite; }
+@keyframes island-wave {
+  0% { transform: scale(0.5); opacity: 0.7; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+@keyframes island-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.35); }
+}
+@keyframes island-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.3; }
+}
+/* 兼容旧 dotClass（island-dot-run/warn/done/fail）：无 sym 结构时仍可用 */
 .island-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
   position: relative;
-}
-.island-collapsed .island-dot {
-  width: 6px;
-  height: 6px;
-}
-.island-dot-run {
-  background: rgb(var(--c-primary));
-}
-.island-dot-run::after {
-  content: '';
-  position: absolute;
-  inset: -3px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(var(--c-primary), 0.5);
-  animation: island-pulse 1.5s ease-out infinite;
-}
-.island-dot-warn {
-  background: rgb(var(--c-status-warning));
-}
-.island-dot-warn::after {
-  content: '';
-  position: absolute;
-  inset: -3px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(var(--c-status-warning), 0.5);
-  animation: island-pulse 1.5s ease-out infinite;
-}
-.island-dot-done {
-  background: rgb(var(--c-status-success));
-}
-.island-dot-fail {
-  background: rgb(var(--c-status-danger));
-}
-@keyframes island-pulse {
-  0% { transform: scale(0.85); opacity: 1; }
-  100% { transform: scale(1.4); opacity: 0; }
+  background: var(--island-glow, rgb(var(--c-status-info)));
 }
 
 /* 主文案区 + 轮播 */
@@ -826,16 +889,6 @@
   height: 30px;
 }
 
-/* 思考态状态点：呼吸（紫），替代脉冲环 */
-.island-dot-thinking {
-  background: rgb(var(--c-accent-ai));
-  animation: island-breathe 1.8s ease-in-out infinite;
-}
-@keyframes island-breathe {
-  0%, 100% { opacity: 0.55; transform: scale(0.9); }
-  50% { opacity: 1; transform: scale(1.15); }
-}
-
 /* 跑马灯视口：左右渐隐遮罩 */
 .island-marquee-wrap {
   /* 让 marquee 视口占满 main 区 */
@@ -1213,4 +1266,18 @@
 }
 .island-link:hover {
   text-decoration: underline;
+}
+
+/* ========== 减少动效降级（HIG：尊重系统偏好） ==========
+ * 复杂动画（波扩散 / 呼吸 / 闪烁）降级为静态或淡入淡出，保留状态色信息。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .island-root,
+  .island-root::before,
+  .island-sym .island-wave,
+  .island-sym .island-dot,
+  .island-marquee-scroll {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
 }

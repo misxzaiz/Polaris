@@ -231,16 +231,21 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
     ? Math.max(6, Math.min(20, thinking.length / 8))
     : 14;
 
-  // 状态点颜色：urgent 最优先 → 失败 → 已完成/常驻 → 运行中
-  const dotClass = urgent.length > 0
-    ? 'island-dot-warn'
+  // v5 视觉升级：root 状态类驱动 --island-glow / --island-aura（玻璃光带 + 双波符号）
+  // 优先级：urgent > fail > interrupt > done/resident > thinking > running > ready
+  const stateClass = urgent.length > 0
+    ? 'is-urgent'
     : hasFailed
-      ? 'island-dot-fail'
-      : (isCollapsed || isResident)
-        ? 'island-dot-done'
-        : isThinking
-          ? 'island-dot-thinking'
-          : 'island-dot-running';
+      ? 'is-fail'
+      : isInterrupting
+        ? 'is-interrupt'
+        : (isCollapsed || isResident)
+          ? (doneCount > 0 ? 'is-done' : 'is-ready')
+          : isThinking
+            ? 'is-thinking'
+            : hasRunning
+              ? 'is-running'
+              : 'is-ready';
 
   // 当前轮播段
   const activeSlide = slides[carouselIdx] || slides[0];
@@ -258,6 +263,7 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
       ref={islandRef}
       className={clsx(
         'island-root',
+        stateClass,
         expanded && 'island-expanded',
         isCollapsed && !expanded && 'island-collapsed',
         isThinking && !expanded && 'island-minimal',
@@ -270,7 +276,11 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
         onMouseEnter={() => { hoverRef.current = true; }}
         onMouseLeave={() => { hoverRef.current = false; }}
       >
-        <span className={clsx('island-dot', dotClass)} />
+        {/* v5 双波符号：核心点 + 扩散波（状态色由 root 状态类驱动） */}
+        <span className="island-sym">
+          <span className="island-dot" />
+          <span className="island-wave" />
+        </span>
 
         {/* Minimal 思考跑马灯：思考文本右→左滚动 */}
         {isThinking && !expanded ? (
