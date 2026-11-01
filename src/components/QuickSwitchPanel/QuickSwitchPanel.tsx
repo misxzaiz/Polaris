@@ -6,10 +6,12 @@
  */
 
 import { memo, useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/utils/cn'
 import { QuickSwitchTrigger } from './QuickSwitchTrigger'
 import { QuickSwitchContent } from './QuickSwitchContent'
 import { NewSessionPanel } from '@/components/Chat/session/NewSessionPanel'
+import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import type { QuickSwitchPanelProps, QuickSessionInfo, QuickWorkspaceInfo } from './types'
 import type { SessionStatus } from '@/types/session'
 import {
@@ -18,6 +20,7 @@ import {
   useSessionManagerActions,
   useActiveSessionMessages,
 } from '@/stores/conversationStore'
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useWorkspaceStore, useViewStore, useToastStore } from '@/stores'
 import { exportToMarkdown, generateFileName } from '@/services/chatExport'
 import { getHandoffEligibility, handoffSessionToNewSession } from '@/services/sessionHandoff'
@@ -34,6 +37,19 @@ const HIDE_DELAY = 150
 
 /** 钉住状态存储 key */
 const PINNED_STORAGE_KEY = 'quick-switch-panel-pinned'
+
+/**
+ * 低价值会话阈值：消息数 ≤ 此值的近空会话删除时跳过确认（保持轻快）。
+ * UX-4（plans/ux4-delete-confirm-spec.md）：删除会话是三重硬删（内存 + JSONL + 后端消息库），
+ * 只有能可靠取到消息数才允许跳过——store 不存在（取不到）一律弹确认，宁多勿漏。
+ */
+const LOW_VALUE_MESSAGE_COUNT = 2
+
+/** 删除确认目标（含展示标题） */
+interface DeleteConfirmTarget {
+  id: string
+  title: string
+}
 
 /** 从 localStorage 读取钉住状态 */
 function getPinnedState(): boolean {
@@ -65,6 +81,9 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
   // 新建会话面板开关（复用状态栏 + 号共享面板 NewSessionPanel，贴右缘垂直居中；
   // spec：create-session-modal-slimdown-spec.md——锚点上方展开会越出应用上缘，视口正中观感突兀）
   const [isNewSessionOpen, setIsNewSessionOpen] = useState(false)
+
+  // 删除会话确认框目标（UX-4：删除不可逆，先确认再删；null = 关闭）
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DeleteConfirmTarget | null>(null)
 
   // 工作区下拉是否打开的 ref（同步更新，避免面板关闭）
   const workspaceDropdownOpenRef = useRef(false)
@@ -169,10 +188,27 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
     // 切换后保持面板展开，用户可能需要连续切换
   }, [switchSession])
 
-  // 删除会话
+  // 删除会话（UX-4：先确认再删——deleteSession 同步 dispose 内存并硬删 JSONL 与后端消息库，
+  // 见 sessionStoreManager.deleteSession，不可逆；仅内存 store 可靠取到 ≤2 条消息的近空会话跳过确认）
   const handleDeleteSession = useCallback((sessionId: string) => {
-    deleteSession(sessionId)
-  }, [deleteSession])
+    const store = sessionStoreManager.getState().stores.get(sessionId)
+    const messageCount = store ? store.getState().messages.length : null
+    if (messageCount !== null && messageCount <= LOW_VALUE_MESSAGE_COUNT) {
+      deleteSession(sessionId)
+      return
+    }
+    const session = sessions.find((s) => s.id === sessionId)
+    setDeleteConfirmTarget({ id: sessionId, title: session?.title ?? sessionId })
+  }, [deleteSession, sessions])
+
+  // 确认框「确定」：先关框再执行删除（ConfirmDialog 的 onConfirm 在退场动画结束后触发一次，
+  // exit() 幂等，天然防重复提交；不引入 loading 新语义，保持原有时序）
+  const handleConfirmDeleteSession = useCallback(() => {
+    if (!deleteConfirmTarget) return
+    const { id } = deleteConfirmTarget
+    setDeleteConfirmTarget(null)
+    deleteSession(id)
+  }, [deleteConfirmTarget, deleteSession])
 
   // 会话续接到新会话
   const handleHandoffSession = useCallback(async (sessionId: string) => {
@@ -361,6 +397,24 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
           placement="right-center"
           onClose={() => setIsNewSessionOpen(false)}
         />
+      )}
+      {/* 删除会话确认框（UX-4）：portal 到 body——本容器 z-20 + pointer-events-none 会困住子元素，
+          z-modal(70) 在内层 stacking context 不生效，确认框将无法点击（同 NewSessionPanel 先例） */}
+      {deleteConfirmTarget && createPortal(
+        <ConfirmDialog
+          title="删除会话"
+          message={`将永久删除「${deleteConfirmTarget.title}」，本地会话记录与消息库记录将被清除且无法恢复。`}
+          confirmText="删除"
+          cancelText="取消"
+          type="danger"
+          losses={[
+            `会话「${deleteConfirmTarget.title}」的全部消息`,
+            '本地 JSONL 存档与后端消息库记录',
+          ]}
+          onConfirm={handleConfirmDeleteSession}
+          onCancel={() => setDeleteConfirmTarget(null)}
+        />,
+        document.body
       )}
     </div>
   )

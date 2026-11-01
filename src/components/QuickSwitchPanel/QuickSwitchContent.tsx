@@ -298,7 +298,8 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
                 </button>
               )}
 
-              {/* 删除按钮 */}
+              {/* 删除按钮（UX-4：title 误导修正——视觉是 X 但语义是删除整个会话，见 plans/ux4-delete-confirm-spec.md；
+                  危险色沿用既有 text-danger token，未硬编码） */}
               {session.canDelete && (
                 <button
                   onClick={() => onDeleteSession(session.id)}
@@ -307,7 +308,8 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
                     'text-text-muted hover:text-danger hover:bg-danger/10',
                     'transition-all shrink-0'
                   )}
-                  title="关闭"
+                  title={t('history.deleteSession')}
+                  aria-label={t('history.deleteSession')}
                 >
                   <X className="w-3 h-3" />
                 </button>
