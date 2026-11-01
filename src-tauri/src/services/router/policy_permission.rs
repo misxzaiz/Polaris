@@ -279,6 +279,22 @@ impl PolicyPermission {
                 require_auth: true,
             });
         }
+        // install_remote 对已鉴权 Remote 放行（2026-11-02）：手机/Web 商城面板
+        // 选本地商城源（http://127.0.0.1:8787）后可直接安装。根因：P1-h 把全部
+        // 写动作留在 deny，但实际下载由宿主 reqwest 在桌面机内执行
+        // （plugin_service.rs download_plugin_source，127.0.0.1 指向桌面机自身，
+        // 本地源天然可达），manifest 相对 downloadUrl 经 resolve_source_url
+        // 解析为绝对 URL，链路完整。信任级论证：token 即桌面信任级（已可调
+        // cap.mcp:call/cap.kv），且 AI 会话（Plugin 源）的 install_remote 已默认
+        // 放行，已鉴权 Remote 不应低于 AI 会话。其余写动作（uninstall_*/apply_update/
+        // dev_link/install_local）维持 deny。spec: plans/plugin-discovery-install-remote-remote-allow.md
+        rules.push(CompiledRule {
+            capability: "cap.pluginDiscovery:install_remote".to_string(),
+            wildcard: false,
+            source: SourceClass::Remote,
+            verdict: RuleVerdict::Allow,
+            require_auth: true,
+        });
         // P1-g（审计：AI 操控插件无门控）：Plugin 源（AI 会话）的高危动作需用户
         // 审批。动作编码进 resource（`capId:action`，dispatch 从 payload.action 注入），
         // 与内置 deny 同表匹配。批准经 PermissionPromptSink（一次性、10 分钟 TTL）。
@@ -614,12 +630,12 @@ mod tests {
                 "已鉴权 Remote 应放行只读动作 {action}"
             );
         }
-        // 写动作维持 deny（安装/卸载/更新 = 文件系统变更）；discover_adapter
-        // 为调试用强制刷新入口（绕缓存/熔断 + 网络调用），不放行
+        // 写动作维持 deny（卸载/更新 = 文件系统变更）；discover_adapter
+        // 为调试用强制刷新入口（绕缓存/熔断 + 网络调用），不放行。
+        // install_remote 例外：2026-11-02 起对已鉴权 Remote 放行（见下）。
         for action in [
             "install_local",
             "install_package",
-            "install_remote",
             "uninstall_local",
             "uninstall_with_cleanup",
             "force_uninstall",
@@ -632,6 +648,21 @@ mod tests {
                 "写动作 {action} 应对 Remote 维持拒绝"
             );
         }
+        // install_remote 放行：手机/Web 商城面板选本地商城源后可直接安装。
+        // 下载由宿主 reqwest 在桌面机内执行（127.0.0.1 指向桌面机自身），
+        // 已鉴权 Remote（token=桌面信任级）不应低于已默认放行的 AI 会话。
+        assert_eq!(
+            p.check(&req_action("cap.pluginDiscovery", "install_remote", remote.clone())).unwrap(),
+            PermissionVerdict::Allow,
+            "已鉴权 Remote 应放行 install_remote（商城面板安装）"
+        );
+        // install_remote 对未鉴权 Remote 仍 deny（require_auth 回落通配 deny）
+        let wrong2 = Source::Remote { token: "other2".into() };
+        assert_eq!(
+            p.check(&req_action("cap.pluginDiscovery", "install_remote", wrong2)).unwrap(),
+            PermissionVerdict::Deny,
+            "未鉴权 Remote 的 install_remote 不放行"
+        );
         // bare id（无 action）回落 cap.plugin* 通配 deny
         assert_eq!(
             p.check(&req("cap.pluginDiscovery", remote.clone())).unwrap(),
