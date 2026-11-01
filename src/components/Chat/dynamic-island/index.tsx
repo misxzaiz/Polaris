@@ -241,12 +241,10 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
       }
     };
   }, [thinking]);
-  // duration 档位化（非每 token 连续变）：文本长度跨档才换 duration，避免 CSS animation
-  // duration 每 token 变化导致动画从 0% 重启（用户感知「跳回起点」卡顿）。
-  // 档位：≤80 字 8s / ≤200 字 14s / >200 字 20s
-  const marqueeDuration = thinking
-    ? thinking.length <= 80 ? 8 : thinking.length <= 200 ? 14 : 20
-    : 14;
+  // duration 固定：不再随文本长度变化。思考文本持续累积，duration 变化会重启动画
+  // （CSS animation duration 改变 = 从 0% 重启），停在 translateX(100%) 第一帧位置——
+  // 该位置文本在 mask 渐隐区外，视觉上「动效没了」。固定 16s 一轮，动画永不被打断。
+  const marqueeDuration = 16;
 
   // v5 视觉升级：root 状态类驱动 --island-glow / --island-aura（玻璃光带 + 双波符号）
   // 优先级：urgent > fail > interrupt > done/resident > thinking > running > ready

@@ -149,6 +149,10 @@
   border-radius: 50%;
   border: 1.5px solid var(--island-glow, rgb(var(--c-status-info)));
   opacity: 0;
+  /* 思考静默期 store 快照冻结（thinking 文本不变→React 不重渲染），此时 CSS infinite
+   * 动画必须继续自己跑。显式 will-change: transform 让动画常驻独立合成层，不被浏览器
+   * 在无 JS 活动时降帧或合并。 */
+  will-change: transform;
 }
 /* 活动态才有波扩散；静止态（done/ready）只有静态点 */
 .is-running .island-sym .island-wave,
@@ -936,7 +940,8 @@
 }
 .island-marquee-scroll {
   animation: island-marquee linear infinite;
-  /* animation-duration 由 inline style 注入（按文本长度算） */
+  /* animation-duration 由 inline style 注入（固定 16s，不随文本长度变→不重启） */
+  will-change: transform;
 }
 @keyframes island-marquee {
   0% { transform: translateX(100%); }
