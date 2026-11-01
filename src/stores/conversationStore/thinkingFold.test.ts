@@ -46,8 +46,16 @@ describe('thinking block auto-collapse', () => {
     const store = createStreamingStore()
 
     store.getState().appendThinkingBlock('让我想想')
-    store.getState().appendThinkingBlock('更深入分析')
+    // 首 delta 立即出块（首 token 不缓冲）
+    expect(thinkingBlocks(store)).toHaveLength(1)
+    expect(thinkingBlocks(store)[0].content).toBe('让我想想')
 
+    // 后续 delta 进 50ms 缓冲（与 _textBuffer 对称，C2 spec §三.1），窗内不落块
+    store.getState().appendThinkingBlock('更深入分析')
+    expect(thinkingBlocks(store)[0].content).toBe('让我想想')
+
+    // 50ms 超时 flush：合并进同一思考块，仍保持展开
+    vi.advanceTimersByTime(50)
     const blocks = thinkingBlocks(store)
     expect(blocks).toHaveLength(1)
     expect(blocks[0].content).toBe('让我想想更深入分析')
@@ -84,7 +92,9 @@ describe('thinking block auto-collapse', () => {
     store.getState().appendThinkingBlock('第一段思考')
     // 模拟阶段切换：中间非 thinking 块（如工具）后再出新思考
     store.getState().appendToolCallBlock('tool-1', 'search', { query: 'x' })
+    // 第二段思考进缓冲（C2 缓冲方案），50ms flush 后落为新思考块
     store.getState().appendThinkingBlock('基于结果的第二段思考')
+    vi.advanceTimersByTime(50)
 
     const blocks = thinkingBlocks(store)
     expect(blocks).toHaveLength(2)
