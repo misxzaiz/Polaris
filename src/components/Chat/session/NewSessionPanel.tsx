@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Folder, Check, Bot, Search, Zap, Link, Plus } from 'lucide-react';
 import { useWorkspaceStore, useConfigStore } from '@/stores';
+import { useOverlayStore } from '@/stores/overlayStore';
 import {
   useSessionMetadataList,
   useSessionManagerActions,
@@ -109,6 +110,28 @@ export const NewSessionPanel = memo(function NewSessionPanel({
   const [pendingContextIds, setPendingContextIds] = useState<string[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // 层级与浏览器遮挡治理：
+  // - OverlayGuard 计数器（overlayStore.count++）：原生 WebView 是 OS 级子窗口，不受 DOM z-index
+  //   约束，会实盖 React 浮层。count > 0 时 BrowserPanel 同步 setBounds(0,0,0,0) 隐藏 webview，
+  //   比遮挡检测轮询（MutationObserver + rAF，首帧延迟）更早更可靠。
+  // - popover 独占锁：与同 z-popover 层浮层（ChatNavigator、DispatchCenter 等）互斥，
+  //   打开时 claimPopover 通知上一个持有者关闭，避免 DOM 序反压互相盖死。
+  const incrementOverlay = useOverlayStore((s) => s.increment);
+  const decrementOverlay = useOverlayStore((s) => s.decrement);
+  const claimPopover = useOverlayStore((s) => s.claimPopover);
+  const releasePopover = useOverlayStore((s) => s.releasePopover);
+  const popoverId = useMemo(() => `new-session-panel-${Math.random().toString(36).slice(2)}`, []);
+
+  useEffect(() => {
+    incrementOverlay();
+    // claimPopover 通知上一个持有者（其自行监听 activePopoverId 变化关闭）；返回值此处不消费
+    claimPopover(popoverId);
+    return () => {
+      decrementOverlay();
+      releasePopover(popoverId);
+    };
+  }, [incrementOverlay, decrementOverlay, claimPopover, releasePopover, popoverId]);
 
   // fixed 定位坐标（仅 anchor 模式）：锚点 rect + 视口钳制（窄屏/窄聊天面板下防越出右缘被裁剪）。
   // 参照 DispatchCenter 范式：按钮 rect + 视口钳制的 fixed 定位
@@ -282,16 +305,20 @@ export const NewSessionPanel = memo(function NewSessionPanel({
       ? { left: panelPos.left, bottom: panelPos.bottom }
       : undefined;
 
-  // portal 到 body：QuickSwitch 的渲染点在 z-20 根容器内（RightPanel aside 首个子元素），
-  // 面板的 z-dropdown 在该 stacking context 内被封顶 20，会被聊天区 ChatNavigator 圆点
-  // 容器（z-dropdown 同值、DOM 靠后）盖住；portal 出来后以 body 末位 DOM + z-dropdown 参赛，
-  // 高于聊天内容、低于 modal(70)/toast(90)，与 CreateSessionModal 同款做法。
+  // portal 到 body + z-popover(50)：
+  // - portal 到 body：脱离 RightPanel aside 内的 stacking context（aside 首子元素 QuickSwitch
+  //   渲染点在 z-dropdown 同值域内会被 DOM 序靠后者反压）。
+  // - z-popover(50) 而非 z-dropdown(20)：面板从聊天区顶部 + 按钮弹出，向上展开会与悬浮岛
+  //   （z-float 30，贴顶居中）在顶部带状区域重叠。z-dropdown(20) < z-float(30) 会被岛反压
+  //   （用户主诉"新建会话面板被挡住"根因）。升到 z-popover(50) 既盖过岛(30)，又低于 Modal(70)
+  //   与 Toast(90)，SessionConfigSelector 内的 fixed inset-0 z-modal 浮层仍能盖在本面板之上。
+  //   portal 后面板已是 body 末位 DOM，升档不会反压 QuickSwitch（同值时 DOM 序本就靠后胜）。
   return createPortal(
     <div
       ref={dropdownRef}
       onKeyDown={handleKeyDown}
       className={clsx(
-        'fixed z-dropdown pointer-events-auto',
+        'fixed z-popover pointer-events-auto',
         // max-h 保险：极矮窗口下整体不越出视口（超出部分在本面板内滚动；
         // 头部引擎/供应商区保持不受限——SessionConfigSelector 下拉向上弹不能被裁）
         'max-h-[calc(100vh-16px)] flex flex-col rounded-lg shadow-lg',
