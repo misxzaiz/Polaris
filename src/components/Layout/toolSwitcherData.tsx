@@ -3,7 +3,7 @@ import { Settings, PanelRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useViewStore } from '@/stores/viewStore'
 import { isPluginUiEnabled, usePluginStore } from '@/stores/pluginStore'
-import { pluginIconMap, pluginRegistry } from '@/plugin-system'
+import { getPluginIconComponent, pluginRegistry } from '@/plugin-system'
 import { getToolGroup, type ToolSwitcherItem } from './ToolSwitcher'
 
 interface UseToolSwitcherItemsOptions {
@@ -67,7 +67,8 @@ export function useToolSwitcherItems({
 
   const toolSwitcherItems: ToolSwitcherItem[] = useMemo(() => {
     const panelItems: ToolSwitcherItem[] = panelButtons.map((btn) => {
-      const Icon = pluginIconMap[btn.icon]
+      // icon 支持四类值（内置名/相对路径/URL/dataURL，plans/plugin-custom-icon-spec.md）
+      const Icon = getPluginIconComponent(btn.icon, btn.pluginId)
       return {
         id: btn.id,
         icon: Icon,

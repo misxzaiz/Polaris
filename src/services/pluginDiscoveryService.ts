@@ -8,7 +8,6 @@
 
 import { invoke } from './transport'
 import type {
-  PluginIconId,
   PluginLeftPanelType,
   PluginOriginMetadata,
   PluginManifestSource,
@@ -26,7 +25,7 @@ import type {
 // 契约单源（阶段 1.1）：枚举常量与 strict 校验只从 schema.ts 引入，禁止本文件再手写副本
 import {
   VALID_CARD_MODES as VALID_CARD_MODES_SINGLE_SOURCE,
-  VALID_PLUGIN_ICONS as VALID_PLUGIN_ICONS_SINGLE_SOURCE,
+  isValidPluginIconValue,
   VALID_SOURCE_KINDS as VALID_SOURCE_KINDS_SINGLE_SOURCE,
   VALID_TRANSPORTS as VALID_TRANSPORTS_SINGLE_SOURCE,
   VALID_VIEW_AREAS as VALID_VIEW_AREAS_SINGLE_SOURCE,
@@ -122,7 +121,6 @@ const VALID_VIEW_AREAS: Set<string> = new Set(VALID_VIEW_AREAS_SINGLE_SOURCE)
 const VALID_TRANSPORTS: Set<string> = new Set(VALID_TRANSPORTS_SINGLE_SOURCE)
 const VALID_SOURCE_KINDS: Set<string> = new Set(VALID_SOURCE_KINDS_SINGLE_SOURCE)
 const VALID_CARD_MODES: Set<string> = new Set(VALID_CARD_MODES_SINGLE_SOURCE)
-const VALID_PLUGIN_ICONS = new Set<PluginIconId>(VALID_PLUGIN_ICONS_SINGLE_SOURCE)
 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -170,7 +168,7 @@ function normalizeViews(
       !icon ||
       !labelKey ||
       !VALID_VIEW_AREAS.has(area) ||
-      !VALID_PLUGIN_ICONS.has(icon as PluginIconId)
+      !isValidPluginIconValue(icon)
     ) {
       errors.push(`contributes.views[${index}] is invalid and was ignored`)
       return []
@@ -180,7 +178,7 @@ function normalizeViews(
       id,
       area: area as PluginViewContribution['area'],
       panelType: panelType as PluginLeftPanelType,
-      icon: icon as PluginIconId,
+      icon,
       labelKey,
       labelDefault: asString(item.labelDefault),
       order: typeof item.order === 'number' ? item.order : 1000,

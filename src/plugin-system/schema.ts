@@ -18,7 +18,11 @@ export const VALID_TRANSPORTS = ['stdio', 'http'] as const
 export const VALID_SOURCE_KINDS = ['user', 'project', 'adapter'] as const
 export const VALID_CARD_MODES = ['result', 'interaction'] as const
 
-/** 18 个图标 id，与 Rust `VALID_PLUGIN_ICONS` 逐字对齐（含 SquareTerminal） */
+/**
+ * 内置 lucide 图标名（icon 四类值域之一），与 Rust `VALID_PLUGIN_ICONS` 逐字对齐
+ * （含 SquareTerminal）。icon 其余三类自定义值（相对路径 / http(s) URL / data:image
+ * URL）由 {@link isValidPluginIconValue} 校验，规格见 plans/plugin-custom-icon-spec.md §3。
+ */
 export const VALID_PLUGIN_ICONS = [
   'Files',
   'GitPullRequest',
@@ -39,6 +43,54 @@ export const VALID_PLUGIN_ICONS = [
   'Users',
   'Beaker',
 ] as const
+
+/** 自定义图标资源允许的扩展名（与 Rust PLUGIN_ICON_IMAGE_EXTENSIONS 对齐） */
+export const PLUGIN_ICON_IMAGE_EXTENSIONS = [
+  'svg', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'ico', 'bmp', 'avif',
+] as const
+
+/** icon 字段总长上限（与 Rust PLUGIN_ICON_MAX_LEN 对齐） */
+export const PLUGIN_ICON_MAX_LEN = 2048
+
+/** 控制字符判定（C0 与 C1；正则形式会触发 no-control-regex，改用码点判断） */
+function hasControlChar(value: string): boolean {
+  for (const ch of value) {
+    const code = ch.codePointAt(0) ?? 0
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true
+  }
+  return false
+}
+
+/**
+ * icon 字段值域校验（与 Rust `plugin_service::is_supported_plugin_icon` 镜像同一规则）：
+ * 1. 内置 lucide 名（白名单，向后兼容）；
+ * 2. 相对插件安装目录的资源路径（扩展名白名单，禁止绝对路径/盘符/`..` 逃逸）；
+ * 3. http(s) URL；
+ * 4. data:image/* URL。
+ */
+export function isValidPluginIconValue(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.length > PLUGIN_ICON_MAX_LEN) return false
+  if (/\s/.test(trimmed) || hasControlChar(trimmed)) return false
+  const builtinNames: readonly string[] = VALID_PLUGIN_ICONS
+  if (builtinNames.includes(trimmed)) return true
+  if (trimmed.startsWith('data:image/')) return true
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return true
+  return isSafePluginIconRelativePath(trimmed)
+}
+
+/** 相对路径分支：`\` 归一为 `/` 后校验无 scheme 前缀、无绝对前缀、无盘符、无 `..` 段、扩展名白名单 */
+function isSafePluginIconRelativePath(value: string): boolean {
+  const normalized = value.replace(/\\/g, '/')
+  // 任何 scheme: 前缀（http/data 已在上方显式放行）一律拒绝：file:、ftp: 等
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(normalized)) return false
+  if (normalized.startsWith('/')) return false
+  if (normalized.length >= 2 && normalized[1] === ':') return false
+  if (normalized.split('/').some((seg) => seg === '..')) return false
+  const ext = normalized.includes('.') ? (normalized.split('.').pop() ?? '') : ''
+  if (!ext) return false
+  return (PLUGIN_ICON_IMAGE_EXTENSIONS as readonly string[]).includes(ext.toLowerCase())
+}
 
 /** 当前前端支持的 manifest schema 版本（与 Rust MANIFEST_SCHEMA_VERSION 对齐） */
 export const MANIFEST_SCHEMA_VERSION = '1.0'

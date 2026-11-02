@@ -107,7 +107,7 @@
   - 后端 capability 实现（`router/`）
   - 前端 service（如有）
   - 插件仓库（`D:\space\base\Polaris-plugin`）的对应适配（如涉及）
-- 插件图标取白名单 17 值（`contributes.views[].icon`），FileText 等非白名单会被拒。插件 UI 有「静态 enabledByDefault + 设置开关」两层门，状态 true ≠ 面板可见。
+- 插件图标（`contributes.views[].icon`）支持四类值：内置 lucide 名 18 值（向后兼容）、相对插件目录资源路径（`./assets/icon.svg` 等，扩展名白名单）、http(s) URL、`data:image` URL；校验单源在 Rust `plugin_service::is_supported_plugin_icon`（前端镜像 `schema.ts::isValidPluginIconValue`，spec 见 `plans/plugin-custom-icon-spec.md`）。插件 UI 有「静态 enabledByDefault + 设置开关」两层门，状态 true ≠ 面板可见。
 - MCP list 接口 schema 改动后，**须重新构建独立 bin**：`cargo build --bin polaris-mcp`（`ask_mcp_server.rs` 等），否则 AI 看到旧 schema（记忆 `polaris-mcp-schema-exe-staleness`）。
 
 ---

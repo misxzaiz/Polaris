@@ -15,7 +15,7 @@ import {
 } from './ToolSwitcher'
 import { useToolSwitcherItems } from './toolSwitcherData'
 import { useTranslation } from 'react-i18next'
-import { pluginIconMap } from '@/plugin-system'
+import { getPluginIconComponent } from '@/plugin-system'
 
 /** 每个图标占用的高度：32px 按钮 + 1px margin-bottom */
 const ICON_HEIGHT = 33
@@ -132,7 +132,8 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
         className="flex flex-col items-center w-full h-full overflow-hidden"
       >
         {visibleButtons.map((btn) => {
-          const Icon = pluginIconMap[btn.icon]
+          // icon 支持四类值（内置名/相对路径/URL/dataURL，plans/plugin-custom-icon-spec.md）
+          const Icon = getPluginIconComponent(btn.icon, btn.pluginId)
           return (
             <ActivityBarIcon
               key={btn.id}

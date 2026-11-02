@@ -33,6 +33,9 @@ const REMOVE_DIR_RETRY_DELAY_MS: u64 = 500;
 /// 进程终止后的等待时间（毫秒），给 OS 释放文件句柄
 const PROCESS_KILL_WAIT_MS: u64 = 800;
 
+/// 内置 lucide 图标名（向后兼容值域）。icon 还支持自定义值（相对路径 / http(s) URL /
+/// data:image URL），见 [`is_supported_plugin_icon`]；前端镜像单源在
+/// `src/plugin-system/schema.ts::VALID_PLUGIN_ICONS`（双向 diff 由 vitest 镜像测试守护）。
 const VALID_PLUGIN_ICONS: &[&str] = &[
     "Files",
     "GitPullRequest",
@@ -54,6 +57,85 @@ const VALID_PLUGIN_ICONS: &[&str] = &[
     "Beaker",
 ];
 const VALID_TRANSPORTS: &[&str] = &["stdio", "http"];
+
+/// 自定义图标文件允许的扩展名（大小写不敏感；svg 必须在列）
+const PLUGIN_ICON_IMAGE_EXTENSIONS: &[&str] = &[
+    "svg", "png", "jpg", "jpeg", "webp", "gif", "ico", "bmp", "avif",
+];
+/// icon 字段总长上限（URL 类可达 2048）
+const PLUGIN_ICON_MAX_LEN: usize = 2048;
+
+/// icon 值域校验（宿主单源，前端 `schema.ts::isValidPluginIconValue` 镜像同一规则）。
+///
+/// 支持四类值（plans/plugin-custom-icon-spec.md §3）：
+/// 1. 内置 lucide 名（[`VALID_PLUGIN_ICONS`]，向后兼容）；
+/// 2. 相对插件安装目录的资源路径（`./assets/icon.svg`）——禁止绝对路径/盘符/`..` 逃逸，
+///    扩展名白名单 [`PLUGIN_ICON_IMAGE_EXTENSIONS`]；
+/// 3. `http(s)://` 网络链接；
+/// 4. `data:image/*` 内联数据。
+///
+/// 统一拒绝：控制字符/字面空格、`file://`、`javascript:` 等其他 scheme。
+pub(crate) fn is_supported_plugin_icon(value: &str) -> bool {
+    let value = value.trim();
+    if value.is_empty() || value.len() > PLUGIN_ICON_MAX_LEN {
+        return false;
+    }
+    // 控制字符与字面空格一律拒绝（URL 空格应编码为 %20）
+    if value.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return false;
+    }
+    // 内置名优先（无扩展名），带扩展名的名字如 "Users.png" 自然落入路径分支
+    if VALID_PLUGIN_ICONS.contains(&value) {
+        return true;
+    }
+    if value.starts_with("data:image/") {
+        return true;
+    }
+    if value.starts_with("http://") || value.starts_with("https://") {
+        return true;
+    }
+    is_safe_plugin_icon_relative_path(value)
+}
+
+/// 相对路径分支：归一 `\` → `/` 后校验无 scheme 前缀、无绝对前缀、无盘符、无 `..` 段、
+/// 扩展名白名单。
+fn is_safe_plugin_icon_relative_path(value: &str) -> bool {
+    let normalized = value.replace('\\', "/");
+    // 任何 scheme: 前缀（http/data 已在上方显式放行）一律拒绝：file:、ftp: 等
+    if has_scheme_prefix(&normalized) {
+        return false;
+    }
+    if normalized.starts_with('/') {
+        return false;
+    }
+    // 盘符（Windows 绝对路径，如 "C:/x.png"）
+    if normalized.len() >= 2 && normalized.as_bytes()[1] == b':' {
+        return false;
+    }
+    if normalized.split('/').any(|seg| seg == "..") {
+        return false;
+    }
+    let ext = normalized.rsplit('.').next().unwrap_or("");
+    if ext.is_empty() || ext == normalized {
+        return false;
+    }
+    PLUGIN_ICON_IMAGE_EXTENSIONS
+        .iter()
+        .any(|allowed| ext.eq_ignore_ascii_case(allowed))
+}
+
+/// scheme 前缀判定：`foo:` 且 foo 仅含 alnum / + / . / -（RFC 3986 scheme 字符集）
+fn has_scheme_prefix(value: &str) -> bool {
+    match value.split_once(':') {
+        Some((scheme, _)) => {
+            !scheme.is_empty()
+                && scheme
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '.' || c == '-')
+        }
+        None => false,
+    }
+}
 
 /// 插件命令条目（用于进程匹配）
 struct CommandEntry {
@@ -1977,8 +2059,12 @@ impl PluginService {
             if view.panel_type.trim().is_empty() {
                 errors.push(format!("{}.panelType is required", prefix));
             }
-            if !VALID_PLUGIN_ICONS.contains(&view.icon.as_str()) {
-                errors.push(format!("{}.icon has unsupported value: {}", prefix, view.icon));
+            // icon 值域（四类）：内置 lucide 名 / 相对路径 / http(s) URL / data:image URL
+            if !is_supported_plugin_icon(&view.icon) {
+                errors.push(format!(
+                    "{}.icon has unsupported value: {} (supported: builtin lucide name like \"Bot\", relative path like \"./assets/icon.svg\", http(s) URL, or data:image URL)",
+                    prefix, view.icon
+                ));
             }
             if view.label_key.trim().is_empty() {
                 errors.push(format!("{}.labelKey is required", prefix));
@@ -2228,6 +2314,104 @@ mod tests {
         assert!(result.valid);
         assert_eq!(result.plugin_id.as_deref(), Some("example.demo-mcp"));
         assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn plugin_icon_value_domain() {
+        // 1. 内置 lucide 名（向后兼容）
+        assert!(is_supported_plugin_icon("Bot"));
+        // 2. 相对路径（含 ./ 前缀、反斜杠归一、大小写不敏感扩展名）
+        assert!(is_supported_plugin_icon("./assets/icon.svg"));
+        assert!(is_supported_plugin_icon("assets/logo.PNG"));
+        assert!(is_supported_plugin_icon("assets\\img\\logo.webp"));
+        // 3. http(s) URL
+        assert!(is_supported_plugin_icon("https://example.com/icon.svg"));
+        assert!(is_supported_plugin_icon("http://example.com/icon.png"));
+        // 4. data:image URL
+        assert!(is_supported_plugin_icon("data:image/svg+xml,%3Csvg%3E%3C/svg%3E"));
+        assert!(is_supported_plugin_icon("data:image/png;base64,iVBOR"));
+
+        // 非法：非白名单内置名、逃逸、绝对路径、盘符、危险 scheme、控制字符、超长
+        assert!(!is_supported_plugin_icon("FileText"));
+        assert!(!is_supported_plugin_icon(""));
+        assert!(!is_supported_plugin_icon("  "));
+        assert!(!is_supported_plugin_icon("../secret.png"));
+        assert!(!is_supported_plugin_icon("assets/../../escape.png"));
+        assert!(!is_supported_plugin_icon("/abs/path.png"));
+        assert!(!is_supported_plugin_icon("C:\\icons\\x.png"));
+        assert!(!is_supported_plugin_icon("file:///C:/x.png"));
+        assert!(!is_supported_plugin_icon("javascript:alert(1)"));
+        assert!(!is_supported_plugin_icon("data:text/html,<h1>"));
+        assert!(!is_supported_plugin_icon("icon"));
+        assert!(!is_supported_plugin_icon("has space.png"));
+        assert!(!is_supported_plugin_icon(&"a".repeat(2049)));
+    }
+
+    #[test]
+    fn validates_manifest_with_custom_icon_path() {
+        let plugin = tempfile::tempdir().unwrap();
+        std::fs::write(
+            plugin.path().join("plugin.json"),
+            r#"{
+              "id": "example.custom-icon",
+              "name": "Custom Icon Plugin",
+              "version": "0.1.0",
+              "contributes": {
+                "views": [
+                  {
+                    "id": "example.custom-icon.panel",
+                    "area": "activityBar",
+                    "panelType": "customIconDemo",
+                    "icon": "./assets/icon.svg",
+                    "labelKey": "plugins.customIconPanel",
+                    "labelDefault": "Custom Icon",
+                    "order": 86
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+
+        let result = PluginService::validate_plugin_manifest(plugin.path());
+
+        assert!(result.valid, "errors: {:?}", result.errors);
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn rejects_manifest_with_escaping_icon_path() {
+        let plugin = tempfile::tempdir().unwrap();
+        std::fs::write(
+            plugin.path().join("plugin.json"),
+            r#"{
+              "id": "example.escaping-icon",
+              "name": "Escaping Icon Plugin",
+              "version": "0.1.0",
+              "contributes": {
+                "views": [
+                  {
+                    "id": "example.escaping-icon.panel",
+                    "area": "activityBar",
+                    "panelType": "escapingIconDemo",
+                    "icon": "../../escape.png",
+                    "labelKey": "plugins.escapingIconPanel",
+                    "labelDefault": "Escape",
+                    "order": 86
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+
+        let result = PluginService::validate_plugin_manifest(plugin.path());
+
+        assert!(!result.valid);
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.contains(".icon has unsupported value")));
     }
 
     #[test]

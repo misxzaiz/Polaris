@@ -17,7 +17,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Ellipsis, X, PanelLeftClose, EyeOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useViewStore, LeftPanelType } from '@/stores/viewStore'
-import { pluginIconMap, pluginRegistry } from '@/plugin-system'
+import { getPluginIconComponent, pluginRegistry } from '@/plugin-system'
 import { isPluginUiEnabled, usePluginStore } from '@/stores/pluginStore'
 import { PINNED_LEFT_PANEL_TYPES, getToolGroup, type ToolGroupId } from './ToolSwitcher'
 
@@ -60,6 +60,7 @@ export function LeftPanelTabStrip({ activePanelType }: LeftPanelTabStripProps) {
     .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
     .map((view) => ({
       panelType: view.panelType as LeftPanelType,
+      pluginId: view.pluginId,
       icon: view.icon,
       labelKey: view.labelKey,
       labelDefault: view.labelDefault ?? view.panelType,
@@ -135,7 +136,8 @@ export function LeftPanelTabStrip({ activePanelType }: LeftPanelTabStripProps) {
       <div className="left-panel-tabstrip-scroll flex min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
         {stripTypes.map((panelType) => {
           const panel = availablePanels.find((a) => a.panelType === panelType)
-          const Icon = panel && panel.icon ? pluginIconMap[panel.icon] : undefined
+          // icon 支持四类值（内置名/相对路径/URL/dataURL，plans/plugin-custom-icon-spec.md）
+          const Icon = panel && panel.icon ? getPluginIconComponent(panel.icon, panel.pluginId) : undefined
           const isActive = !activeHidden && activePanelType === panelType
           const isPinned = PINNED_LEFT_PANEL_TYPES.has(panelType)
           return (
@@ -201,7 +203,7 @@ export function LeftPanelTabStrip({ activePanelType }: LeftPanelTabStripProps) {
               style={{ top: 'auto', right: 'auto', bottom: 'auto' }}
             >
               {overflowPanels.map((p) => {
-                const Icon = p.icon ? pluginIconMap[p.icon] : undefined
+                const Icon = p.icon ? getPluginIconComponent(p.icon, p.pluginId) : undefined
                 return (
                   <button
                     key={p.panelType}

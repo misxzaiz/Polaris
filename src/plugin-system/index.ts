@@ -2,6 +2,8 @@ export { pluginRegistry } from './registry'
 export { pluginPanelRegistry } from './panelRegistry'
 export { chatCardRegistry } from './chatCardRegistry'
 export { pluginIconMap } from './icons'
+export { getPluginIconComponent, resolvePluginIcon, resolvePluginIconSync, usePluginIcon } from './iconResolver'
+export type { ResolvedPluginIcon, PluginIconComponentType } from './iconResolver'
 export { pluginInspector } from './inspector'
 export { applyPluginStyles, removeStyles } from './styles'
 export type {

@@ -9,7 +9,7 @@ import { useRef, useEffect } from 'react'
 import { Settings, PanelRight } from 'lucide-react'
 import { useViewStore } from '@/stores/viewStore'
 import { useTranslation } from 'react-i18next'
-import { pluginIconMap, pluginRegistry, type PluginLeftPanelType } from '@/plugin-system'
+import { getPluginIconComponent, pluginRegistry, type PluginLeftPanelType } from '@/plugin-system'
 import { isPluginUiEnabled, usePluginStore } from '@/stores/pluginStore'
 
 interface RadialMenuProps {
@@ -67,7 +67,8 @@ export function RadialMenu({
     .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
     .map((view) => ({
       id: view.panelType,
-      icon: pluginIconMap[view.icon],
+      // icon 支持四类值（内置名/相对路径/URL/dataURL，plans/plugin-custom-icon-spec.md）
+      icon: getPluginIconComponent(view.icon, view.pluginId),
       label: t(view.labelKey, { defaultValue: view.labelDefault ?? view.panelType }),
       onClick: () => {
         toggleLeftPanel(view.panelType)

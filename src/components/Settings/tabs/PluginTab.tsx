@@ -13,7 +13,7 @@ import {
   Check,
   Link2,
 } from 'lucide-react'
-import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
+import { listPluginMcpServerStatuses, getPluginIconComponent, pluginRegistry } from '@/plugin-system'
 import { PluginConfigForm } from './PluginConfigForm'
 import {
   applyPluginUpdate,
@@ -1296,7 +1296,8 @@ function PluginCard({
               {views.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
                   {views.map((view) => {
-                    const Icon = pluginIconMap[view.icon]
+                    // icon 支持四类值（内置名/相对路径/URL/dataURL，plans/plugin-custom-icon-spec.md）
+                    const Icon = getPluginIconComponent(view.icon, plugin.id)
                     return (
                       <span
                         key={view.id}

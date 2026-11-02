@@ -27,6 +27,16 @@ export type PluginIconId =
 export type PluginLeftPanelType = string
 
 /**
+ * icon 字段完整值域（四类，plans/plugin-custom-icon-spec.md §3）：
+ * 1. 内置 lucide 名（PluginIconId，向后兼容）；
+ * 2. 相对插件安装目录的资源路径（如 "./assets/icon.svg"）；
+ * 3. http(s) URL；
+ * 4. data:image/* URL。
+ * 校验单源：schema.ts::isValidPluginIconValue（与 Rust is_supported_plugin_icon 镜像）。
+ */
+export type PluginIconValue = string
+
+/**
  * UI Slot 覆盖模式（P3-T1）
  *
  * - append（默认）：追加到 activityBar，新面板独立显示
@@ -43,7 +53,7 @@ export interface PluginViewContribution {
   pluginId: PluginId
   area: PluginViewArea
   panelType: PluginLeftPanelType
-  icon: PluginIconId
+  icon: PluginIconValue
   labelKey: string
   labelDefault?: string
   order: number
