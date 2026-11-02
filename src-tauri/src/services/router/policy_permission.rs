@@ -295,6 +295,26 @@ impl PolicyPermission {
             verdict: RuleVerdict::Allow,
             require_auth: true,
         });
+        // cap.app.update 对已鉴权 Remote 放行（2026-11-02）：手机/Web 远程触发
+        // 桌面自更新是核心场景（plans/auto-update-plan.md）——手机点一下电脑自己
+        // 「下载→安装→重启」。信任级论证：token 即桌面信任级（与 install_remote
+        // 放行同判）；run 重启的是宿主自身（升级语义，非管理面写操作，且更新包
+        // 经 .sig 签名校验）。deny 打底 + require_auth allow 后置覆盖：
+        // 已鉴权 → 同特异性后者覆盖 → Allow；未鉴权 → allow 被跳过 → deny 生效。
+        rules.push(CompiledRule {
+            capability: "cap.app.update".to_string(),
+            wildcard: true,
+            source: SourceClass::Remote,
+            verdict: RuleVerdict::Deny,
+            require_auth: false,
+        });
+        rules.push(CompiledRule {
+            capability: "cap.app.update".to_string(),
+            wildcard: true,
+            source: SourceClass::Remote,
+            verdict: RuleVerdict::Allow,
+            require_auth: true,
+        });
         // P1-g（审计：AI 操控插件无门控）：Plugin 源（AI 会话）的高危动作需用户
         // 审批。动作编码进 resource（`capId:action`，dispatch 从 payload.action 注入），
         // 与内置 deny 同表匹配。批准经 PermissionPromptSink（一次性、10 分钟 TTL）。
@@ -543,11 +563,13 @@ mod tests {
                 { "capability": "cap.valid", "source": "remote", "verdict": "deny" }
             ]
         }));
-        // 1 条合法 config 规则 + 14 条内置（6 通配 remote deny + cap.plugin deny
+        // 1 条合法 config 规则 + 16 条内置（6 通配 remote deny + cap.plugin deny
         // + pluginServiceManager require_auth allow + 6 条 pluginDiscovery 只读
-        // require_auth allow（P1-h）；Plugin 审批名单已全量停用（2026-10-26）——
+        // require_auth allow（P1-h）+ install_remote require_auth allow（2026-11-02）
+        // + cap.app.update deny 打底 + require_auth allow 覆盖（2026-11-02）；
+        // Plugin 审批名单已全量停用（2026-10-26）——
         // 原 5+4 条 prompt 仅注释保留；ui_control=true 无条件 deny）
-        assert_eq!(p.rule_count(), 15, "三条非法规则应被跳过，内置默认并入");
+        assert_eq!(p.rule_count(), 17, "三条非法规则应被跳过，内置默认并入");
         assert_eq!(
             p.check(&req("cap.valid", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny
@@ -678,6 +700,46 @@ mod tests {
         // Bootstrap（桌面 IPC）不受内置 Remote 规则影响
         assert_eq!(
             p.check(&req_action("cap.pluginDiscovery", "discover", Source::Bootstrap)).unwrap(),
+            PermissionVerdict::Allow
+        );
+    }
+
+    #[test]
+    fn app_update_allow_for_authenticated_remote() {
+        // cap.app.update 对已鉴权 Remote 放行（2026-11-02）：手机/Web 远程触发
+        // 桌面自更新是核心场景（plans/auto-update-plan.md）。status 只读 + run
+        // 升级重启（更新包经 .sig 签名校验）。未鉴权 Remote 维持 deny。
+        let p = PolicyPermission::from_config(None, false);
+        let remote = Source::Remote { token: "secret".into() };
+
+        // 已鉴权：status（裸 id / 带 action）与 run 都放行（通配 require_auth 规则）
+        assert_eq!(
+            p.check(&req("cap.app.update", remote.clone())).unwrap(),
+            PermissionVerdict::Allow,
+            "已鉴权 Remote 应放行 cap.app.update（裸 id）"
+        );
+        assert_eq!(
+            p.check(&req_action("cap.app.update", "status", remote.clone())).unwrap(),
+            PermissionVerdict::Allow,
+            "已鉴权 Remote 应放行 status"
+        );
+        assert_eq!(
+            p.check(&req_action("cap.app.update", "run", remote.clone())).unwrap(),
+            PermissionVerdict::Allow,
+            "已鉴权 Remote 应放行 run（远程触发自更新）"
+        );
+
+        // 未鉴权：token 不匹配 → require_auth allow 被跳过 → deny 打底生效
+        let wrong = Source::Remote { token: "other".into() };
+        assert_eq!(
+            p.check(&req_action("cap.app.update", "run", wrong)).unwrap(),
+            PermissionVerdict::Deny,
+            "未鉴权 Remote 应被 deny 打底拦下（防未鉴权触发宿主重启）"
+        );
+
+        // Bootstrap（桌面 IPC）放行
+        assert_eq!(
+            p.check(&req_action("cap.app.update", "run", Source::Bootstrap)).unwrap(),
             PermissionVerdict::Allow
         );
     }

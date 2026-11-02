@@ -1385,6 +1385,55 @@ fn default_log_retention_max_total_mb() -> u64 {
     500
 }
 
+/// 应用自动更新源配置（cap.app.update 意图，plans/auto-update-plan.md）
+///
+/// 三种源统一走 Tauri updater 的 `latest.json` manifest 格式；
+/// GitHub/Custom 源经 updater plugin（强制 `.sig` 签名校验），
+/// Local 源免签名走独立 msiexec 静默通道（本地包信任链 = 物理持有）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSourceConfig {
+    /// 更新源类型：github（默认）| local | custom
+    #[serde(default = "default_update_source_type")]
+    pub source_type: String,
+
+    /// GitHub 源：仓库全名（owner/repo），默认 misxzaiz/Polaris
+    #[serde(default = "default_update_repo")]
+    pub repo: String,
+
+    /// Local 源：本地 manifest（latest.json 或 MSI 直指）路径
+    #[serde(default)]
+    pub local_manifest_path: Option<String>,
+
+    /// Custom 源：manifest URL（latest.json 格式）
+    #[serde(default)]
+    pub manifest_url: Option<String>,
+
+    /// 桌面端启动时自检一次（默认 false，避免开机即更新打断用户）
+    #[serde(default)]
+    pub check_on_startup: bool,
+}
+
+impl Default for UpdateSourceConfig {
+    fn default() -> Self {
+        Self {
+            source_type: default_update_source_type(),
+            repo: default_update_repo(),
+            local_manifest_path: None,
+            manifest_url: None,
+            check_on_startup: false,
+        }
+    }
+}
+
+fn default_update_source_type() -> String {
+    "github".into()
+}
+
+fn default_update_repo() -> String {
+    "misxzaiz/Polaris".into()
+}
+
 /// 应用配置（新版本）
 ///
 /// 使用嵌套结构，支持多个 AI 引擎
@@ -1441,6 +1490,11 @@ pub struct Config {
     /// 由 cap.app.autolaunch 的 apply/启动 reconcile 对账（plans/autostart-boot-launch-spec.md）。
     #[serde(default)]
     pub auto_launch: bool,
+
+    /// 应用自动更新源配置（cap.app.update 意图，plans/auto-update-plan.md）。
+    /// 意图真源：写入路径 = 前端设置流（cap.config 透传）；执行由 cap.app.update run。
+    #[serde(default)]
+    pub update: UpdateSourceConfig,
 
     /// 悬浮窗配置
     #[serde(default)]
@@ -1658,6 +1712,7 @@ impl Default for Config {
             auxiliary_engine: None,
             permissions: None,
             cap_override: Default::default(),
+            update: UpdateSourceConfig::default(),
             language: None,
             theme: None,
             active_theme_id: None,

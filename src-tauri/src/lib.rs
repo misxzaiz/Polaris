@@ -792,6 +792,39 @@ pub fn run() {
                     .register_handle(Box::new(AppAutolaunchCapability::new(intent, backend)));
             }
 
+            // ── cap.app.update 装配（应用自动更新，plans/auto-update-plan.md）──
+            // 执行体 = TauriUpdateBackend（updater plugin 签名通道 + Local msiexec）；
+            // 意图 = Config.update（cap.config 保存流）；事件 = capability emit
+            // 单一路径（Tauri webview + EventBroadcaster WS 双通道）。
+            // run 触发即自更新无确认；run/status 对已鉴权 Remote 放行。
+            #[cfg(feature = "tauri-app")]
+            {
+                use crate::contracts::Router as _;
+                use crate::services::auto_update::{StoreUpdateIntent, TauriUpdateBackend};
+                use crate::services::router::AppUpdateCapability;
+                let update_store = state.inner().config_store.clone();
+                let bc_for_update = state.inner().event_broadcast.clone();
+                let app_handle_for_update = app.handle().clone();
+                // 双通道 emit：Tauri webview（Emitter::emit）+ WS（EventBroadcaster.send）。
+                // 后台任务的 update.progress / update.completed 全走这一条路径。
+                let emit_fn = move |kind: &str, payload: serde_json::Value| {
+                    let msg = serde_json::json!({ "event": kind, "payload": payload.clone() });
+                    let _ = tauri::Emitter::emit(&app_handle_for_update, kind, payload);
+                    let _ = bc_for_update.send(msg.to_string());
+                };
+                let backend: std::sync::Arc<dyn crate::services::auto_update::UpdateBackend> =
+                    std::sync::Arc::new(TauriUpdateBackend::new(app.handle().clone()));
+                let intent: std::sync::Arc<dyn crate::services::auto_update::UpdateIntent> =
+                    std::sync::Arc::new(StoreUpdateIntent(update_store.clone()));
+                let _ = state
+                    .router
+                    .register_handle(Box::new(AppUpdateCapability::new(
+                        intent,
+                        backend,
+                        std::sync::Arc::new(emit_fn),
+                    )));
+            }
+
             // ── 主窗口创建 ──────────────────────────────────────────────
             // 历史根因：dev 与 release 共用同一个 WebView2 UserData 目录
             // （%LocalAppData%\com.polaris.app\EBWebView），异常退出后留下脏锁，

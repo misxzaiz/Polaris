@@ -988,6 +988,7 @@ impl OldConfig {
             auxiliary_engine: None,
             permissions: None,
             cap_override: Default::default(),
+            update: crate::models::config::UpdateSourceConfig::default(),
             language: None,
             theme: None,
             active_theme_id: None,

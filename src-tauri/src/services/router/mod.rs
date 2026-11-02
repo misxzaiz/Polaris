@@ -17,6 +17,7 @@
 
 mod ai_chat_capability;
 mod app_autolaunch_capability;
+mod app_update_capability;
 pub mod audit_sink;
 pub mod bash_capability;
 mod config_capability;
@@ -52,6 +53,7 @@ mod ui_render_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use app_autolaunch_capability::AppAutolaunchCapability;
+pub use app_update_capability::AppUpdateCapability;
 pub use audit_sink::FileAuditSink;
 pub use bash_capability::BashCapability;
 pub(crate) use bash_capability::detect_shell;
