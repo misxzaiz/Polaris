@@ -52,6 +52,50 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
   return invoke(cmd, args)
 }
 
+// ============================================================================
+// R1 宠物悬浮窗桥（spike，plans/pet-overlay-spike.md）：
+// 插件面板经此打开/关闭「ds大肥鱼」桌面透明悬浮窗。零 Rust 改动——建窗走
+// @tauri-apps/api WebviewWindow（capabilities/default.json 已放行
+// core:webview:allow-create-webview-window；pet-overlay webview 继承窗口操作权限）。
+// 配置全部固定（透明/置顶/无边框/skipTaskbar/不可缩放，label 锁死 pet-overlay），
+// 面板无法借道创建任意窗口；纯 Web / 移动无 Tauri IPC，桥不暴露（面板按存在性降级）。
+// ============================================================================
+if ('__TAURI_INTERNALS__' in globalThis) {
+  ;(window as any).__POLARIS_PET_OVERLAY__ = {
+    open: async (): Promise<string> => {
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const existing = await WebviewWindow.getByLabel('pet-overlay');
+      if (existing) {
+        await existing.show();
+        await existing.setFocus();
+        return 'shown';
+      }
+      const win = new WebviewWindow('pet-overlay', {
+        url: 'index.html?petOverlay=1',
+        title: 'ds大肥鱼',
+        width: 360,
+        height: 360,
+        center: true,
+        transparent: true,
+        decorations: false,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        shadow: false,
+      });
+      return await new Promise<string>((resolve) => {
+        win.once('tauri://created', () => resolve('created'));
+        win.once('tauri://error', (e) => resolve(`error:${(e as unknown as Error)?.message ?? 'unknown'}`));
+      });
+    },
+    close: async (): Promise<void> => {
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const win = await WebviewWindow.getByLabel('pet-overlay');
+      if (win) await win.close();
+    },
+  };
+}
+
 ;(window as any).__POLARIS_HOST_LISTEN__ = (
   event: string,
   handler: (payload: unknown) => void,
@@ -143,8 +187,20 @@ function RootApp() {
   return <App />;
 }
 
-ReactDOM.createRoot(root).render(
-  <React.StrictMode>
-    <RootApp />
-  </React.StrictMode>,
-);
+// R1 宠物悬浮窗（spike）：?petOverlay=1 的独立窗口只渲染悬浮宠物页，
+// 不挂整套 App（动态 import，不进主 bundle；页面自管理资源/拖拽/位置记忆）。
+if (new URLSearchParams(window.location.search).has('petOverlay')) {
+  void import('./petOverlay/OverlayApp').then(({ PetOverlayApp }) => {
+    ReactDOM.createRoot(root).render(
+      <React.StrictMode>
+        <PetOverlayApp />
+      </React.StrictMode>,
+    );
+  });
+} else {
+  ReactDOM.createRoot(root).render(
+    <React.StrictMode>
+      <RootApp />
+    </React.StrictMode>,
+  );
+}
