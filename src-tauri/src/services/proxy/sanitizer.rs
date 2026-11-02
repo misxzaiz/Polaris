@@ -37,6 +37,13 @@ pub fn sanitize_anthropic_messages_body(
     // / hooks / rewound timeline)时 Polaris 的网关层防线。
     repair_orphan_tool_use(&mut body);
 
+    // 修复「最后一条是 assistant」:claude code 在 SDK turn 交错时会发送以
+    // assistant(text) 结尾的请求(见 GitHub #8004 werdnum 评论 "the threads
+    // become interspersed"),违反 Anthropic 协议「messages 必须以 user 结尾」,
+    // 商汤 Sensenova 等严格校验端点返回 400「inference request is invalid」。
+    // 出口补一个空 user 消息,让请求以 user 结尾,400 不再发生。
+    repair_trailing_assistant(&mut body);
+
     body
 }
 
@@ -200,6 +207,29 @@ fn repair_orphan_tool_use(body: &mut Value) {
             }
             *blocks = new_blocks;
         }
+    }
+}
+
+/// 修复「最后一条是 assistant」:Anthropic 协议要求 messages 以 user 结尾。
+///
+/// claude code 在 SDK turn 交错时会发送 assistant 结尾的请求(见 GitHub #8004
+/// werdnum 评论),此时最后一条消息是 assistant(text) 而非 user,违反协议。
+/// 商汤 Sensenova 等严格校验端点返回 400「inference request is invalid」。
+/// 本函数在出口补一个空 user 消息,让请求以 user 结尾,拦截 400。
+///
+/// 仅追加、不删除/改写任何既有消息;最后一条是 user 或 messages 缺失时不动。
+fn repair_trailing_assistant(body: &mut Value) {
+    let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let last_role = messages
+        .last()
+        .and_then(|m| m.get("role").and_then(Value::as_str));
+    if last_role == Some("assistant") {
+        messages.push(json!({
+            "role": "user",
+            "content": [{"type": "text", "text": ""}],
+        }));
     }
 }
 
@@ -538,5 +568,73 @@ mod tests {
 
         // content 仍是字符串,未被改
         assert_eq!(sanitized["messages"][1]["content"].as_str().unwrap(), "I will help.");
+    }
+
+    // ============================================================
+    // 修复「最后一条是 assistant」测试
+    //
+    // 场景:claude code 在 SDK turn 交错时发送 assistant 结尾请求,
+    // 违反 Anthropic 协议「messages 必须以 user 结尾」,商汤 Sensenova
+    // 严格校验返回 400「inference request is invalid」。Polaris 出口补
+    // 一个空 user 消息,让请求以 user 结尾,拦截 400。
+    // ============================================================
+
+    #[test]
+    fn repairs_trailing_assistant_by_appending_user() {
+        // 最后一条是 assistant(text):应追加空 user 消息
+        let body = json!({
+            "messages": [
+                {"role": "user", "content": "说你好"},
+                {"role": "assistant", "content": [
+                    {"type": "text", "text": "你好!"}
+                ]}
+            ]
+        });
+
+        let sanitized =
+            sanitize_anthropic_messages_body(body, AnthropicProviderCapability::default());
+
+        let messages = sanitized["messages"].as_array().unwrap();
+        // 追加了 1 条
+        assert_eq!(messages.len(), 3);
+        // 最后一条是 user,且为数组形态的空 text block
+        assert_eq!(messages[2]["role"], "user");
+        assert_eq!(messages[2]["content"][0]["type"], "text");
+        assert_eq!(messages[2]["content"][0]["text"], "");
+    }
+
+    #[test]
+    fn leaves_trailing_user_untouched() {
+        // 最后一条是 user(正常请求):不应追加
+        let body = json!({
+            "messages": [
+                {"role": "user", "content": "说你好"},
+                {"role": "assistant", "content": [{"type": "text", "text": "你好!"}]},
+                {"role": "user", "content": "继续"}
+            ]
+        });
+
+        let sanitized =
+            sanitize_anthropic_messages_body(body, AnthropicProviderCapability::default());
+
+        let messages = sanitized["messages"].as_array().unwrap();
+        // 未追加
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[2]["role"], "user");
+    }
+
+    #[test]
+    fn handles_missing_messages() {
+        // 无 messages 字段:不应 panic,原样返回
+        let body = json!({
+            "model": "claude-test",
+            "system": [{"type": "text", "text": "You are helpful."}]
+        });
+
+        let sanitized =
+            sanitize_anthropic_messages_body(body, AnthropicProviderCapability::default());
+
+        // messages 仍不存在(未追加)
+        assert!(sanitized.get("messages").is_none());
     }
 }
