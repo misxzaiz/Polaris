@@ -11,7 +11,12 @@
  * - 拖拽：>6px 位移阈值区分点击；OS 级 startDragging
  * - 位置记忆：cap.kv（key whale-pet.overlay.pos，物理像素；onMoved 防抖保存/启动还原）
  * - 事件通道预研：listen('chat-event') 计数（R2 AI 联动走同一通道）
+ *
+ * 可见性纪律（v0.4.1）：任何失败态都必须在屏幕上可见——透明窗口上"看不见"
+ * 等于无从诊断（v0.4.0 教训：窗口在、内容空、用户只看到壁纸）。
+ * ErrorBoundary 兜底所有 effect/render 错误（React 18 effect 抛错会掀掉整棵树）。
  */
+import React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke, listen } from '@/services/transport'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
@@ -20,7 +25,7 @@ import { PhysicalPosition } from '@tauri-apps/api/dpi'
 const FALLBACK_PORT = 9863
 const KV_POS_KEY = 'whale-pet.overlay.pos'
 const DRAG_THRESHOLD_PX = 6
-const VERSION_TAG = 'v0.4.0-spike'
+const VERSION_TAG = 'v0.4.1-spike'
 
 const IDLE = ['待机呼吸休闲']
 const CLICKS = [
@@ -85,12 +90,46 @@ async function kvSet(key: string, value: unknown): Promise<void> {
   } catch { /* 位置记忆失败不影响播放 */ }
 }
 
-export function PetOverlayApp() {
+/** 透明窗口上可见的状态条：深色底 + 圆角，任何壁纸/主题下都读得到。 */
+function StatusPill({ text, tone }: { text: string; tone: 'info' | 'error' }) {
+  return (
+    <div style={{
+      position: 'absolute', left: '50%', bottom: 26, transform: 'translateX(-50%)',
+      maxWidth: '92%', boxSizing: 'border-box',
+      background: 'rgba(8, 15, 30, 0.88)', color: tone === 'error' ? '#ffb86b' : '#9fd0ff',
+      border: `1px solid ${tone === 'error' ? '#f0883e' : '#2b4a7a'}`,
+      borderRadius: 8, padding: '6px 10px', fontSize: 12, lineHeight: 1.5,
+      textAlign: 'center', whiteSpace: 'pre-wrap',
+    }}>{text}</div>
+  )
+}
+
+/** React 18 中 effect 抛错会 unmount 整棵树且无 UI——必须用边界兜住并显示出来。 */
+class OverlayErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { err: string | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { err: null }
+  }
+  static getDerivedStateFromError(e: unknown) {
+    return { err: String((e && (e as Error).message) ? (e as Error).message : e).slice(0, 300) }
+  }
+  render() {
+    if (this.state.err) {
+      return <StatusPill tone="error" text={`悬浮窗内部错误：${this.state.err}`} />
+    }
+    return this.props.children
+  }
+}
+
+function PetOverlayInner() {
   const videoA = useRef<HTMLVideoElement>(null)
   const videoB = useRef<HTMLVideoElement>(null)
   const front = useRef<'a' | 'b'>('a')
   const gen = useRef(0)
-  const idleUrl = useRef<string>('')
+  const baseRef = useRef<string>('')
   const drag = useRef<{ startX: number; startY: number; moved: boolean } | null>(null)
 
   const [status, setStatus] = useState<'boot' | 'ready' | 'error'>('boot')
@@ -130,26 +169,29 @@ export function PetOverlayApp() {
     document.body.style.margin = '0'
     document.body.style.overflow = 'hidden'
 
-    // R2 预研：悬浮窗内能否收到宿主事件广播（AI 联动通道）。
-    const unlisten = listen('chat-event', () => setEvtCount((c) => c + 1)).catch(() => () => {})
+    // R2 预研：悬浮窗内能否收到宿主事件广播（AI 联动通道）。非 Tauri 环境静默跳过。
+    let unlisten: Promise<() => void> | null = null
+    if ('__TAURI_INTERNALS__' in window) {
+      unlisten = listen('chat-event', () => setEvtCount((c) => c + 1)).catch(() => () => {})
+    }
 
     ;(async () => {
       const base = await pickBase()
       if (disposed) return
       if (!base) {
         setStatus('error')
-        setStatusText('资源服务未就绪（whale-pet server 未启动）；点击此提示重试')
+        setStatusText(`资源服务未就绪（端口 ${await resolvePort()}）；点击此提示重试`)
         return
       }
-      idleUrl.current = `${base}/asset/webm/${encodeURIComponent(IDLE[0])}.webm`
+      baseRef.current = base
       setStatus('ready')
-      await switchTo(idleUrl.current, true)
+      await switchTo(`${base}/asset/webm/${encodeURIComponent(IDLE[0])}.webm`, true)
       // 位置还原（播放起来之后，避免遮挡加载过程）
       const pos = await kvGet(KV_POS_KEY)
       if (disposed) return
       if (pos && typeof pos === 'object') {
         const { x, y } = pos as { x?: number; y?: number }
-        if (typeof x === 'number' && typeof y === 'number') {
+        if (typeof x === 'number' && typeof y === 'number' && '__TAURI_INTERNALS__' in window) {
           try { await getCurrentWebviewWindow().setPosition(new PhysicalPosition(x, y)) } catch { /* 还原失败用默认位 */ }
         }
       }
@@ -159,22 +201,25 @@ export function PetOverlayApp() {
     return () => {
       disposed = true
       posReady.current = false
-      void unlisten.then((f) => f())
+      if (unlisten) void unlisten.then((f) => f())
     }
   }, [switchTo])
 
-  // 位置记忆：onMoved 防抖保存（拖拽高频触发）。
+  // 位置记忆：onMoved 防抖保存（拖拽高频触发）。非 Tauri 环境跳过（否则同步抛错掀树）。
   useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return
     let timer: ReturnType<typeof setTimeout> | null = null
     let last = { x: 0, y: 0 }
-    const un = getCurrentWebviewWindow()
-      .onMoved((evt) => {
-        if (!posReady.current) return
-        last = evt.payload
-        if (timer) clearTimeout(timer)
-        timer = setTimeout(() => { void kvSet(KV_POS_KEY, { x: Math.round(last.x), y: Math.round(last.y) }) }, 400)
-      })
-      .catch(() => () => {})
+    let win: ReturnType<typeof getCurrentWebviewWindow>
+    try {
+      win = getCurrentWebviewWindow()
+    } catch { return }
+    const un = win.onMoved((evt) => {
+      if (!posReady.current) return
+      last = evt.payload
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => { void kvSet(KV_POS_KEY, { x: Math.round(last.x), y: Math.round(last.y) }) }, 400)
+    }).catch(() => () => {})
     return () => {
       if (timer) clearTimeout(timer)
       void un.then((f) => f())
@@ -192,22 +237,30 @@ export function PetOverlayApp() {
     const dy = e.clientY - drag.current.startY
     if (dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
       drag.current.moved = true
-      void getCurrentWebviewWindow().startDragging()
+      if ('__TAURI_INTERNALS__' in window) {
+        try { void getCurrentWebviewWindow().startDragging() } catch { /* 环境缺失则忽略 */ }
+      }
     }
   }, [])
   const onPointerUp = useCallback(() => {
     const wasClick = drag.current && !drag.current.moved
     drag.current = null
-    if (wasClick && status === 'ready' && idleUrl.current) {
-      const clickUrl = `${idleUrl.current.replace(/\/asset\/webm\/.*$/, '')}/asset/webm/${encodeURIComponent(pick(CLICKS))}.webm`
-      void switchTo(clickUrl, false, () => { void switchTo(idleUrl.current, true) })
+    if (wasClick && status === 'ready' && baseRef.current) {
+      const clickUrl = `${baseRef.current}/asset/webm/${encodeURIComponent(pick(CLICKS))}.webm`
+      void switchTo(clickUrl, false, () => { void switchTo(`${baseRef.current}/asset/webm/${encodeURIComponent(IDLE[0])}.webm`, true) })
     }
   }, [status, switchTo])
+
+  // video 解码失败必须可见（v0.4.0 的空白可能就是它静默发生）。
+  const onVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const src = String(e.currentTarget.src || '').split('/').pop()
+    setStatus('error')
+    setStatusText(`动画加载失败：${src || '未知资源'}；点击此提示重试`)
+  }, [])
 
   const retry = useCallback(() => {
     setStatus('boot')
     setStatusText('')
-    // 复用初始化逻辑：最简做法是整页重载（本页无其他运行态）。
     window.location.reload()
   }, [])
 
@@ -223,18 +276,21 @@ export function PetOverlayApp() {
       onMouseEnter={() => setHoverClose(true)}
       onMouseLeave={() => setHoverClose(false)}
     >
-      <video ref={videoA} muted playsInline preload="auto"
+      <video ref={videoA} muted playsInline preload="auto" onError={onVideoError}
         style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
-      <video ref={videoB} muted playsInline preload="auto"
+      <video ref={videoB} muted playsInline preload="auto" onError={onVideoError}
         style={{ display: 'none', width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
 
       {hoverClose && (
         <button
-          onClick={(e) => { e.stopPropagation(); void getCurrentWebviewWindow().close() }}
+          onClick={(e) => {
+            e.stopPropagation()
+            if ('__TAURI_INTERNALS__' in window) { void getCurrentWebviewWindow().close().catch(() => {}) }
+          }}
           onPointerDown={(e) => e.stopPropagation()}
           style={{
             position: 'absolute', top: 4, right: 6, width: 22, height: 22, borderRadius: 11,
-            border: 'none', background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: 13,
+            border: 'none', background: 'rgba(8, 15, 30, 0.85)', color: '#fff', fontSize: 13,
             lineHeight: '22px', cursor: 'pointer', padding: 0,
           }}
           title="关闭悬浮窗"
@@ -242,26 +298,27 @@ export function PetOverlayApp() {
       )}
 
       {status !== 'ready' && (
-        <div
-          onClick={status === 'error' ? retry : undefined}
-          style={{
-            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: status === 'error' ? '#ffb86b' : '#9fb8d8', fontSize: 12, textAlign: 'center',
-            padding: 12, cursor: status === 'error' ? 'pointer' : 'default',
-            textShadow: '0 1px 2px rgba(0,0,0,0.6)',
-          }}
-        >
-          {status === 'boot' ? '大肥鱼正在游过来…' : statusText}
+        <div onClick={status === 'error' ? retry : undefined} style={{ position: 'absolute', inset: 0, cursor: status === 'error' ? 'pointer' : 'default' }}>
+          <StatusPill tone={status === 'error' ? 'error' : 'info'}
+            text={status === 'boot' ? '大肥鱼正在游过来…' : statusText} />
         </div>
       )}
 
       <div style={{
-        position: 'absolute', left: 6, bottom: 4, fontSize: 10, color: 'rgba(255,255,255,0.45)',
-        textShadow: '0 1px 2px rgba(0,0,0,0.6)', pointerEvents: 'none',
+        position: 'absolute', left: 6, bottom: 4, fontSize: 10, padding: '1px 6px', borderRadius: 6,
+        background: 'rgba(8, 15, 30, 0.75)', color: 'rgba(190, 215, 255, 0.8)', pointerEvents: 'none',
       }}>
         {VERSION_TAG} · 事件:{evtCount}
       </div>
     </div>
+  )
+}
+
+export function PetOverlayApp() {
+  return (
+    <OverlayErrorBoundary>
+      <PetOverlayInner />
+    </OverlayErrorBoundary>
   )
 }
 

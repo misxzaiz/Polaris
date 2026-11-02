@@ -64,11 +64,12 @@ if ('__TAURI_INTERNALS__' in globalThis) {
   ;(window as any).__POLARIS_PET_OVERLAY__ = {
     open: async (): Promise<string> => {
       const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      // 先关旧窗再建新窗：悬浮页固定走最新代码（也顺带治愈任何"卡死旧窗"——
+      // v0.4.0 教训：内容空白的窗口无法自救，✕ 按钮也不可见）。
       const existing = await WebviewWindow.getByLabel('pet-overlay');
       if (existing) {
-        await existing.show();
-        await existing.setFocus();
-        return 'shown';
+        await existing.close().catch(() => {});
+        await new Promise((r) => setTimeout(r, 350));
       }
       const win = new WebviewWindow('pet-overlay', {
         url: 'index.html?petOverlay=1',
@@ -189,14 +190,27 @@ function RootApp() {
 
 // R1 宠物悬浮窗（spike）：?petOverlay=1 的独立窗口只渲染悬浮宠物页，
 // 不挂整套 App（动态 import，不进主 bundle；页面自管理资源/拖拽/位置记忆）。
+// import 失败必须可见（dev 下 vite 依赖预构建竞态会吃掉首次 import）——
+// 兜底直接往 #root 写纯 DOM 错误并自动重试，绝不允许"窗口在、内容空"。
 if (new URLSearchParams(window.location.search).has('petOverlay')) {
-  void import('./petOverlay/OverlayApp').then(({ PetOverlayApp }) => {
-    ReactDOM.createRoot(root).render(
-      <React.StrictMode>
-        <PetOverlayApp />
-      </React.StrictMode>,
-    );
-  });
+  const mountOverlay = (attempt: number) => {
+    void import('./petOverlay/OverlayApp')
+      .then(({ PetOverlayApp }) => {
+        ReactDOM.createRoot(root).render(
+          <React.StrictMode>
+            <PetOverlayApp />
+          </React.StrictMode>,
+        );
+      })
+      .catch((e) => {
+        if (attempt < 4) {
+          setTimeout(() => mountOverlay(attempt + 1), 2000);
+          return;
+        }
+        root.innerHTML = `<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(8,15,30,0.9);color:#ffb86b;font:13px/1.6 sans-serif;padding:16px;text-align:center">悬浮页加载失败：${String((e as Error)?.message ?? e).slice(0, 200)}</div>`;
+      });
+  };
+  mountOverlay(0);
 } else {
   ReactDOM.createRoot(root).render(
     <React.StrictMode>
