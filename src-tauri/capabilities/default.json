@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window and floating window",
-  "webviews": ["main", "floating", "pet-overlay"],
+  "webviews": ["main", "floating", "pet-overlay", "pet-overlay-2", "pet-overlay-3", "pet-overlay-4", "pet-overlay-5", "pet-overlay-6", "pet-overlay-7", "pet-overlay-8"],
   "permissions": [
     "core:default",
     "core:window:allow-center",

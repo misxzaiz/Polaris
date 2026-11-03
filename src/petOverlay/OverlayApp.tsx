@@ -31,6 +31,7 @@ import { PhysicalPosition } from '@tauri-apps/api/dpi'
 
 const FALLBACK_PORT = 9863
 const KV_POS_KEY = 'whale-pet.overlay.pos'
+const KV_NOTIFY_KEY = 'whale-pet.overlay.notify'
 const KV_SOUND_KEY = 'whale-pet.overlay.sound'
 const DRAG_THRESHOLD_PX = 5
 const VERSION_TAG = 'v0.5.0'
@@ -237,6 +238,11 @@ function PetOverlayInner() {
   const whisperSessionRef = useRef<string | null>(null)
   const voiceOnRef = useRef(false)
   const chatSessionRef = useRef<string | null>(null)
+  const notifyOnRef = useRef(true)
+  const slotRef = useRef(0)
+  const posKeyRef = useRef(KV_POS_KEY)
+  const sessionFlowRef = useRef<Map<string, number>>(new Map())
+  const lastNotifyRef = useRef(0)
   const lastInteractRef = useRef(Date.now())
 
   // —— UI state ——
@@ -250,6 +256,7 @@ function PetOverlayInner() {
   const [soundOn, setSoundOn] = useState(true)
   const [aiWhisperOn, setAiWhisperOn] = useState(true)
   const [voiceOn, setVoiceOn] = useState(false)
+  const [notifyOn, setNotifyOn] = useState(true)
   const [chatOpen, setChatOpen] = useState(false)
   const [chatLog, setChatLog] = useState<Array<{ role: 'user' | 'pet'; text: string }>>([])
   const [chatBusy, setChatBusy] = useState(false)
@@ -371,7 +378,7 @@ function PetOverlayInner() {
   }, [])
 
   const savePos = useCallback((x: number, y: number) => {
-    void kvSet(KV_POS_KEY, { x: Math.round(x), y: Math.round(y) })
+    void kvSet(posKeyRef.current, { x: Math.round(x), y: Math.round(y) })
   }, [])
 
   /** 双缓冲换源。once=false 表示循环段：ended=前台被顶 → 重新点名 loop（原版不变量）。 */
@@ -759,12 +766,38 @@ function PetOverlayInner() {
 
     let unlisten: Promise<() => void> | null = null
     if ('__TAURI_INTERNALS__' in window) {
-      unlisten = listen('chat-event', () => { lastEvtAtRef.current = Date.now(); setEvtCount((c) => c + 1) }).catch(() => () => {})
+      unlisten = listen('chat-event', (raw: unknown) => {
+        lastEvtAtRef.current = Date.now()
+        setEvtCount((c) => c + 1)
+        // 系统通知（原版 notify：聚焦不弹）——主会话一轮结束且焦点不在 Polaris 时提醒
+        try {
+          const env = (typeof raw === 'string' ? JSON.parse(raw) : raw) as { payload?: { type?: string; sessionId?: string; reason?: string } }
+          const p = env?.payload
+          if (!p?.sessionId) return
+          if (p.type === 'assistant_message') {
+            sessionFlowRef.current.set(p.sessionId, Date.now())
+            return
+          }
+          if (p.type === 'session_end' && p.reason === 'completed'
+            && p.sessionId !== whisperSessionRef.current && p.sessionId !== chatSessionRef.current
+            && notifyOnRef.current && !document.hasFocus()
+            && Date.now() - lastNotifyRef.current > 60000) {
+            lastNotifyRef.current = Date.now()
+            sessionFlowRef.current.delete(p.sessionId)
+            void invoke('plugin:notification|notify', { options: { title: 'ds大肥鱼', body: '主人～AI 回话啦，回来看看吧！' } }).catch(() => { /* 通知失败静默 */ })
+          }
+        } catch { /* 通知路径失败不影响播放 */ }
+      }).catch(() => () => {})
     }
 
     ;(async () => {
-      // 工作区与窗口物理尺寸（钳制基准）
+      // 工作区与窗口物理尺寸（钳制基准）；多开槽位（label→位置记忆 key 隔离）
       if ('__TAURI_INTERNALS__' in window) {
+        try {
+          const lbl = getCurrentWebviewWindow().label
+          if (lbl.startsWith('pet-overlay-')) slotRef.current = Number(lbl.split('-').pop()) || 0
+          posKeyRef.current = slotRef.current ? `${KV_POS_KEY}.${slotRef.current}` : KV_POS_KEY
+        } catch { /* 单开形态 */ }
         try {
           const mon = await currentMonitor()
           if (mon) workAreaRef.current = { x: mon.position.x, y: mon.position.y, w: mon.size.width, h: mon.size.height }
@@ -797,9 +830,12 @@ function PetOverlayInner() {
       if (typeof voicePref === 'boolean') { voiceOnRef.current = voicePref; setVoiceOn(voicePref) }
       const savedChat = await kvGet(KV_CHAT_SESSION_KEY)
       if (typeof savedChat === 'string' && savedChat) chatSessionRef.current = savedChat
+      // 通知开关
+      const notifyPref = await kvGet(KV_NOTIFY_KEY)
+      if (typeof notifyPref === 'boolean') { notifyOnRef.current = notifyPref; setNotifyOn(notifyPref) }
 
       // 位置还原（钳制后）→ 播 idle → 开链
-      const pos = await kvGet(KV_POS_KEY)
+      const pos = await kvGet(posKeyRef.current)
       if (disposed) return
       if (pos && typeof pos === 'object' && '__TAURI_INTERNALS__' in window) {
         const { x, y } = pos as { x?: number; y?: number }
@@ -946,6 +982,20 @@ function PetOverlayInner() {
     setMenuOpen(false)
   }, [])
 
+  const toggleNotify = useCallback(() => {
+    const next = !notifyOnRef.current
+    notifyOnRef.current = next
+    setNotifyOn(next)
+    void kvSet(KV_NOTIFY_KEY, next)
+    setMenuOpen(false)
+  }, [])
+
+  const openAnother = useCallback(() => {
+    setMenuOpen(false)
+    const api = (window as unknown as { __POLARIS_PET_OVERLAY__?: { openNext(): Promise<string> } }).__POLARIS_PET_OVERLAY__
+    if (api) void api.openNext().then((r) => { if (String(r) === 'full') window.alert('最多同时养 9 只（8 个副位都满了）') }).catch(() => {})
+  }, [])
+
   return (
     <div
       ref={rootRef}
@@ -1012,6 +1062,8 @@ function PetOverlayInner() {
             { label: soundOn ? '🔊 音效：开' : '🔇 音效：关', act: toggleSound },
             { label: aiWhisperOn ? '🤖 AI 碎碎念：开' : '🤖 AI 碎碎念：关', act: toggleAiWhisper },
             { label: voiceOn ? '🗣 语音：开' : '🗣 语音：关', act: toggleVoice },
+            { label: notifyOn ? '🔔 通知：开' : '🔔 通知：关', act: toggleNotify },
+            { label: '➕ 再养一只', act: openAnother },
             { label: '💬 和它聊聊', act: () => { setMenuOpen(false); setChatOpen(true) } },
             { label: '🎯 回屏幕中央', act: () => { setMenuOpen(false); centerWindow() } },
             { label: '✕ 关闭悬浮窗', act: () => { setMenuOpen(false); if ('__TAURI_INTERNALS__' in window) void getCurrentWebviewWindow().close().catch(() => {}) } },

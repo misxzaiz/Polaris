@@ -62,21 +62,25 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
 // ============================================================================
 if ('__TAURI_INTERNALS__' in globalThis) {
   ;(window as any).__POLARIS_PET_OVERLAY__ = {
-    open: async (): Promise<string> => {
+    open: async (opts?: { slot?: number }): Promise<string> => {
       const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const slot = opts?.slot && opts.slot > 1 ? Math.min(opts.slot, 8) : 0;
+      const label = slot ? `pet-overlay-${slot}` : 'pet-overlay';
       // 先关旧窗再建新窗：悬浮页固定走最新代码（也顺带治愈任何"卡死旧窗"——
       // v0.4.0 教训：内容空白的窗口无法自救，✕ 按钮也不可见）。
-      const existing = await WebviewWindow.getByLabel('pet-overlay');
+      const existing = await WebviewWindow.getByLabel(label);
       if (existing) {
         await existing.close().catch(() => {});
         await new Promise((r) => setTimeout(r, 350));
       }
-      const win = new WebviewWindow('pet-overlay', {
+      const win = new WebviewWindow(label, {
         url: 'index.html?petOverlay=1',
         title: 'ds大肥鱼',
         width: 360,
         height: 360,
-        center: true,
+        center: slot === 0,
+        x: slot ? 120 + slot * 56 : undefined,
+        y: slot ? 120 + slot * 42 : undefined,
         transparent: true,
         decorations: false,
         alwaysOnTop: true,
@@ -89,9 +93,20 @@ if ('__TAURI_INTERNALS__' in globalThis) {
         win.once('tauri://error', (e) => resolve(`error:${(e as unknown as Error)?.message ?? 'unknown'}`));
       });
     },
-    close: async (): Promise<void> => {
+    // 多开同屏（dsh-pet multi 同款）：扫描 pet-overlay 与 pet-overlay-2..8 找第一个空位
+    openNext: async (): Promise<string> => {
       const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      const win = await WebviewWindow.getByLabel('pet-overlay');
+      for (let slot = 0; slot <= 8; slot++) {
+        const label = slot ? `pet-overlay-${slot}` : 'pet-overlay';
+        const existing = await WebviewWindow.getByLabel(label);
+        if (!existing) return await (window as any).__POLARIS_PET_OVERLAY__.open(slot ? { slot } : undefined);
+      }
+      return 'full';
+    },
+    close: async (opts?: { slot?: number }): Promise<void> => {
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const slot = opts?.slot && opts.slot > 1 ? Math.min(opts.slot, 8) : 0;
+      const win = await WebviewWindow.getByLabel(slot ? `pet-overlay-${slot}` : 'pet-overlay');
       if (win) await win.close();
     },
   };
