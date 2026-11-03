@@ -1,5 +1,9 @@
 # pet-overlay spike：桌面悬浮宠物窗（R1，方案 v2 · 11.4/11.5）
 
+> ⚠️ **本文为 R1 spike 决策归档，实态已远超原 spec。**
+> 当前权威规格见 [`pet-overlay-r2-spec.md`](./pet-overlay-r2-spec.md)（v0.5.0 实态对齐 + 模块化拆分蓝图）。
+> 本文件保留作为 R1 去留决策的历史记录，不再作为功能边界依据。
+
 > 目标：用最小宿主改动验证「ds大肥鱼以透明置顶小窗活在桌面上」是否成立，
 > 为 R2（AI 联动）打通悬浮页事件通道预研。1 天 spike，产出「去留 + 路径」决策。
 > 背景与验收清单：`Polaris-plugin/docs/pet-host-framework-plan.md` §11。

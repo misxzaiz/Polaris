@@ -28,185 +28,22 @@ import { invoke, listen } from '@/services/transport'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { currentMonitor } from '@tauri-apps/api/window'
 import { PhysicalPosition } from '@tauri-apps/api/dpi'
+import { pick, rollChain } from './animationChain'
+import { resolvePort, pickBase, assetUrl, kvGet, kvSet } from './assetResolver'
+import {
+  KV_POS_KEY, KV_SOUND_KEY, KV_AI_WHISPER_KEY, KV_WHISPER_SESSION_KEY,
+  KV_VOICE_KEY, KV_CHAT_SESSION_KEY, DRAG_THRESHOLD_PX, VERSION_TAG,
+  IDLE, DRAG, CLICKS, MOVES, SLEEP,
+  WORK_BUSY, WORK_CELEBRATE, BUSY_ACTIVE_MS, BUSY_QUIET_MS, BALANCE_TIERS, BALANCE_POLL_MS,
+  WHISPER_PROMPT, AI_WHISPER_TIMEOUT_MS, PET_PERSONA, CHAT_TIMEOUT_MS, AI_ENGINE_ID,
+  WHISPERS, SLEEP_TALK, SLEEP_START_TEXT,
+  GRAVITY, RESTITUTION, GROUND_FRICTION, THROW_MIN_SPEED, TRAJ_WINDOW_MS,
+} from './constants'
 
-const FALLBACK_PORT = 9863
-const KV_POS_KEY = 'whale-pet.overlay.pos'
-const KV_NOTIFY_KEY = 'whale-pet.overlay.notify'
-const KV_SOUND_KEY = 'whale-pet.overlay.sound'
-const DRAG_THRESHOLD_PX = 5
-const VERSION_TAG = 'v0.5.0'
-
-// ---------- 动画池（同步自 dsh-pet config.jsonc，MIT, PC2005-cloud） ----------
-const IDLE = ['待机呼吸休闲']
-const TURN = ['东张西望']
-const DRAG = ['被鼠标拖拽悬空反馈']
-const CLICKS = [
-  '点击回应-开心跃动',
-  '点击回应-害羞惊讶',
-  '点击回应-傲娇生气',
-  '点击回应-挠痒咯咯笑',
-  '点击回应-元气挥手',
-]
-const MOVES: { name: string; minDist: number; maxDist: number; leadSec: number; tailSec: number }[] = [
-  { name: '螃蟹走路', minDist: 60, maxDist: 240, leadSec: 2, tailSec: 2 },
-  { name: '原地漂浮踏步', minDist: 40, maxDist: 120, leadSec: 2, tailSec: 2 },
-  { name: '原地左转奔跑', minDist: 120, maxDist: 320, leadSec: 1.75, tailSec: 4.8 },
-]
-const CATEGORIES: { id: string; weight: number; actions: string[] }[] = [
-  { id: '小动作', weight: 20, actions: ['悠闲哼歌', '超大伸懒腰', '原地敲击桌面互动', '原地重力下蹲压缩', '哈欠连天', '原地小憩沉眠', '女仆屈膝礼仪', '被吓一跳', '小幅度原地360度旋转展示', '偷吃零食被抓住', '用鲸鱼尾巴拍打地面', '打瞌睡被惊醒', '照镜子', '整体换装试色', '轻快记录', '写代码', '摇扇纳凉', '晨间刷牙'] },
-  { id: '玩耍', weight: 20, actions: ['原地专心玩魔方', '原地蹲下玩玩具汽车', '鲸鱼吐泡泡特效', '原地跳跃抓碎头顶物品', '玩游戏气急败坏', '玩水枪', '小提琴演奏', '蓝鲸现世', '优雅女仆舞', '轻快摇摆舞', '可爱宅舞', '吹气球', '动物环绕', '放风筝', '拆礼物', '变鸽子', '扑克魔术', '抽陀螺', '吹笛子', '蝴蝶蜜蜂环绕头顶开花', '撸猫', '凭空生花', '骑木马', '三球抛接', '踢毽子', '下五子棋', '荡秋千'] },
-  { id: '吃什么', weight: 16, actions: ['吃白饭', '大口吃零食', '吃Token', '吃早餐', '吃午餐', '吃晚餐', '吃冰淇淋融化', '吃大闸蟹', '吃糖葫芦', '吃长寿面', '吃西瓜', '涮火锅'] },
-  { id: '时节', weight: 14, actions: ['被落叶淹没', '中秋赏月吃月饼', '堆雪人', '放烟花', '吃粽子', '吃年糕', '吃青团', '吃腊八粥', '吃重阳糕', '收红包', '写福字', '穿针乞巧', '舞狮头', '讨糖南瓜灯', '插茱萸赏菊', '放河灯', '萌化小幽灵', '装点圣诞树', '放孔明灯', '吃汤圆', '吃饺子'] },
-  { id: '文字', weight: 10, actions: ['是啊，吃什么', '深度思考碎碎念'] },
-]
-const IDLE_WEIGHT = 10
-const TURN_WEIGHT = 5
-const MOVE_WEIGHT = 5
-const SLEEP = { start: ['睡觉-开始'], loop: ['睡觉-循环'], end: ['睡觉-起来'] }
-
-// ---------- R2：宿主事件联动（原版 events：workStatus / balance） ----------
-const WORK_BUSY = ['工作状态-思考冒泡', '工作状态-忙碌点按']
-const WORK_CELEBRATE = ['工作状态-雀跃庆祝']
-const BUSY_ACTIVE_MS = 8000    // chat-event 8s 内有流动 = AI 在忙
-const BUSY_QUIET_MS = 12000    // 安静 12s = 本轮结束 → 雀跃庆祝
-/** 余额六档（原版 events.balance 动画全量），按今日美元花费分档 */
-const BALANCE_TIERS: { min: number; anims: string[] }[] = [
-  { min: 100, anims: ['余额-钱袋满溢'] },
-  { min: 20, anims: ['余额-金袋叮当'] },
-  { min: 5, anims: ['余额-钱袋如常'] },
-  { min: 1, anims: ['余额-数金皱眉'] },
-  { min: 0.01, anims: ['余额-袋空如洗'] },
-  { min: 0, anims: ['余额-分文不剩'] },
-]
-const BALANCE_POLL_MS = 1800000  // 30min（原版 eventsRefreshSec.balance=1800s）
-const KV_AI_WHISPER_KEY = 'whale-pet.overlay.aiWhisper'
-const KV_WHISPER_SESSION_KEY = 'whale-pet.overlay.whisperSession'
-const WHISPER_PROMPT = '（主人发起了碎碎念时间）你是主人桌面上的Q版大肥鱼，此刻随口碎碎念一句。要求：20字以内，自然随意带点俏皮，说人话不啰嗦，不要解释你自己，不要提AI或指令，直接输出那一句话本身。'
-const AI_WHISPER_TIMEOUT_MS = 30000
-const PET_PERSONA = '你是主人桌面上的桌宠「ds大肥鱼」：一只Q版蓝色胖鲸鱼（女仆装）。性格：慵懒爱摸鱼、嘴馋（特别是白饭和Token）、偶尔傲娇但很黏主人。说话规则：每次只说一两句、口语化、带点俏皮emoji不超过一个、绝不解释自己是AI、不输出多余格式。'
-const CHAT_TIMEOUT_MS = 45000
-const KV_VOICE_KEY = 'whale-pet.overlay.voice'
-const KV_CHAT_SESSION_KEY = 'whale-pet.overlay.chatSession'
-const TTS_VOICE_REF = 'mimo_default'
-// cap.ai.chat 契约：continue 经总线必须带 engineId（HTTP 实测"必须提供有效的 engine_id"）；
-// 显式绑定内置 SimpleAI 引擎，与 start 无参时的默认引擎一致（会话 id 前缀 simple-ai-）。
-const AI_ENGINE_ID = 'simple-ai'
-
-// ---------- 文案池（大肥鱼人设；R2 换 AI 生成） ----------
-const WHISPERS = [
-  '今天也是摸鱼的一天呢…', '白饭好吃，Token 好吃。', '别看啦，我在认真游。',
-  '这行代码我闻着有 bug。', '喂，该喝水了！', '屏幕好亮，晃得我睡不着。',
-  '摸摸我，我会开心的。', '今天就想瘫着，不行吗。', '咦，谁在跟我说话？',
-  '泡泡…咕噜咕噜…', '工作再忙，也要吃白饭。', '我发现了一个大秘密：没有秘密。',
-  '主人加油，我陪着你。', '困了…但我忍住。', '这里的海洋风景不错。',
-]
-const SLEEP_TALK = ['zzr…白饭…zzr…', '唔…五分钟…再睡五分钟…', '（说梦话）泡泡…', 'zzr…Token…好甜…']
-const SLEEP_START_TEXT = '夜深了，大肥鱼先睡啦…'
-
-// ---------- 物理与走位参数（对标 dsh shared/physics 默认值） ----------
-const GRAVITY = 1400          // px/s²（CSS 基准，按 dpr 换算物理像素）
-const RESTITUTION = 0.78      // 边缘反弹系数
-const GROUND_FRICTION = 2.5   // 落地摩擦（指数系数 /s）
-const THROW_MIN_SPEED = 0.45  // px/ms，超过即抛飞
-const TRAJ_WINDOW_MS = 120    // 松手初速的轨迹采样窗口
-
-function pick<T>(arr: T[], avoid?: T): T {
-  if (arr.length === 1) return arr[0]
-  const pool = avoid ? arr.filter((x) => x !== avoid) : arr
-  return (pool.length ? pool : arr)[Math.floor(Math.random() * (pool.length || arr.length))]
-}
-
-/** 随机链骰子（同步面板版 rollNext；move 权重命中由调用方转走位） */
-function rollChain(current: string): { anim: string; once: boolean; move: boolean } {
-  const totalCat = CATEGORIES.reduce((s, c) => s + c.weight, 0)
-  const r = Math.random() * (IDLE_WEIGHT + TURN_WEIGHT + MOVE_WEIGHT + totalCat)
-  let acc = 0
-  if (r < (acc += IDLE_WEIGHT)) return { anim: pick(IDLE, current), once: false, move: false }
-  if (r < (acc += TURN_WEIGHT)) return { anim: pick(TURN, current), once: false, move: false }
-  if (r < (acc += MOVE_WEIGHT)) return { anim: '', once: false, move: true }
-  const catR = Math.random() * totalCat
-  let cAcc = 0
-  for (const c of CATEGORIES) {
-    cAcc += c.weight
-    if (catR < cAcc) return { anim: pick(c.actions, current), once: true, move: false }
-  }
-  return { anim: pick(IDLE, current), once: false, move: false }
-}
-
-async function resolvePort(): Promise<number> {
-  try {
-    const res = await invoke('plugin_service_list', {})
-    const wrapped = res as {
-      result?: { services?: Array<{ pluginId: string; serviceId: string; port?: number }> }
-      services?: Array<{ pluginId: string; serviceId: string; port?: number }>
-    }
-    const services = wrapped?.result?.services ?? wrapped?.services ?? []
-    const svc = services.find((s) => s.pluginId === 'whale-pet' && s.serviceId === 'whale-pet-assets' && s.port)
-    if (svc?.port) return svc.port
-  } catch { /* 兜底端口 */ }
-  return FALLBACK_PORT
-}
-
-async function pickBase(): Promise<string | null> {
-  const port = await resolvePort()
-  for (const host of ['localhost', '127.0.0.1']) {
-    const base = `http://${host}:${port}`
-    try {
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), 2500)
-      const r = await fetch(`${base}/__health`, { signal: ctrl.signal })
-      clearTimeout(timer)
-      if (r.ok) return base
-    } catch { /* 下一个候选 */ }
-  }
-  return null
-}
-
-type KvEnvelope = { ok?: boolean; result?: { value?: unknown } | unknown; error?: unknown }
-
-async function kvGet(key: string): Promise<unknown | null> {
-  try {
-    const res = await invoke('router_dispatch', { req: { target: 'cap.kv', payload: { action: 'get', key } } }) as KvEnvelope
-    const result = res?.result as { value?: unknown } | undefined
-    if (result && 'value' in result) return result.value ?? null
-    return null
-  } catch { return null }
-}
-
-async function kvSet(key: string, value: unknown): Promise<void> {
-  try {
-    await invoke('router_dispatch', { req: { target: 'cap.kv', payload: { action: 'set', key, value } } })
-  } catch { /* 失败不影响播放 */ }
-}
-
-/** 透明窗口上可见的状态条。 */
-function StatusPill({ text, tone }: { text: string; tone: 'info' | 'error' }) {
-  return (
-    <div style={{
-      position: 'absolute', left: '50%', bottom: 26, transform: 'translateX(-50%)',
-      maxWidth: '92%', boxSizing: 'border-box',
-      background: 'rgba(8, 15, 30, 0.88)', color: tone === 'error' ? '#ffb86b' : '#9fd0ff',
-      border: `1px solid ${tone === 'error' ? '#f0883e' : '#2b4a7a'}`,
-      borderRadius: 8, padding: '6px 10px', fontSize: 12, lineHeight: 1.5,
-      textAlign: 'center', whiteSpace: 'pre-wrap', zIndex: 30,
-    }}>{text}</div>
-  )
-}
-
-/** React 18 中 effect 抛错会 unmount 整棵树且无 UI——必须用边界兜住并显示出来。 */
-class OverlayErrorBoundary extends React.Component<{ children: React.ReactNode }, { err: string | null }> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props)
-    this.state = { err: null }
-  }
-  static getDerivedStateFromError(e: unknown) {
-    return { err: String((e && (e as Error).message) ? (e as Error).message : e).slice(0, 300) }
-  }
-  render() {
-    if (this.state.err) return <StatusPill tone="error" text={`悬浮窗内部错误：${this.state.err}`} />
-    return this.props.children
-  }
-}
+import { StatusPill, OverlayErrorBoundary } from './OverlayRender'
+import { resolveSlot } from './useMultiSlot'
+import { useSystemNotify } from './useSystemNotify'
+import { waitAssistant, makeSpeak } from './aiChannel'
 
 interface WorkArea { x: number; y: number; w: number; h: number }
 
@@ -241,11 +78,8 @@ function PetOverlayInner() {
   const whisperSessionRef = useRef<string | null>(null)
   const voiceOnRef = useRef(false)
   const chatSessionRef = useRef<string | null>(null)
-  const notifyOnRef = useRef(true)
   const slotRef = useRef(0)
   const posKeyRef = useRef(KV_POS_KEY)
-  const sessionFlowRef = useRef<Map<string, number>>(new Map())
-  const lastNotifyRef = useRef(0)
   const lastInteractRef = useRef(Date.now())
 
   // —— UI state ——
@@ -259,14 +93,14 @@ function PetOverlayInner() {
   const [soundOn, setSoundOn] = useState(true)
   const [aiWhisperOn, setAiWhisperOn] = useState(true)
   const [voiceOn, setVoiceOn] = useState(false)
-  const [notifyOn, setNotifyOn] = useState(true)
   const [chatOpen, setChatOpen] = useState(false)
   const [chatLog, setChatLog] = useState<Array<{ role: 'user' | 'pet'; text: string }>>([])
   const [chatBusy, setChatBusy] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const assetUrl = useCallback((anim: string) => `${baseRef.current}/asset/webm/${encodeURIComponent(anim)}.webm`, [])
+  // —— 系统通知（失焦 AI 回话；60s 限频；排除本页会话）——
+  const { notifyOn, toggleNotify, restoreNotifyPref } = useSystemNotify({ whisperSessionRef, chatSessionRef })
 
   // 运行时诊断钩子（验收用只读快照 + 强制触发；window 上以双下划线命名空间挂载）
   const initDoneRef = useRef(false)
@@ -300,46 +134,7 @@ function PetOverlayInner() {
     setTimeout(() => setPops((p) => p.filter((i) => i.id !== id)), 900)
   }, [])
 
-  /** 订阅某会话的 assistant 文本直至 session_end/超时（AI 碎碎念与宠物对话共用）。 */
-  const waitAssistant = useCallback((sid: string, timeoutMs: number): Promise<string> => {
-    return new Promise((resolve) => {
-      let text = ''
-      let un: (() => void) | null = null
-      let done = false
-      const finish = () => {
-        if (done) return
-        done = true
-        if (un) un()
-        resolve(text.replace(/<think>[\s\S]*?<\/think>/g, '').trim())
-      }
-      listen('chat-event', (raw: unknown) => {
-        try {
-          const env = (typeof raw === 'string' ? JSON.parse(raw) : raw) as
-            { payload?: { type?: string; sessionId?: string; content?: string; isDelta?: boolean } }
-          const p = env?.payload
-          if (!p || p.sessionId !== sid) return
-          if (p.type === 'assistant_message') text = p.isDelta ? text + (p.content ?? '') : (p.content ?? text)
-          if (p.type === 'session_end') setTimeout(finish, 300)
-        } catch { /* 忽略解析失败 */ }
-      }).then((u) => { if (done) u(); else un = u }).catch(() => finish())
-      setTimeout(finish, timeoutMs)
-    })
-  }, [])
-
-  /** TTS：cap.voice synthesize → file 绝对路径 → convertFileSrc 播放（引擎未就绪/手势未解锁均静默）。 */
-  const speak = useCallback((text: string) => {
-    if (!voiceOnRef.current || !text || !('__TAURI_INTERNALS__' in window)) return
-    void (async () => {
-      try {
-        const r = await invoke('router_dispatch', { req: { target: 'cap.voice', payload: { action: 'synthesize', text, voiceRef: TTS_VOICE_REF } } }) as { result?: { file?: string } }
-        const file = r?.result?.file
-        if (!file) return
-        const { convertFileSrc } = await import('@tauri-apps/api/core')
-        const audio = new Audio(convertFileSrc(file))
-        void audio.play().catch(() => { /* 静默 */ })
-      } catch { /* 静默 */ }
-    })()
-  }, [])
+  const speak = makeSpeak(voiceOnRef)
 
   const playSound = useCallback(() => {
     if (!soundOnRef.current || !baseRef.current) return
@@ -393,7 +188,7 @@ function PetOverlayInner() {
     currentAnimRef.current = anim
     backEl.onended = opts.onEnded ?? null
     backEl.loop = !!opts.loop
-    backEl.src = assetUrl(anim)
+    backEl.src = assetUrl(baseRef.current, anim)
     try { await backEl.play() } catch { /* muted 下仍可能被策略拒绝 */ }
     await new Promise<void>((resolve) => {
       if (backEl.readyState >= 2) return resolve()
@@ -409,7 +204,7 @@ function PetOverlayInner() {
     // 自动播放策略拒绝 play() 后视频会停在 0 帧（paused=true），ended 永不触发，
     // 整条随机链死锁——换源后立即复查播放态（看门狗兜底见下）。
     if (backEl.paused) void backEl.play().catch(() => { /* 看门狗与手势解锁兜底 */ })
-  }, [assetUrl])
+  }, [])
 
   const stopMotion = useCallback(() => {
     if (motionRafRef.current) { cancelAnimationFrame(motionRafRef.current); motionRafRef.current = null }
@@ -769,27 +564,9 @@ function PetOverlayInner() {
 
     let unlisten: Promise<() => void> | null = null
     if ('__TAURI_INTERNALS__' in window) {
-      unlisten = listen('chat-event', (raw: unknown) => {
+      unlisten = listen('chat-event', () => {
         lastEvtAtRef.current = Date.now()
         setEvtCount((c) => c + 1)
-        // 系统通知（原版 notify：聚焦不弹）——主会话一轮结束且焦点不在 Polaris 时提醒
-        try {
-          const env = (typeof raw === 'string' ? JSON.parse(raw) : raw) as { payload?: { type?: string; sessionId?: string; reason?: string } }
-          const p = env?.payload
-          if (!p?.sessionId) return
-          if (p.type === 'assistant_message') {
-            sessionFlowRef.current.set(p.sessionId, Date.now())
-            return
-          }
-          if (p.type === 'session_end' && p.reason === 'completed'
-            && p.sessionId !== whisperSessionRef.current && p.sessionId !== chatSessionRef.current
-            && notifyOnRef.current && !document.hasFocus()
-            && Date.now() - lastNotifyRef.current > 60000) {
-            lastNotifyRef.current = Date.now()
-            sessionFlowRef.current.delete(p.sessionId)
-            void invoke('plugin:notification|notify', { options: { title: 'ds大肥鱼', body: '主人～AI 回话啦，回来看看吧！' } }).catch(() => { /* 通知失败静默 */ })
-          }
-        } catch { /* 通知路径失败不影响播放 */ }
       }).catch(() => () => {})
     }
 
@@ -797,9 +574,9 @@ function PetOverlayInner() {
       // 工作区与窗口物理尺寸（钳制基准）；多开槽位（label→位置记忆 key 隔离）
       if ('__TAURI_INTERNALS__' in window) {
         try {
-          const lbl = getCurrentWebviewWindow().label
-          if (lbl.startsWith('pet-overlay-')) slotRef.current = Number(lbl.split('-').pop()) || 0
-          posKeyRef.current = slotRef.current ? `${KV_POS_KEY}.${slotRef.current}` : KV_POS_KEY
+          const { slot, posKey } = await resolveSlot()
+          slotRef.current = slot
+          posKeyRef.current = posKey
         } catch { /* 单开形态 */ }
         try {
           const mon = await currentMonitor()
@@ -834,8 +611,7 @@ function PetOverlayInner() {
       const savedChat = await kvGet(KV_CHAT_SESSION_KEY)
       if (typeof savedChat === 'string' && savedChat) chatSessionRef.current = savedChat
       // 通知开关
-      const notifyPref = await kvGet(KV_NOTIFY_KEY)
-      if (typeof notifyPref === 'boolean') { notifyOnRef.current = notifyPref; setNotifyOn(notifyPref) }
+      await restoreNotifyPref()
 
       // 位置还原（钳制后）→ 播 idle → 开链
       const pos = await kvGet(posKeyRef.current)
@@ -945,7 +721,7 @@ function PetOverlayInner() {
       if (line) { showBubble(line.slice(0, 60), 5200); speak(line.slice(0, 60)); return true }
       return false
     } catch { return false }
-  }, [showBubble, waitAssistant, speak])
+  }, [showBubble, speak])
 
   // ---------- R2d 宠物对话：独立会话 + 人设 systemPrompt（原版 chatModel 等价） ----------
   const sendChat = useCallback(async () => {
@@ -975,21 +751,13 @@ function PetOverlayInner() {
     } finally {
       setChatBusy(false)
     }
-  }, [chatInput, chatBusy, waitAssistant, speak])
+  }, [chatInput, chatBusy, speak])
 
   const toggleVoice = useCallback(() => {
     const next = !voiceOnRef.current
     voiceOnRef.current = next
     setVoiceOn(next)
     void kvSet(KV_VOICE_KEY, next)
-    setMenuOpen(false)
-  }, [])
-
-  const toggleNotify = useCallback(() => {
-    const next = !notifyOnRef.current
-    notifyOnRef.current = next
-    setNotifyOn(next)
-    void kvSet(KV_NOTIFY_KEY, next)
     setMenuOpen(false)
   }, [])
 
@@ -1065,7 +833,7 @@ function PetOverlayInner() {
             { label: soundOn ? '🔊 音效：开' : '🔇 音效：关', act: toggleSound },
             { label: aiWhisperOn ? '🤖 AI 碎碎念：开' : '🤖 AI 碎碎念：关', act: toggleAiWhisper },
             { label: voiceOn ? '🗣 语音：开' : '🗣 语音：关', act: toggleVoice },
-            { label: notifyOn ? '🔔 通知：开' : '🔔 通知：关', act: toggleNotify },
+            { label: notifyOn ? '🔔 通知：开' : '🔔 通知：关', act: () => { toggleNotify(); setMenuOpen(false) } },
             { label: '➕ 再养一只', act: openAnother },
             { label: '💬 和它聊聊', act: () => { setMenuOpen(false); setChatOpen(true) } },
             { label: '🎯 回屏幕中央', act: () => { setMenuOpen(false); centerWindow() } },
