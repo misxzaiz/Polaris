@@ -82,6 +82,11 @@ const KV_AI_WHISPER_KEY = 'whale-pet.overlay.aiWhisper'
 const KV_WHISPER_SESSION_KEY = 'whale-pet.overlay.whisperSession'
 const WHISPER_PROMPT = '（主人发起了碎碎念时间）你是主人桌面上的Q版大肥鱼，此刻随口碎碎念一句。要求：20字以内，自然随意带点俏皮，说人话不啰嗦，不要解释你自己，不要提AI或指令，直接输出那一句话本身。'
 const AI_WHISPER_TIMEOUT_MS = 30000
+const PET_PERSONA = '你是主人桌面上的桌宠「ds大肥鱼」：一只Q版蓝色胖鲸鱼（女仆装）。性格：慵懒爱摸鱼、嘴馋（特别是白饭和Token）、偶尔傲娇但很黏主人。说话规则：每次只说一两句、口语化、带点俏皮emoji不超过一个、绝不解释自己是AI、不输出多余格式。'
+const CHAT_TIMEOUT_MS = 45000
+const KV_VOICE_KEY = 'whale-pet.overlay.voice'
+const KV_CHAT_SESSION_KEY = 'whale-pet.overlay.chatSession'
+const TTS_VOICE_REF = 'mimo_default'
 
 // ---------- 文案池（大肥鱼人设；R2 换 AI 生成） ----------
 const WHISPERS = [
@@ -208,6 +213,7 @@ function PetOverlayInner() {
   const videoGen = useRef(0)
   const baseRef = useRef<string>('')
   const rootRef = useRef<HTMLDivElement>(null)
+  const chatLogRef = useRef<HTMLDivElement>(null)
 
   // —— 状态机 refs（避免闭包过期）——
   const modeRef = useRef<'chain' | 'drag' | 'flight' | 'walk' | 'sleep'>('chain')
@@ -229,6 +235,8 @@ function PetOverlayInner() {
   const busyRef = useRef(false)
   const aiWhisperOnRef = useRef(true)
   const whisperSessionRef = useRef<string | null>(null)
+  const voiceOnRef = useRef(false)
+  const chatSessionRef = useRef<string | null>(null)
   const lastInteractRef = useRef(Date.now())
 
   // —— UI state ——
@@ -241,6 +249,11 @@ function PetOverlayInner() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [soundOn, setSoundOn] = useState(true)
   const [aiWhisperOn, setAiWhisperOn] = useState(true)
+  const [voiceOn, setVoiceOn] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatLog, setChatLog] = useState<Array<{ role: 'user' | 'pet'; text: string }>>([])
+  const [chatBusy, setChatBusy] = useState(false)
+  const [chatInput, setChatInput] = useState('')
   const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const assetUrl = useCallback((anim: string) => `${baseRef.current}/asset/webm/${encodeURIComponent(anim)}.webm`, [])
@@ -275,6 +288,47 @@ function PetOverlayInner() {
     const id = Date.now() + Math.random()
     setPops((p) => [...p.slice(-4), { id, text, x, y }])
     setTimeout(() => setPops((p) => p.filter((i) => i.id !== id)), 900)
+  }, [])
+
+  /** 订阅某会话的 assistant 文本直至 session_end/超时（AI 碎碎念与宠物对话共用）。 */
+  const waitAssistant = useCallback((sid: string, timeoutMs: number): Promise<string> => {
+    return new Promise((resolve) => {
+      let text = ''
+      let un: (() => void) | null = null
+      let done = false
+      const finish = () => {
+        if (done) return
+        done = true
+        if (un) un()
+        resolve(text.replace(/<think>[\s\S]*?<\/think>/g, '').trim())
+      }
+      listen('chat-event', (raw: unknown) => {
+        try {
+          const env = (typeof raw === 'string' ? JSON.parse(raw) : raw) as
+            { payload?: { type?: string; sessionId?: string; content?: string; isDelta?: boolean } }
+          const p = env?.payload
+          if (!p || p.sessionId !== sid) return
+          if (p.type === 'assistant_message') text = p.isDelta ? text + (p.content ?? '') : (p.content ?? text)
+          if (p.type === 'session_end') setTimeout(finish, 300)
+        } catch { /* 忽略解析失败 */ }
+      }).then((u) => { if (done) u(); else un = u }).catch(() => finish())
+      setTimeout(finish, timeoutMs)
+    })
+  }, [])
+
+  /** TTS：cap.voice synthesize → file 绝对路径 → convertFileSrc 播放（引擎未就绪/手势未解锁均静默）。 */
+  const speak = useCallback((text: string) => {
+    if (!voiceOnRef.current || !text || !('__TAURI_INTERNALS__' in window)) return
+    void (async () => {
+      try {
+        const r = await invoke('router_dispatch', { req: { target: 'cap.voice', payload: { action: 'synthesize', text, voiceRef: TTS_VOICE_REF } } }) as { result?: { file?: string } }
+        const file = r?.result?.file
+        if (!file) return
+        const { convertFileSrc } = await import('@tauri-apps/api/core')
+        const audio = new Audio(convertFileSrc(file))
+        void audio.play().catch(() => { /* 静默 */ })
+      } catch { /* 静默 */ }
+    })()
   }, [])
 
   const playSound = useCallback(() => {
@@ -622,6 +676,12 @@ function PetOverlayInner() {
     return () => clearInterval(iv)
   }, [status])
 
+  // 聊天记录自动滚底
+  useEffect(() => {
+    const el = chatLogRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [chatLog, chatBusy, chatOpen])
+
   // ---------- onMoved：轨迹采样（初速估计） ----------
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) return
@@ -732,6 +792,11 @@ function PetOverlayInner() {
       if (typeof aiPref === 'boolean') { aiWhisperOnRef.current = aiPref; setAiWhisperOn(aiPref) }
       const savedSession = await kvGet(KV_WHISPER_SESSION_KEY)
       if (typeof savedSession === 'string' && savedSession) whisperSessionRef.current = savedSession
+      // 语音开关 + 宠物对话会话续接
+      const voicePref = await kvGet(KV_VOICE_KEY)
+      if (typeof voicePref === 'boolean') { voiceOnRef.current = voicePref; setVoiceOn(voicePref) }
+      const savedChat = await kvGet(KV_CHAT_SESSION_KEY)
+      if (typeof savedChat === 'string' && savedChat) chatSessionRef.current = savedChat
 
       // 位置还原（钳制后）→ 播 idle → 开链
       const pos = await kvGet(KV_POS_KEY)
@@ -826,42 +891,60 @@ function PetOverlayInner() {
   // ---------- R2c AI 碎碎念：单一宠物会话复用（方案③），30s 超时/失败回退离线文案 ----------
   const aiWhisper = useCallback(async (): Promise<boolean> => {
     if (!aiWhisperOnRef.current || !('__TAURI_INTERNALS__' in window)) return false
-    let text = ''
-    let sid = whisperSessionRef.current
     try {
-      const un = await listen('chat-event', (raw: unknown) => {
-        try {
-          const env = (typeof raw === 'string' ? JSON.parse(raw) : raw) as
-            { payload?: { type?: string; sessionId?: string; content?: string; isDelta?: boolean } }
-          const p = env?.payload
-          if (!p || p.type !== 'assistant_message' || !sid || p.sessionId !== sid) return
-          text = p.isDelta ? text + (p.content ?? '') : (p.content ?? text)
-        } catch { /* 忽略解析失败 */ }
-      })
-      const req = sid
-        ? { action: 'continue', message: WHISPER_PROMPT, sessionId: sid }
+      const req = whisperSessionRef.current
+        ? { action: 'continue', message: WHISPER_PROMPT, sessionId: whisperSessionRef.current }
         : { action: 'start', message: WHISPER_PROMPT }
       const r = await invoke('router_dispatch', { req: { target: 'cap.ai.chat', payload: req } }) as { result?: unknown }
       const sidRaw = typeof r?.result === 'string'
         ? r.result
         : (r?.result as { sessionId?: string } | undefined)?.sessionId
-      if (!sidRaw) { un(); return false }
-      sid = sidRaw
+      if (!sidRaw) return false
       whisperSessionRef.current = sidRaw
       void kvSet(KV_WHISPER_SESSION_KEY, sidRaw)
-      const got = await new Promise<boolean>((resolve) => {
-        const deadline = Date.now() + AI_WHISPER_TIMEOUT_MS
-        const poll = setInterval(() => {
-          if (text.trim()) { clearInterval(poll); resolve(true); return }
-          if (Date.now() > deadline) { clearInterval(poll); resolve(false) }
-        }, 400)
-      })
-      un()
-      const line = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim().replace(/^["'「]|["'」]$/g, '')
-      if (got && line) { showBubble(line.slice(0, 60), 5200); return true }
+      const line = await waitAssistant(sidRaw, AI_WHISPER_TIMEOUT_MS)
+      if (line) { showBubble(line.slice(0, 60), 5200); speak(line.slice(0, 60)); return true }
       return false
     } catch { return false }
-  }, [showBubble])
+  }, [showBubble, waitAssistant, speak])
+
+  // ---------- R2d 宠物对话：独立会话 + 人设 systemPrompt（原版 chatModel 等价） ----------
+  const sendChat = useCallback(async () => {
+    const msg = chatInput.trim()
+    if (!msg || chatBusy || !('__TAURI_INTERNALS__' in window)) return
+    setChatBusy(true)
+    setChatLog((l) => [...l, { role: 'user', text: msg }])
+    setChatInput('')
+    try {
+      const first = chatSessionRef.current === null
+      const req = first
+        ? { action: 'start', message: msg, options: { systemPrompt: PET_PERSONA, enableMcpTools: false } }
+        : { action: 'continue', message: msg, sessionId: chatSessionRef.current }
+      const r = await invoke('router_dispatch', { req: { target: 'cap.ai.chat', payload: req } }) as { result?: unknown }
+      const sidRaw = typeof r?.result === 'string' ? r.result : (r?.result as { sessionId?: string } | undefined)?.sessionId
+      if (!sidRaw) throw new Error('会话创建失败')
+      if (first) { chatSessionRef.current = sidRaw; void kvSet(KV_CHAT_SESSION_KEY, sidRaw) }
+      const reply = await waitAssistant(sidRaw, CHAT_TIMEOUT_MS)
+      if (reply) {
+        setChatLog((l) => [...l, { role: 'pet', text: reply }])
+        speak(reply)
+      } else {
+        setChatLog((l) => [...l, { role: 'pet', text: '（鱼脑子转了一圈，什么也没说…再试试？）' }])
+      }
+    } catch (e) {
+      setChatLog((l) => [...l, { role: 'pet', text: `（游不动了：${String(e instanceof Error ? e.message : e).slice(0, 60)}）` }])
+    } finally {
+      setChatBusy(false)
+    }
+  }, [chatInput, chatBusy, waitAssistant, speak])
+
+  const toggleVoice = useCallback(() => {
+    const next = !voiceOnRef.current
+    voiceOnRef.current = next
+    setVoiceOn(next)
+    void kvSet(KV_VOICE_KEY, next)
+    setMenuOpen(false)
+  }, [])
 
   return (
     <div
@@ -928,6 +1011,8 @@ function PetOverlayInner() {
           {[
             { label: soundOn ? '🔊 音效：开' : '🔇 音效：关', act: toggleSound },
             { label: aiWhisperOn ? '🤖 AI 碎碎念：开' : '🤖 AI 碎碎念：关', act: toggleAiWhisper },
+            { label: voiceOn ? '🗣 语音：开' : '🗣 语音：关', act: toggleVoice },
+            { label: '💬 和它聊聊', act: () => { setMenuOpen(false); setChatOpen(true) } },
             { label: '🎯 回屏幕中央', act: () => { setMenuOpen(false); centerWindow() } },
             { label: '✕ 关闭悬浮窗', act: () => { setMenuOpen(false); if ('__TAURI_INTERNALS__' in window) void getCurrentWebviewWindow().close().catch(() => {}) } },
           ].map((it) => (
@@ -938,6 +1023,65 @@ function PetOverlayInner() {
               onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
             >{it.label}</div>
           ))}
+        </div>
+      )}
+
+      {chatOpen && (
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute', left: 8, right: 8, top: '34%', bottom: 22, zIndex: 60,
+            background: 'rgba(10, 18, 34, 0.96)', border: '1px solid #2b4a7a', borderRadius: 12,
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.45)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid #1f3355' }}>
+            <span style={{ fontSize: 12, color: '#9fd0ff', fontWeight: 600 }}>💬 和大肥鱼聊聊</span>
+            <button
+              onClick={() => setChatOpen(false)}
+              onPointerDown={(e) => e.stopPropagation()}
+              style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: '#7d8590', cursor: 'pointer', fontSize: 13 }}
+            >✕</button>
+          </div>
+          <div ref={chatLogRef} style={{ flex: 1, overflowY: 'auto', padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {chatLog.length === 0 && (
+              <div style={{ fontSize: 11, color: '#7d8590' }}>跟它说句话吧——它记得住你们聊过的内容（原版 chatModel 同款记忆会话）</div>
+            )}
+            {chatLog.map((m, i) => (
+              <div key={i} style={{
+                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                maxWidth: '85%', fontSize: 12, lineHeight: 1.5, padding: '4px 8px', borderRadius: 8,
+                background: m.role === 'user' ? 'rgba(59,130,246,0.35)' : 'rgba(240,246,255,0.12)',
+                color: m.role === 'user' ? '#dbeafe' : '#e6edf3', whiteSpace: 'pre-wrap',
+              }}>{m.text}</div>
+            ))}
+            {chatBusy && <div style={{ fontSize: 11, color: '#7d8590' }}>大肥鱼在想…</div>}
+          </div>
+          <div style={{ display: 'flex', gap: 6, padding: 6, borderTop: '1px solid #1f3355' }}>
+            <input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void sendChat() }}
+              placeholder="说点什么…"
+              style={{
+                flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #2b4a7a',
+                background: 'rgba(8,15,30,0.8)', color: '#e6edf3', outline: 'none', minWidth: 0,
+              }}
+            />
+            <button
+              onClick={() => void sendChat()}
+              disabled={chatBusy || !chatInput.trim()}
+              style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #3b82f6',
+                background: 'rgba(59,130,246,0.25)', color: '#dbeafe', cursor: 'pointer',
+                opacity: chatBusy || !chatInput.trim() ? 0.5 : 1,
+              }}
+            >发</button>
+          </div>
         </div>
       )}
 
