@@ -13,6 +13,7 @@ import { invoke, listen } from '@/services/transport';
 import { createHostWorkspaceApi } from '@/plugin-system/hostWorkspaceApi';
 import { createHostThemeApi } from '@/plugin-system/themeHostApi';
 import { eventBus } from '@/services/eventBus';
+import { initPluginToolUsageObserver } from '@/services/pluginToolUsageObserver';
 
 // 暴露宿主 React 给外部插件面板使用
 ;(window as any).__POLARIS_HOST_REACT__ = React;
@@ -153,6 +154,11 @@ eventBus.on('workspace-changed', (ws) => {
 (() => {
   bootstrapTheme();
 })();
+
+// 插件 MCP 工具调用观测（needs/027）：订阅全局 AIEvent tool_call_end，
+// 按真实注册表把调用归属到插件并落 plugin.toolusage.*（守望台读时合并）。
+// fire-and-forget、失败静默，不阻塞启动主链路。
+initPluginToolUsageObserver();
 
 // PWA Service Worker 注册（阶段 1B）：仅生产构建，dev 的 HMR 与之互不干扰。
 // 注册失败静默降级（PWA 是增强项，不是功能依赖）；协议数据 /api/、/ws 在 SW 内直连。
