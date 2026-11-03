@@ -88,6 +88,9 @@ const CHAT_TIMEOUT_MS = 45000
 const KV_VOICE_KEY = 'whale-pet.overlay.voice'
 const KV_CHAT_SESSION_KEY = 'whale-pet.overlay.chatSession'
 const TTS_VOICE_REF = 'mimo_default'
+// cap.ai.chat 契约：continue 经总线必须带 engineId（HTTP 实测"必须提供有效的 engine_id"）；
+// 显式绑定内置 SimpleAI 引擎，与 start 无参时的默认引擎一致（会话 id 前缀 simple-ai-）。
+const AI_ENGINE_ID = 'simple-ai'
 
 // ---------- 文案池（大肥鱼人设；R2 换 AI 生成） ----------
 const WHISPERS = [
@@ -929,8 +932,8 @@ function PetOverlayInner() {
     if (!aiWhisperOnRef.current || !('__TAURI_INTERNALS__' in window)) return false
     try {
       const req = whisperSessionRef.current
-        ? { action: 'continue', message: WHISPER_PROMPT, sessionId: whisperSessionRef.current }
-        : { action: 'start', message: WHISPER_PROMPT }
+        ? { action: 'continue', message: WHISPER_PROMPT, sessionId: whisperSessionRef.current, options: { engineId: AI_ENGINE_ID } }
+        : { action: 'start', message: WHISPER_PROMPT, options: { engineId: AI_ENGINE_ID } }
       const r = await invoke('router_dispatch', { req: { target: 'cap.ai.chat', payload: req } }) as { result?: unknown }
       const sidRaw = typeof r?.result === 'string'
         ? r.result
@@ -954,8 +957,8 @@ function PetOverlayInner() {
     try {
       const first = chatSessionRef.current === null
       const req = first
-        ? { action: 'start', message: msg, options: { systemPrompt: PET_PERSONA, enableMcpTools: false } }
-        : { action: 'continue', message: msg, sessionId: chatSessionRef.current }
+        ? { action: 'start', message: msg, options: { systemPrompt: PET_PERSONA, enableMcpTools: false, engineId: AI_ENGINE_ID } }
+        : { action: 'continue', message: msg, sessionId: chatSessionRef.current, options: { engineId: AI_ENGINE_ID } }
       const r = await invoke('router_dispatch', { req: { target: 'cap.ai.chat', payload: req } }) as { result?: unknown }
       const sidRaw = typeof r?.result === 'string' ? r.result : (r?.result as { sessionId?: string } | undefined)?.sessionId
       if (!sidRaw) throw new Error('会话创建失败')
