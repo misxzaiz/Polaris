@@ -78,6 +78,10 @@ const BALANCE_TIERS: { min: number; anims: string[] }[] = [
   { min: 0, anims: ['余额-分文不剩'] },
 ]
 const BALANCE_POLL_MS = 1800000  // 30min（原版 eventsRefreshSec.balance=1800s）
+const KV_AI_WHISPER_KEY = 'whale-pet.overlay.aiWhisper'
+const KV_WHISPER_SESSION_KEY = 'whale-pet.overlay.whisperSession'
+const WHISPER_PROMPT = '（主人发起了碎碎念时间）你是主人桌面上的Q版大肥鱼，此刻随口碎碎念一句。要求：20字以内，自然随意带点俏皮，说人话不啰嗦，不要解释你自己，不要提AI或指令，直接输出那一句话本身。'
+const AI_WHISPER_TIMEOUT_MS = 30000
 
 // ---------- 文案池（大肥鱼人设；R2 换 AI 生成） ----------
 const WHISPERS = [
@@ -223,6 +227,8 @@ function PetOverlayInner() {
   const whisperTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastEvtAtRef = useRef(0)
   const busyRef = useRef(false)
+  const aiWhisperOnRef = useRef(true)
+  const whisperSessionRef = useRef<string | null>(null)
   const lastInteractRef = useRef(Date.now())
 
   // —— UI state ——
@@ -234,6 +240,7 @@ function PetOverlayInner() {
   const [pops, setPops] = useState<Array<{ id: number; text: string; x: number; y: number }>>([])
   const [menuOpen, setMenuOpen] = useState(false)
   const [soundOn, setSoundOn] = useState(true)
+  const [aiWhisperOn, setAiWhisperOn] = useState(true)
   const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const assetUrl = useCallback((anim: string) => `${baseRef.current}/asset/webm/${encodeURIComponent(anim)}.webm`, [])
@@ -720,6 +727,11 @@ function PetOverlayInner() {
       // 声音开关偏好
       const pref = await kvGet(KV_SOUND_KEY)
       if (typeof pref === 'boolean') { soundOnRef.current = pref; setSoundOn(pref) }
+      // AI 碎碎念开关偏好 + 会话续接
+      const aiPref = await kvGet(KV_AI_WHISPER_KEY)
+      if (typeof aiPref === 'boolean') { aiWhisperOnRef.current = aiPref; setAiWhisperOn(aiPref) }
+      const savedSession = await kvGet(KV_WHISPER_SESSION_KEY)
+      if (typeof savedSession === 'string' && savedSession) whisperSessionRef.current = savedSession
 
       // 位置还原（钳制后）→ 播 idle → 开链
       const pos = await kvGet(KV_POS_KEY)
@@ -748,7 +760,9 @@ function PetOverlayInner() {
       sleepCheck()
       sleepCheckerRef.current = setInterval(sleepCheck, 60000)
       whisperTimerRef.current = setInterval(() => {
-        if (modeRef.current === 'chain' && !sleepingRef.current) showBubble(pick(WHISPERS), 4500)
+        if (modeRef.current === 'chain' && !sleepingRef.current) {
+          void aiWhisper().then((ok) => { if (!ok) showBubble(pick(WHISPERS), 4500) })
+        }
       }, 300000)
       setTimeout(() => { if (modeRef.current === 'chain' && !sleepingRef.current) showBubble(pick(WHISPERS), 4500) }, 6000)
       initDoneRef.current = true
@@ -800,6 +814,54 @@ function PetOverlayInner() {
     void kvSet(KV_SOUND_KEY, next)
     setMenuOpen(false)
   }, [])
+
+  const toggleAiWhisper = useCallback(() => {
+    const next = !aiWhisperOnRef.current
+    aiWhisperOnRef.current = next
+    setAiWhisperOn(next)
+    void kvSet(KV_AI_WHISPER_KEY, next)
+    setMenuOpen(false)
+  }, [])
+
+  // ---------- R2c AI 碎碎念：单一宠物会话复用（方案③），30s 超时/失败回退离线文案 ----------
+  const aiWhisper = useCallback(async (): Promise<boolean> => {
+    if (!aiWhisperOnRef.current || !('__TAURI_INTERNALS__' in window)) return false
+    let text = ''
+    let sid = whisperSessionRef.current
+    try {
+      const un = await listen('chat-event', (raw: unknown) => {
+        try {
+          const env = (typeof raw === 'string' ? JSON.parse(raw) : raw) as
+            { payload?: { type?: string; sessionId?: string; content?: string; isDelta?: boolean } }
+          const p = env?.payload
+          if (!p || p.type !== 'assistant_message' || !sid || p.sessionId !== sid) return
+          text = p.isDelta ? text + (p.content ?? '') : (p.content ?? text)
+        } catch { /* 忽略解析失败 */ }
+      })
+      const req = sid
+        ? { action: 'continue', message: WHISPER_PROMPT, sessionId: sid }
+        : { action: 'start', message: WHISPER_PROMPT }
+      const r = await invoke('router_dispatch', { req: { target: 'cap.ai.chat', payload: req } }) as { result?: unknown }
+      const sidRaw = typeof r?.result === 'string'
+        ? r.result
+        : (r?.result as { sessionId?: string } | undefined)?.sessionId
+      if (!sidRaw) { un(); return false }
+      sid = sidRaw
+      whisperSessionRef.current = sidRaw
+      void kvSet(KV_WHISPER_SESSION_KEY, sidRaw)
+      const got = await new Promise<boolean>((resolve) => {
+        const deadline = Date.now() + AI_WHISPER_TIMEOUT_MS
+        const poll = setInterval(() => {
+          if (text.trim()) { clearInterval(poll); resolve(true); return }
+          if (Date.now() > deadline) { clearInterval(poll); resolve(false) }
+        }, 400)
+      })
+      un()
+      const line = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim().replace(/^["'「]|["'」]$/g, '')
+      if (got && line) { showBubble(line.slice(0, 60), 5200); return true }
+      return false
+    } catch { return false }
+  }, [showBubble])
 
   return (
     <div
@@ -865,6 +927,7 @@ function PetOverlayInner() {
         >
           {[
             { label: soundOn ? '🔊 音效：开' : '🔇 音效：关', act: toggleSound },
+            { label: aiWhisperOn ? '🤖 AI 碎碎念：开' : '🤖 AI 碎碎念：关', act: toggleAiWhisper },
             { label: '🎯 回屏幕中央', act: () => { setMenuOpen(false); centerWindow() } },
             { label: '✕ 关闭悬浮窗', act: () => { setMenuOpen(false); if ('__TAURI_INTERNALS__' in window) void getCurrentWebviewWindow().close().catch(() => {}) } },
           ].map((it) => (
