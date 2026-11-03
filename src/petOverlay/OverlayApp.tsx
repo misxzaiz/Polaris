@@ -63,6 +63,22 @@ const TURN_WEIGHT = 5
 const MOVE_WEIGHT = 5
 const SLEEP = { start: ['睡觉-开始'], loop: ['睡觉-循环'], end: ['睡觉-起来'] }
 
+// ---------- R2：宿主事件联动（原版 events：workStatus / balance） ----------
+const WORK_BUSY = ['工作状态-思考冒泡', '工作状态-忙碌点按']
+const WORK_CELEBRATE = ['工作状态-雀跃庆祝']
+const BUSY_ACTIVE_MS = 8000    // chat-event 8s 内有流动 = AI 在忙
+const BUSY_QUIET_MS = 12000    // 安静 12s = 本轮结束 → 雀跃庆祝
+/** 余额六档（原版 events.balance 动画全量），按今日美元花费分档 */
+const BALANCE_TIERS: { min: number; anims: string[] }[] = [
+  { min: 100, anims: ['余额-钱袋满溢'] },
+  { min: 20, anims: ['余额-金袋叮当'] },
+  { min: 5, anims: ['余额-钱袋如常'] },
+  { min: 1, anims: ['余额-数金皱眉'] },
+  { min: 0.01, anims: ['余额-袋空如洗'] },
+  { min: 0, anims: ['余额-分文不剩'] },
+]
+const BALANCE_POLL_MS = 1800000  // 30min（原版 eventsRefreshSec.balance=1800s）
+
 // ---------- 文案池（大肥鱼人设；R2 换 AI 生成） ----------
 const WHISPERS = [
   '今天也是摸鱼的一天呢…', '白饭好吃，Token 好吃。', '别看啦，我在认真游。',
@@ -205,6 +221,8 @@ function PetOverlayInner() {
   const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const sleepCheckerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const whisperTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastEvtAtRef = useRef(0)
+  const busyRef = useRef(false)
   const lastInteractRef = useRef(Date.now())
 
   // —— UI state ——
@@ -219,6 +237,26 @@ function PetOverlayInner() {
   const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const assetUrl = useCallback((anim: string) => `${baseRef.current}/asset/webm/${encodeURIComponent(anim)}.webm`, [])
+
+  // 运行时诊断钩子（验收用只读快照 + 强制触发；window 上以双下划线命名空间挂载）
+  const initDoneRef = useRef(false)
+  const lastSleepCheckRef = useRef<{ at: number; h: number; mode: string; idleMs: number; fired: boolean } | null>(null)
+  const enterSleepRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__petOverlayDebug = {
+      get state() {
+        return {
+          mode: modeRef.current, sleeping: sleepingRef.current, busy: busyRef.current,
+          anim: currentAnimRef.current, evtAt: lastEvtAtRef.current,
+          initDone: initDoneRef.current,
+          lastSleepCheck: lastSleepCheckRef.current,
+          timers: { roll: !!chainRollTimer.current, sleepChecker: !!sleepCheckerRef.current, whisper: !!whisperTimerRef.current },
+        }
+      },
+      forceSleep() { enterSleepRef.current() },
+      forceWalk() { planWalkRef.current() },
+    }
+  }, [])
 
   const showBubble = useCallback((text: string, ms = 4200) => {
     if (bubbleTimer.current) clearTimeout(bubbleTimer.current)
@@ -297,6 +335,9 @@ function PetOverlayInner() {
     frontEl.style.display = 'none'
     backEl.style.display = 'block'
     front.current = front.current === 'a' ? 'b' : 'a'
+    // 自动播放策略拒绝 play() 后视频会停在 0 帧（paused=true），ended 永不触发，
+    // 整条随机链死锁——换源后立即复查播放态（看门狗兜底见下）。
+    if (backEl.paused) void backEl.play().catch(() => { /* 看门狗与手势解锁兜底 */ })
   }, [assetUrl])
 
   const stopMotion = useCallback(() => {
@@ -304,17 +345,53 @@ function PetOverlayInner() {
     motionGenRef.current++
   }, [])
 
-  // ---------- 随机链 ----------
+  // ---------- 随机链（定时掷骰推进，原版 next-animation 语义） ----------
+  // idle/turn 是循环段：ended 永不触发 → 链必须靠定时器推进，否则永远停在待机
+  // （v0.5.0 修的真 bug：onEnded 驱动链在循环段上死锁，类别动作/走位全被堵死）。
+  // chain ↔ planWalk 互递归经 ref 解开。
+  const chainRef = useRef<() => void>(() => {})
+  const planWalkRef = useRef<() => void>(() => {})
+  const chainRollTimer = useRef<number | null>(null)
+  const clearRollTimer = useCallback(() => {
+    if (chainRollTimer.current) { clearTimeout(chainRollTimer.current); chainRollTimer.current = null }
+  }, [])
+
+  const beginLoop = useCallback((anim: string) => {
+    if (modeRef.current !== 'chain' || sleepingRef.current) return
+    currentAnimRef.current = anim
+    void switchTo(anim, { loop: true, onEnded: () => { void switchTo(anim, { loop: true, onEnded: () => beginLoopRef.current(anim) }) } })
+    clearRollTimer()
+    chainRollTimer.current = window.setTimeout(() => {
+      if (modeRef.current !== 'chain' || sleepingRef.current) return
+      const roll = rollChain(currentAnimRef.current)
+      if (roll.move) { planWalkRef.current(); return }
+      if (roll.once) {
+        void switchTo(roll.anim, { onEnded: () => beginLoopRef.current(pick(IDLE)) })
+      } else {
+        beginLoopRef.current(roll.anim)  // 循环段之间也换着来（idle↔turn）
+      }
+    }, 8000 + Math.random() * 9000)
+  }, [switchTo, clearRollTimer])
+  const beginLoopRef = useRef<(anim: string) => void>(() => {})
+
   const chain = useCallback(() => {
-    if (modeRef.current !== 'chain' && modeRef.current !== 'sleep') return
-    if (sleepingRef.current) return
+    if (modeRef.current !== 'chain' || sleepingRef.current) return
+    clearRollTimer()
     const roll = rollChain(currentAnimRef.current)
-    if (roll.move) { planWalk(); return }
-    void switchTo(roll.anim, roll.once
-      ? { onEnded: () => chain() }
-      : { loop: true, onEnded: () => { void switchTo(roll.anim, { loop: true, onEnded: () => chain() }) } })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [switchTo, squash])
+    if (roll.move) { planWalkRef.current(); return }
+    if (roll.once) {
+      void switchTo(roll.anim, { onEnded: () => beginLoopRef.current(pick(IDLE)) })
+    } else {
+      beginLoopRef.current(roll.anim)
+    }
+  }, [switchTo, clearRollTimer])
+
+  useEffect(() => {
+    chainRef.current = chain
+    planWalkRef.current = planWalk
+    beginLoopRef.current = beginLoop
+    enterSleepRef.current = enterSleep
+  })
 
   // ---------- 自主走位 ----------
   const planWalk = useCallback(() => {
@@ -420,6 +497,7 @@ function PetOverlayInner() {
     if (sleepingRef.current || modeRef.current !== 'chain') return
     sleepingRef.current = true
     modeRef.current = 'sleep'
+    clearRollTimer()
     showBubble(SLEEP_START_TEXT, 3600)
     void switchTo(SLEEP.start[0], { onEnded: () => {
       // 循环段：ended=前台被顶 → 重新点名 loop（原版不变量）
@@ -427,7 +505,7 @@ function PetOverlayInner() {
     } })
     if (sleepTimerRef.current) clearInterval(sleepTimerRef.current)
     sleepTimerRef.current = setInterval(() => { if (sleepingRef.current) showBubble(pick(SLEEP_TALK), 3600) }, 60000)
-  }, [switchTo, showBubble])
+  }, [switchTo, showBubble, clearRollTimer])
 
   const wakeFromSleep = useCallback(() => {
     if (!sleepingRef.current) return false
@@ -441,6 +519,9 @@ function PetOverlayInner() {
   // ---------- 指针交互 ----------
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return
+    // 用户手势是自动播放的解锁点：顺带恢复可能被策略暂停的画面
+    const el = front.current === 'a' ? videoA.current : videoB.current
+    if (el && el.paused && !el.ended) void el.play().catch(() => {})
     setMenuOpen(false)
     lastInteractRef.current = Date.now()
     if (sleepingRef.current) { wakeFromSleep(); return }
@@ -524,6 +605,16 @@ function PetOverlayInner() {
     }
   }, [settleDrag])
 
+  // ---------- 播放看门狗：任何原因的暂停（自动播放策略/解码打嗝）5s 内自动恢复 ----------
+  useEffect(() => {
+    const iv = setInterval(() => {
+      if (status !== 'ready') return
+      const el = front.current === 'a' ? videoA.current : videoB.current
+      if (el && el.paused && !el.ended && el.readyState >= 2) void el.play().catch(() => { /* 下一轮再试 */ })
+    }, 5000)
+    return () => clearInterval(iv)
+  }, [status])
+
   // ---------- onMoved：轨迹采样（初速估计） ----------
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) return
@@ -540,6 +631,48 @@ function PetOverlayInner() {
     }).catch(() => () => {})
     return () => { void un.then((f) => f()) }
   }, [])
+
+  // ---------- R2a 工作状态联动：chat-event 有流动=AI 在忙 → 忙碌循环；安静 → 雀跃庆祝 ----------
+  useEffect(() => {
+    const iv = setInterval(() => {
+      if (modeRef.current !== 'chain' || sleepingRef.current) return
+      const now = Date.now()
+      if (!busyRef.current && lastEvtAtRef.current > 0 && now - lastEvtAtRef.current < BUSY_ACTIVE_MS) {
+        busyRef.current = true
+        showBubble('主人忙起来了，大肥鱼陪着你～', 3000)
+        const loopBusy = () => {
+          if (!busyRef.current) return
+          // 循环段不变量：ended=前台被顶 → 重新点名 loop
+          void switchTo(pick(WORK_BUSY), { loop: true, onEnded: () => loopBusy() })
+        }
+        loopBusy()
+      } else if (busyRef.current && now - lastEvtAtRef.current > BUSY_QUIET_MS) {
+        busyRef.current = false
+        void switchTo(pick(WORK_CELEBRATE), { onEnded: () => chain() })
+      }
+    }, 5000)
+    return () => clearInterval(iv)
+  }, [switchTo, chain, showBubble])
+
+  // ---------- R2b 余额联动：今日花费 → 六档钱袋动画 + 气泡（原版 eventsRefreshSec.balance=1800s） ----------
+  useEffect(() => {
+    const check = async () => {
+      if (modeRef.current !== 'chain' || sleepingRef.current || !('__TAURI_INTERNALS__' in window)) return
+      try {
+        const startOfDay = Math.floor(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime() / 1000)
+        const res = await invoke('get_usage_summary', { startDate: startOfDay })
+        const wrapped = res as { totalCostUsd?: number; result?: { totalCostUsd?: number } }
+        const cost = typeof wrapped?.totalCostUsd === 'number' ? wrapped.totalCostUsd : wrapped?.result?.totalCostUsd
+        if (typeof cost !== 'number' || !isFinite(cost)) return
+        const tier = BALANCE_TIERS.find((t) => cost >= t.min) ?? BALANCE_TIERS[BALANCE_TIERS.length - 1]
+        showBubble(`今日 AI 花费 $${cost.toFixed(2)}`, 4500)
+        void switchTo(pick(tier.anims), { onEnded: () => chain() })
+      } catch { /* 用量库未初始化等：静默跳过（原版 playback-report 纪律：失败不抛） */ }
+    }
+    const t0 = setTimeout(check, 25000)
+    const iv = setInterval(check, BALANCE_POLL_MS)
+    return () => { clearTimeout(t0); clearInterval(iv) }
+  }, [switchTo, chain, showBubble])
 
   // ---------- 初始化 ----------
   useEffect(() => {
@@ -559,7 +692,7 @@ function PetOverlayInner() {
 
     let unlisten: Promise<() => void> | null = null
     if ('__TAURI_INTERNALS__' in window) {
-      unlisten = listen('chat-event', () => setEvtCount((c) => c + 1)).catch(() => () => {})
+      unlisten = listen('chat-event', () => { lastEvtAtRef.current = Date.now(); setEvtCount((c) => c + 1) }).catch(() => () => {})
     }
 
     ;(async () => {
@@ -599,15 +732,18 @@ function PetOverlayInner() {
         }
       }
       posReady.current = true
-      await switchTo(IDLE[0], { loop: true, onEnded: () => { void switchTo(IDLE[0], { loop: true }) } })
       if (disposed) return
+      // 起随机链（idle 段 + 定时掷骰推进）——直接 switchTo 会让链永远停在待机
       modeRef.current = 'chain'
+      chainRef.current()
 
       // 夜间睡觉检查（每分钟）；碎碎念每 5min
       const sleepCheck = () => {
         const h = new Date().getHours()
-        if ((h >= 23 || h < 7) && modeRef.current === 'chain' && !sleepingRef.current
-          && Date.now() - lastInteractRef.current > 30000) enterSleep()
+        const idleMs = Date.now() - lastInteractRef.current
+        const fired = (h >= 23 || h < 7) && modeRef.current === 'chain' && !sleepingRef.current && idleMs > 30000
+        lastSleepCheckRef.current = { at: Date.now(), h, mode: modeRef.current, idleMs, fired }
+        if (fired) enterSleep()
       }
       sleepCheck()
       sleepCheckerRef.current = setInterval(sleepCheck, 60000)
@@ -615,12 +751,14 @@ function PetOverlayInner() {
         if (modeRef.current === 'chain' && !sleepingRef.current) showBubble(pick(WHISPERS), 4500)
       }, 300000)
       setTimeout(() => { if (modeRef.current === 'chain' && !sleepingRef.current) showBubble(pick(WHISPERS), 4500) }, 6000)
+      initDoneRef.current = true
     })()
 
     return () => {
       disposed = true
       posReady.current = false
       stopMotion()
+      clearRollTimer()
       if (sleepTimerRef.current) clearInterval(sleepTimerRef.current)
       if (sleepCheckerRef.current) clearInterval(sleepCheckerRef.current)
       if (whisperTimerRef.current) clearInterval(whisperTimerRef.current)
