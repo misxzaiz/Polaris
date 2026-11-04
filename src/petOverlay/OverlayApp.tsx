@@ -707,17 +707,25 @@ function PetOverlayInner() {
   const aiWhisper = useCallback(async (): Promise<boolean> => {
     if (!aiWhisperOnRef.current || !('__TAURI_INTERNALS__' in window)) return false
     try {
-      const req = whisperSessionRef.current
+      // cap.ai.chat 契约（ai_chat_capability.rs:232）：start 同步返回 sessionId 裸字符串；
+      // continue 同步返回 {ok:true}（不含 sessionId）。continue 时 sessionId 由调用方持有，
+      // 不从响应提取——旧代码对 continue 也尝试提取，结果 undefined → 碎碎念第二次起全失败。
+      const hasSession = !!whisperSessionRef.current
+      const req = hasSession
         ? { action: 'continue', message: WHISPER_PROMPT, sessionId: whisperSessionRef.current, options: { engineId: AI_ENGINE_ID } }
         : { action: 'start', message: WHISPER_PROMPT, options: { engineId: AI_ENGINE_ID } }
       const r = await invoke('router_dispatch', { req: { target: 'cap.ai.chat', payload: req } }) as { result?: unknown }
-      const sidRaw = typeof r?.result === 'string'
-        ? r.result
-        : (r?.result as { sessionId?: string } | undefined)?.sessionId
-      if (!sidRaw) return false
-      whisperSessionRef.current = sidRaw
-      void kvSet(KV_WHISPER_SESSION_KEY, sidRaw)
-      const line = await waitAssistant(sidRaw, AI_WHISPER_TIMEOUT_MS)
+      // start 才提取 sessionId；continue 沿用 ref
+      if (!hasSession) {
+        const sidRaw = typeof r?.result === 'string' ? r.result : null
+        if (!sidRaw) return false
+        whisperSessionRef.current = sidRaw
+        void kvSet(KV_WHISPER_SESSION_KEY, sidRaw)
+        const line = await waitAssistant(sidRaw, AI_WHISPER_TIMEOUT_MS)
+        if (line) { showBubble(line.slice(0, 60), 5200); speak(line.slice(0, 60)); return true }
+        return false
+      }
+      const line = await waitAssistant(whisperSessionRef.current!, AI_WHISPER_TIMEOUT_MS)
       if (line) { showBubble(line.slice(0, 60), 5200); speak(line.slice(0, 60)); return true }
       return false
     } catch { return false }
@@ -736,16 +744,22 @@ function PetOverlayInner() {
         ? { action: 'start', message: msg, options: { systemPrompt: PET_PERSONA, enableMcpTools: false, engineId: AI_ENGINE_ID } }
         : { action: 'continue', message: msg, sessionId: chatSessionRef.current, options: { engineId: AI_ENGINE_ID } }
       const r = await invoke('router_dispatch', { req: { target: 'cap.ai.chat', payload: req } }) as { result?: unknown }
-      const sidRaw = typeof r?.result === 'string' ? r.result : (r?.result as { sessionId?: string } | undefined)?.sessionId
-      if (!sidRaw) throw new Error('会话创建失败')
-      if (first) { chatSessionRef.current = sidRaw; void kvSet(KV_CHAT_SESSION_KEY, sidRaw) }
-      const reply = await waitAssistant(sidRaw, CHAT_TIMEOUT_MS)
-      if (reply) {
-        setChatLog((l) => [...l, { role: 'pet', text: reply }])
-        speak(reply)
-      } else {
-        setChatLog((l) => [...l, { role: 'pet', text: '（鱼脑子转了一圈，什么也没说…再试试？）' }])
+      // cap.ai.chat 契约：start 返回 sessionId 裸字符串；continue 返回 {ok:true}（不含 sessionId）。
+      // continue 时 sessionId 由调用方持有，不从响应提取——旧代码对 continue 也尝试提取，
+      // 结果 undefined → 抛"会话创建失败" → 第二次对话起全坏。
+      if (first) {
+        const sidRaw = typeof r?.result === 'string' ? r.result : null
+        if (!sidRaw) throw new Error('会话创建失败')
+        chatSessionRef.current = sidRaw
+        void kvSet(KV_CHAT_SESSION_KEY, sidRaw)
+        const reply = await waitAssistant(sidRaw, CHAT_TIMEOUT_MS)
+        if (reply) { setChatLog((l) => [...l, { role: 'pet', text: reply }]); speak(reply) }
+        else { setChatLog((l) => [...l, { role: 'pet', text: '（鱼脑子转了一圈，什么也没说…再试试？）' }]) }
+        return
       }
+      const reply = await waitAssistant(chatSessionRef.current!, CHAT_TIMEOUT_MS)
+      if (reply) { setChatLog((l) => [...l, { role: 'pet', text: reply }]); speak(reply) }
+      else { setChatLog((l) => [...l, { role: 'pet', text: '（鱼脑子转了一圈，什么也没说…再试试？）' }]) }
     } catch (e) {
       setChatLog((l) => [...l, { role: 'pet', text: `（游不动了：${String(e instanceof Error ? e.message : e).slice(0, 60)}）` }])
     } finally {

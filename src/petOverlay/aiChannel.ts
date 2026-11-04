@@ -24,9 +24,11 @@ export function waitAssistant(sid: string, timeoutMs: number): Promise<string> {
     }
     listen('chat-event', (raw: unknown) => {
       try {
-        const env = (typeof raw === 'string' ? JSON.parse(raw) : raw) as
-          { payload?: { type?: string; sessionId?: string; content?: string; isDelta?: boolean } }
-        const p = env?.payload
+        // Tauri 中继（lib.rs chat-event relay）handle.emit 推的是内层 payload 本身
+        // （{ type, sessionId, content, isDelta, reason }），不是 { payload: {...} } 信封。
+        // 旧代码多解了一层 env.payload → 永远 undefined → 所有事件被忽略 → 超时返回空。
+        const p = (typeof raw === 'string' ? JSON.parse(raw) : raw) as
+          { type?: string; sessionId?: string; content?: string; isDelta?: boolean; reason?: string } | null
         if (!p || p.sessionId !== sid) return
         if (p.type === 'assistant_message') text = p.isDelta ? text + (p.content ?? '') : (p.content ?? text)
         if (p.type === 'session_end') setTimeout(finish, 300)

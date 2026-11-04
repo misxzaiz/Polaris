@@ -49,8 +49,9 @@ export function useSystemNotify(excluded: NotifyExcluded) {
     let un: (() => void) | null = null
     void listen('chat-event', (raw: unknown) => {
       try {
-        const env = (typeof raw === 'string' ? JSON.parse(raw) : raw) as { payload?: { type?: string; sessionId?: string; reason?: string } }
-        const p = env?.payload
+        // 同 aiChannel.ts：Tauri 中继推的是内层 payload 本身，不是 { payload: {...} } 信封。
+        const p = (typeof raw === 'string' ? JSON.parse(raw) : raw) as
+          { type?: string; sessionId?: string; reason?: string } | null
         if (!p?.sessionId) return
         if (p.type === 'assistant_message') {
           sessionFlowRef.current.set(p.sessionId, Date.now())

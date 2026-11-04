@@ -6,17 +6,27 @@
 import { invoke } from '@/services/transport'
 import { FALLBACK_PORT } from './constants'
 
-/** 解析 whale-pet 插件资源服务端口（plugin_service_list → port，兜底 FALLBACK_PORT）。 */
+/** 解析 whale-pet 插件资源服务端口（cap.pluginServiceManager.list_status → port，兜底 FALLBACK_PORT）。
+ *
+ * 为什么走 list_status 而非旧的 plugin_service_list：该 command 已在 commands/ 整体
+ * 删除时移除（管理面迁入 cap.pluginServiceManager，见 commands/mod.rs 注释）。
+ * 旧代码调 invoke('plugin_service_list') 必抛 "command not found"，被 try/catch
+ * 吞掉后永远落 FALLBACK_PORT=9863——而服务端口由 PluginServiceManager 动态分配，
+ * 端口不匹配时悬浮窗拉不到任何资源。与插件面板 Panel.tsx 的 resolvePort 对齐。 */
 export async function resolvePort(): Promise<number> {
   try {
-    const res = await invoke('plugin_service_list', {})
-    const wrapped = res as {
-      result?: { services?: Array<{ pluginId: string; serviceId: string; port?: number }> }
-      services?: Array<{ pluginId: string; serviceId: string; port?: number }>
+    const res = await invoke<{ ok: boolean; result?: unknown; error?: string }>(
+      'router_dispatch',
+      { req: { target: 'cap.pluginServiceManager', payload: { action: 'list_status' } } },
+    )
+    if (res?.ok) {
+      const arr = Array.isArray(res.result) ? res.result : []
+      const svc = arr.find((s: unknown) => {
+        const x = s as { pluginId?: string; serviceId?: string; port?: number }
+        return x.pluginId === 'whale-pet' && x.serviceId === 'whale-pet-assets' && typeof x.port === 'number'
+      }) as { port?: number } | undefined
+      if (svc?.port) return svc.port
     }
-    const services = wrapped?.result?.services ?? wrapped?.services ?? []
-    const svc = services.find((s) => s.pluginId === 'whale-pet' && s.serviceId === 'whale-pet-assets' && s.port)
-    if (svc?.port) return svc.port
   } catch { /* 兜底端口 */ }
   return FALLBACK_PORT
 }
