@@ -171,6 +171,108 @@ git push origin vx.x.x
 
 ---
 
+## v11.2.0 构建记录
+
+**构建时间**: 2026-11-04 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v11.2.0
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_11.2.0_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_11.2.0_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_11.2.0_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-11.2.0-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_11.2.0_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-11.2.0-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-11.2.0-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-11.2.0-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-11.2.0.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+> `cap.app.update` 能力（v11.0.2 周期落地）已支持触发即「下载→安装→重启」的应用自更新语义，但产物未附带 `.sig` 与 `latest.json`，桌面端实际自动更新仍不可用。
+
+### 变更内容
+
+本版本自 v11.0.2 起累计 143 个提交，主要变更按主题归纳：
+
+#### 宠物悬浮窗（pet-overlay）— 全套 R1/R2 落地
+- feat(pet-overlay): R1 悬浮窗 spike——零 Rust 建窗桥 + 透明悬浮页
+- feat(pet-overlay): R1.5 原版效果对标——完整随机链/点击积分音效/拖拽挣扎/抛飞物理/自主走位/睡觉三连/碎碎念气泡/边界钳制
+- feat(pet-overlay): 定时掷骰随机链 + 播放看门狗 + 工作状态/余额联动（修链循环段死锁 / play() 拒绝冻结 / boot 未起链三真 bug）
+- feat(pet-overlay): R2c AI 碎碎念——cap.ai.chat 单一宠物会话复用，30s 超时回退离线文案
+- feat(pet-overlay): R2d/R2e 宠物对话 UI（独立会话 + systemPrompt 人设 + 记忆续接）与 TTS 语音接线（cap.voice synthesize→convertFileSrc，默认关）
+- feat(pet-overlay): 多开同屏（pet-overlay-2..8 槽位 / 独立位置记忆 / openNext 扫描）+ 系统通知（AI 回话且失焦时 plugin:notification，60s 限频）
+- refactor(pet-overlay): R2 模块化拆分——1168 行单体拆为 8 模块 + 修复 think 块正则
+- fix(pet-overlay): cap.ai.chat continue 契约——经总线必须带 options.engineId，start/continue 显式绑定 simple-ai
+- fix(pet-overlay): 修复 AI 通道三处契约错配致碎碎念/对话二次起全失败
+
+#### 能力总线与插件生态
+- feat(update): cap.app.update 应用自更新——触发即下载安装重启，支持远程触发
+- feat(autostart): 开机自启 cap.app.autolaunch 幂等对账
+- feat(router): cap.pluginDiscovery:install_remote 对已鉴权 Remote 放行
+- feat(plugin-system): 插件图标支持自定义四类值域（内置名 / 相对路径 / URL / dataURL）
+- feat(plugins): 插件面板打开宿主观测，守望台自动记账数据源
+- feat(plugin-dev-link): 插件源码直连模式 junction 直连源码零打包重装
+- fix(plugins): 面板 bundle 超 1MB 被 get_file_content 误杀，改用 50MB 二进制读取
+- fix(plugin-system): 面板加载器 react import 重写改为代码上下文感知
+- feat(needs): 027 插件 MCP 工具调用宿主观测（AIEvent 埋点自动记账）
+
+#### 灵动岛与对话体验
+- feat(dynamic-island): HIG-faithful 视觉升级——玻璃质感 + 状态光带 + 双波符号
+- feat(chat): AI 对话运行时长（墙钟）展示 + 会话时长展示（本轮实时 + 最近轮保持 + 展开累计统计）
+- feat(chat): 新建会话入口收敛共享 NewSessionPanel，QuickSwitch 弃用全屏模态
+- feat(chat): 悬浮岛常驻会话变更汇总（变更段 + 行内 diff + 后台任务列表）
+- feat(chat): 图片三级防护——落盘 + 指向 + AI 自主调 vision MCP 识别
+- perf(dynamic-island): 思考态跑马灯流畅度修复——隔离重排 + 降级 backdrop + duration 档位化
+- perf(chat): thinking 流并入 50ms 缓冲，消除平方级字符串重拼
+- fix(dynamic-island): 思考态动效中间停摆——duration 固定 + 动画合成层保活
+
+#### 性能治理（多轮评审胜选实施）
+- perf(build): 启动 bundle 根治 mermaid 静态泄漏，启动 JS -52%（6.5MB→3.0MB）
+- perf(editor): 切断 CodeMirror 全部静态 import 边——codemirror chunk(~1MB) 移出首载
+- perf(chat): App.tsx Chat barrel 切边——7 组件 + EditMode 改深度路径直引
+- perf(ui): 视觉渲染性能优化——backdrop 降档、合成层提升、绘制属性动画改合成属性
+- perf(router): dispatch.start/end 广播降级为诊断开关门控，消除事件总线与重放缓冲洪水
+- perf(logger): 日志保留清扫 + 逐行降级 + read_logs 尾读，治理日志洪水
+- perf(audit,startup): 审计尾读 O(1) + 归档、sqlite 域级锁、CLI 探测缓存、dispatch watchdog、MCP 并发连接、插件启动宽限
+
+#### UX 与布局治理（4 人评审团多轮投票）
+- fix(ux): 会话删除加确认对话框，纠正「关闭」误导文案（两入口零确认硬删不可逆）
+- fix(ux): 流式 + 草稿态停止键常驻，紧急出口不再消失
+- fix(ux): 错误重试回传附件，不再静默丢图
+- fix(ux): 权限卡展示 resource 并补拒绝结果反馈
+- fix(layout): 标签最小宽死类修复 + 三栏工具栏高度对齐 + 左栏拖宽钳位
+- fix(layout): 左面板域墙加 contain:paint，面板弹窗退化为面板相对定位
+- refactor(layout): 状态光效 token 化单一映射源，主题切换跟随
+
+#### 移动端
+- build(mobile): 禁用 Kotlin 增量编译修复跨盘符构建
+- fix(android): 桌面专属 API 按 target_os 门控，移动端编译通过
+- fix(mobile): 外链统一走系统浏览器，修复移动端点击外链返回刷新丢状态
+- fix(agnes): 下载链接改为 fetch-blob 按钮，修 Android WebView download 退化为同页导航
+
+#### 工程治理与安全
+- ci: clippy 门槛 advisory 转 blocking（-D warnings -A dead_code）；存量 clippy 告警清零（机械类 120 处 + doc 格式 78 处 + 手工类 20 处）
+- ci: 新增 rust-gate 门控并移除 security 审计放行；commitlint 正文行宽降级为 warning
+- chore(lint): 清理 unused-vars/console/冗余豁免指令；eslint 忽略 agent 工作区产物
+- fix: 升级 dompurify/axios/follow-redirects 治理生产依赖高危漏洞
+- chore(release): .npmrc 新增传递依赖安全底线（axios>=1.20.0 / follow-redirects>=1.16.1）
+- fix(storage): SQLite pragma 顺序统一到 session_db 范式 + 补 journal_size_limit
+- fix(proxy): 修复 assistant 结尾请求触发 400 inference request is invalid
+- fix(compact-handoff): 修复空简报根因 + 新增复制提示词模式
+- chore(scripts): 新增 pre-commit 密钥扫描 hook 脚本
+- feat(plugins): plugin.rs 新增 PluginEngineAdapterManifest 声明（manifest 层透传 PluginEngineConfig.adapter，配套 plugin_process_engine 适配器进程模式）
+
+#### 插件 spec 落地（已实施于插件仓）
+- 灵犀 lingxi、故人 tether、问灶 ask-stove、刻漏 time-trail、算盘 abacus、琥珀 amber、谋定 decision-journal、磁盘雷达 disk-radar、网哨 net-sentinel、日晷 sundial、常契 changqi、守闸 shouzha、盘哨 quote-sentinel、观止 guanzhi、启幕 qimu、格致 gezhi、青囊 qingnang、纸坊 zhifang、票匣 piaoxia、金匮 jinkui、韦编 weibian、心图 xintu 等插件 spec 补记
+
+---
+
 ## v10.6.4 构建记录
 
 **构建时间**: 2026-10-05 (UTC)
