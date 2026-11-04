@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Archive, X, ChevronDown, Bot, Zap } from 'lucide-react'
+import { Archive, X, ChevronDown, Bot, Zap, Copy, FolderOpen } from 'lucide-react'
 import { OverlayGuard } from '@/components/Browser/OverlayGuard'
 import { clsx } from 'clsx'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
@@ -21,6 +21,7 @@ import { normalizeEngineId, getEngineFullName } from '@/utils/engineDisplay'
 import { useToastStore } from '@/stores/toastStore'
 import { getDefaultCompactInstruction } from '@/services/contextCompactHandoff'
 import { useCompactHandoffStore } from '@/stores/compactHandoffStore'
+import type { HandoffMode } from '@/services/contextCompactHandoff'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { getSessionConfig } from '@/stores/sessionConfigStore'
 import { resolveEffectiveProfileId } from '@/stores/conversationStore/conversationStoreUtils'
@@ -197,6 +198,7 @@ export function CompactHandoffModal({
   const [compactModel, setCompactModel] = useState(sourceDefaults.model)
   const [instruction, setInstruction] = useState(() => getDefaultCompactInstruction())
   const [newEngine, setNewEngine] = useState<EngineId>(sourceEngine)
+  const [mode, setMode] = useState<HandoffMode>('newSession')
   const [showInstruction, setShowInstruction] = useState(false)
 
   // 供应商选项：按压缩引擎过滤（切换引擎时清空已选 Profile/模型）
@@ -225,19 +227,22 @@ export function CompactHandoffModal({
     const started = useCompactHandoffStore.getState().start({
       sessionId,
       sourceTitle: sessionTitle,
+      mode,
       compact: {
         engineId: compactEngine,
         modelProfileId: compactProfileId || undefined,
         model: compactModel || undefined,
         instruction: instruction.trim() || getDefaultCompactInstruction(),
       },
-      newSession: { engineId: newEngine },
+      ...(mode === 'newSession' ? { newSession: { engineId: newEngine } } : {}),
     })
     if (started) {
       // 触发即走：面板关闭，压缩在后台进行，用户可继续查看其他对话
       useToastStore.getState().info(
         t('compactHandoff.startedToast'),
-        t('compactHandoff.startedToastHint'),
+        mode === 'copyPrompt'
+          ? t('compactHandoff.startedToastHintCopy')
+          : t('compactHandoff.startedToastHint'),
       )
       onClose()
     }
@@ -320,11 +325,51 @@ export function CompactHandoffModal({
             )}
           </div>
 
-          {/* 新会话引擎 */}
+          {/* 交接方式：新会话继续 / 复制提示词交给任意 AI */}
           <div className="flex flex-col gap-2 pt-1 border-t border-border-subtle">
-            <span className="text-xs font-medium text-text-secondary pt-2">{t('compactHandoff.newEngineLabel')}</span>
-            <EnginePicker value={newEngine} onChange={setNewEngine} />
+            <span className="text-xs font-medium text-text-secondary pt-2">{t('compactHandoff.modeLabel')}</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setMode('newSession')}
+                className={clsx(
+                  'flex items-center gap-1.5 px-2 py-2 rounded-md text-[11px] transition-colors border',
+                  mode === 'newSession'
+                    ? 'bg-primary/10 text-primary border-primary/30'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-background-hover border-border-subtle',
+                )}
+              >
+                <FolderOpen size={14} />
+                <span>{t('compactHandoff.modeNewSession')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('copyPrompt')}
+                className={clsx(
+                  'flex items-center gap-1.5 px-2 py-2 rounded-md text-[11px] transition-colors border',
+                  mode === 'copyPrompt'
+                    ? 'bg-primary/10 text-primary border-primary/30'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-background-hover border-border-subtle',
+                )}
+              >
+                <Copy size={14} />
+                <span>{t('compactHandoff.modeCopyPrompt')}</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-text-tertiary leading-relaxed">
+              {mode === 'copyPrompt'
+                ? t('compactHandoff.modeCopyPromptHint')
+                : t('compactHandoff.modeNewSessionHint')}
+            </p>
           </div>
+
+          {/* 新会话引擎（仅 newSession 模式可见） */}
+          {mode === 'newSession' && (
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-medium text-text-secondary">{t('compactHandoff.newEngineLabel')}</span>
+              <EnginePicker value={newEngine} onChange={setNewEngine} />
+            </div>
+          )}
         </div>
 
         {/* 底栏 */}
@@ -337,9 +382,10 @@ export function CompactHandoffModal({
           </button>
           <button
             onClick={handleStart}
-            className="px-4 py-1.5 text-xs rounded-lg font-medium transition-colors bg-primary text-white hover:bg-primary-hover"
+            className="flex items-center gap-1.5 px-4 py-1.5 text-xs rounded-lg font-medium transition-colors bg-primary text-white hover:bg-primary-hover"
           >
-            {t('compactHandoff.start')}
+            {mode === 'copyPrompt' && <Copy size={12} />}
+            {mode === 'copyPrompt' ? t('compactHandoff.startCopy') : t('compactHandoff.start')}
           </button>
         </div>
       </div>

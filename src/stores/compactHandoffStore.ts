@@ -19,6 +19,7 @@ import {
   type CompactHandoffStage,
   type CompactHandoffParams,
 } from '@/services/contextCompactHandoff'
+import { copyToClipboard } from '@/utils/clipboard'
 
 const log = createLogger('CompactHandoffStore')
 
@@ -38,6 +39,28 @@ interface CompactHandoffState {
   ) => boolean
   /** 取消当前任务 */
   cancel: () => void
+}
+
+/**
+ * copyPrompt 模式完成回调：复制简报到剪贴板并 toast 提示。
+ * 单独抽出便于在 store 内复用，且避免 store 直接依赖 i18n key 散落。
+ */
+async function onCopyPromptReady(briefing: string, sourceTitle: string): Promise<void> {
+  try {
+    await copyToClipboard(briefing)
+    useToastStore.getState().addToast({
+      type: 'success',
+      title: i18n.t('chat:compactHandoff.copyPromptCopiedTitle'),
+      message: i18n.t('chat:compactHandoff.copyPromptCopiedHint', { title: sourceTitle }),
+      duration: 10000,
+    })
+  } catch (e) {
+    useToastStore.getState().error(
+      i18n.t('chat:compactHandoff.failToast'),
+      i18n.t('chat:compactHandoff.copyPromptCopyFailed'),
+    )
+    log.error('复制简报到剪贴板失败', e instanceof Error ? e : new Error(String(e)))
+  }
 }
 
 /** 当前任务的中断控制器（不入 state，避免不可序列化对象触发无谓重渲染） */
@@ -80,6 +103,10 @@ export const useCompactHandoffStore = create<CompactHandoffState>((set, get) => 
         if (cancelled) {
           // 用户取消了，无声退出（不弹 error toast）
           log.info('后台压缩交接被用户取消', { id })
+        } else if (result.ok && result.briefing && params.mode === 'copyPrompt') {
+          // copyPrompt 模式：不创建新会话，复制简报到剪贴板，供用户交给任意 AI
+          await onCopyPromptReady(result.briefing, params.sourceTitle)
+          log.info('后台压缩交接完成（copyPrompt）', { briefingLength: result.briefing.length })
         } else if (result.ok && result.newSessionId) {
           const newSessionId = result.newSessionId
           useToastStore.getState().addToast({
