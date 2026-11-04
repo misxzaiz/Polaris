@@ -458,8 +458,26 @@ pub struct PluginEngineManifestContribution {
     /// 缺省时前端按 "mcp-servers" 处理
     #[serde(skip_serializing_if = "Option::is_none", rename = "mcpConsumption")]
     pub mcp_consumption: Option<String>,
+    /// 引擎适配器进程声明（存在时前端构建 PluginEngineConfig.adapter，
+    /// 后端走 PluginProcessEngine 适配器进程模式）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter: Option<PluginEngineAdapterManifest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<PluginEngineCapabilitiesContribution>,
+}
+
+/// 插件引擎适配器声明（manifest 层，透传给 PluginEngineConfig.adapter）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginEngineAdapterManifest {
+    /// 适配器入口（相对插件 installPath 的可执行文件路径）
+    pub entry: String,
+    /// 运行 runtime（"node" / "python3" / "deno" / 空=直接可执行）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<String>,
+    /// 协议版本（当前为 "engine-v1"）
+    #[serde(default)]
+    pub protocol: String,
 }
 
 /// 插件引擎 provider 注册声明（manifest 层，字符串形式透传给后端 PluginEngineConfig）
