@@ -139,6 +139,14 @@ export function SessionConfigSelector({
   // opencode 动态模型列表（从后端 `get_opencode_models` 获取）
   const opencodeModels = useEngineMetadataStore(s => s.opencodeModels)
 
+  // 插件引擎声明的模型目录（contributes.engines[].models 经 EngineMetadata.models 透传，
+  // 如 codebuddy 的 hy4-preview）。用 useMemo 保持引用稳定，避免 zustand 选择器返回新数组导致重渲染。
+  const engineMetadatas = useEngineMetadataStore(s => s.metadatas)
+  const engineDeclaredModels = useMemo(
+    () => engineMetadatas.find(m => m.id === currentEngine)?.models?.filter(Boolean) ?? null,
+    [engineMetadatas, currentEngine],
+  )
+
   // 动态 Agent 列表：claude 引擎优先 CLI 获取，SimpleAI 用两级 discover(项目级+全局 corpus)，降级 PRESET
   const dynamicAgents = useCliInfoStore(s => s.agents)
   const simpleAiAgents = useAgentStore(s => s.simpleAiAgents)
@@ -186,6 +194,20 @@ export function SessionConfigSelector({
         supportsStreaming: true,
       }))
     }
+    // 插件引擎声明的模型目录优先（声明即权威目录）：
+    // 官方 Claude PRESET 对插件引擎无意义，Profile 也未必建立（如 codebuddy 免登录直用）。
+    // 首项保留「不设置」= 走引擎默认模型（adapter 侧默认）。
+    if (engineDeclaredModels && engineDeclaredModels.length > 0) {
+      return [
+        { id: '', name: t('sessionConfig.noModel'), description: '', supportsStreaming: true },
+        ...engineDeclaredModels.map(m => ({
+          id: m,
+          name: m,
+          description: '',
+          supportsStreaming: true,
+        })),
+      ]
+    }
     const profileId = config.modelProfileId
     if (!profileId) {
       // SimpleAI 模型完全由 Profile 驱动，无 Profile 时不可选模型
@@ -204,7 +226,7 @@ export function SessionConfigSelector({
       description: '',
       supportsStreaming: true,
     }))
-  }, [config.modelProfileId, profiles, currentEngine, isOpencodeEngine, opencodeModels, t])
+  }, [config.modelProfileId, profiles, currentEngine, isOpencodeEngine, opencodeModels, engineDeclaredModels, t])
 
   // 切换供应商（Profile）后，清掉不属于该 Profile 的残留模型选择。
   // config.model 是跨 Profile 持久化的：从官方 API（opus/sonnet/haiku）切到第三方

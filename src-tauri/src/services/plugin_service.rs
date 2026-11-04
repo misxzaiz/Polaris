@@ -2408,10 +2408,11 @@ mod tests {
         let result = PluginService::validate_plugin_manifest(plugin.path());
 
         assert!(!result.valid);
+        // PluginDiscoveryError 是结构体（error 字段承载消息），早期这里误按字符串切片调用
         assert!(result
             .errors
             .iter()
-            .any(|e| e.contains(".icon has unsupported value")));
+            .any(|e| e.error.contains(".icon has unsupported value")));
     }
 
     #[test]

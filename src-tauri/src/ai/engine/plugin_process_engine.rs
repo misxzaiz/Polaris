@@ -56,7 +56,11 @@ use crate::ai::traits::{
 };
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
-use crate::models::ai_event::{ToolCallStartEvent, ToolCallEndEvent, UsageEvent};
+use crate::models::ai_event::{
+    AssistantMessageEvent, CliInitEvent, ContextCompactedEvent, ErrorEvent, McpServerStatus,
+    SessionEndEvent, SessionEndReason, SessionStartEvent, ThinkingEvent, TokenEvent,
+    ToolCallEndEvent, ToolCallStartEvent, UsageEvent,
+};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -197,14 +201,128 @@ impl PluginProcessEngine {
     fn parse_event_frame(frame: &serde_json::Value) -> Option<AIEvent> {
         let obj = frame.as_object()?;
         let type_tag = obj.get("type")?.as_str()?;
+
+        // 全部手工构造，不走 serde_json::from_value::<AIEvent>：
+        // AIEvent 是 #[serde(tag = "type")] 内部标记枚举，而各事件结构体又有
+        // #[serde(rename = "type")] event_type 字段——serde 反序列化内部标记
+        // 枚举时会先摘掉 type 键，结构体的必需字段随之缺失，100% 报
+        // "missing field `type`"（2026-11-05 独立 crate 实证）。
+        // 手工构造同时兼容 isDelta/is_delta、engineId/engine_id 双拼写。
+        let session_id = obj.get("session_id")?.as_str()?.to_string();
         match type_tag {
-            // struct-variant：直接反序列化
-            "assistant_message" | "error" | "session_end" | "thinking" | "context_compacted" => {
-                serde_json::from_value(frame.clone()).ok()
+            "token" => {
+                let value = obj.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                Some(AIEvent::Token(TokenEvent::new(session_id, value.to_string())))
+            }
+            "thinking" => {
+                let content = obj.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                Some(AIEvent::Thinking(ThinkingEvent::new(session_id, content)))
+            }
+            "assistant_message" => {
+                let content = obj.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                let is_delta = obj
+                    .get("isDelta")
+                    .or_else(|| obj.get("is_delta"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Some(AIEvent::AssistantMessage(AssistantMessageEvent::new(
+                    session_id,
+                    content,
+                    is_delta,
+                )))
+            }
+            "error" => {
+                let error = obj
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| obj.get("message").and_then(|v| v.as_str()))?;
+                Some(AIEvent::Error(ErrorEvent::new(session_id, error)))
+            }
+            "session_start" => {
+                let engine_id = obj
+                    .get("engineId")
+                    .or_else(|| obj.get("engine_id"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let mut ev = SessionStartEvent::new(session_id);
+                if let Some(e) = engine_id {
+                    ev = ev.with_engine_id(e);
+                }
+                Some(AIEvent::SessionStart(ev))
+            }
+            "session_end" => {
+                let reason = obj
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .and_then(|r| match r {
+                        "completed" => Some(SessionEndReason::Completed),
+                        "aborted" => Some(SessionEndReason::Aborted),
+                        "error" => Some(SessionEndReason::Error),
+                        _ => None,
+                    });
+                let mut ev = SessionEndEvent::new(session_id);
+                if let Some(r) = reason {
+                    ev = ev.with_reason(r);
+                }
+                Some(AIEvent::SessionEnd(ev))
+            }
+            "cli_init" => {
+                let tools: Vec<String> = obj
+                    .get("tools")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|t| t.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let mcp_servers: Vec<McpServerStatus> = obj
+                    .get("mcpServers")
+                    .or_else(|| obj.get("mcp_servers"))
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|s| {
+                                let name = s.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                                if name.is_empty() {
+                                    return None;
+                                }
+                                let status = s.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                                Some(McpServerStatus {
+                                    name: name.to_string(),
+                                    status: status.to_string(),
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let mut ev = CliInitEvent::new(session_id);
+                if !tools.is_empty() {
+                    ev = ev.with_tools(tools);
+                }
+                if !mcp_servers.is_empty() {
+                    ev = ev.with_mcp_servers(mcp_servers);
+                }
+                if let Some(m) = obj.get("model").and_then(|v| v.as_str()) {
+                    ev = ev.with_model(m.to_string());
+                }
+                Some(AIEvent::CliInit(ev))
+            }
+            "context_compacted" => {
+                let trigger = obj.get("trigger").and_then(|v| v.as_str())?;
+                let pre_tokens = obj
+                    .get("preTokens")
+                    .or_else(|| obj.get("pre_tokens"))
+                    .and_then(|v| v.as_u64());
+                let post_tokens = obj
+                    .get("postTokens")
+                    .or_else(|| obj.get("post_tokens"))
+                    .and_then(|v| v.as_u64());
+                Some(AIEvent::ContextCompacted(ContextCompactedEvent::new(
+                    session_id,
+                    trigger,
+                    pre_tokens,
+                    post_tokens,
+                )))
             }
             // tuple-variant：手动构造
             "tool_call_start" => {
-                let session_id = obj.get("session_id")?.as_str()?.to_string();
                 let tool = obj.get("tool")?.as_str()?.to_string();
                 let args = obj.get("args")
                     .and_then(|a| a.as_object())
@@ -218,7 +336,6 @@ impl PluginProcessEngine {
                 Some(AIEvent::ToolCallStart(ev))
             }
             "tool_call_end" => {
-                let session_id = obj.get("session_id")?.as_str()?.to_string();
                 let tool = obj.get("tool")?.as_str()?.to_string();
                 let success = obj.get("success").and_then(|s| s.as_bool()).unwrap_or(true);
                 let result = obj.get("result").cloned();
@@ -235,7 +352,6 @@ impl PluginProcessEngine {
                 Some(AIEvent::ToolCallEnd(ev))
             }
             "usage" => {
-                let session_id = obj.get("session_id")?.as_str()?.to_string();
                 let input = obj.get("input_tokens").and_then(|v| v.as_u64())?;
                 let output = obj.get("output_tokens").and_then(|v| v.as_u64())?;
                 let cache_creation = obj.get("cache_creation_input_tokens").and_then(|v| v.as_u64());
@@ -596,6 +712,7 @@ impl AIEngine for PluginProcessEngine {
             install_guide: self.config.cli.install_guide.clone(),
             npm_package: self.config.npm_package.clone(),
             install_url: self.config.install_url.clone(),
+            models: self.config.models.clone(),
             stable: false, // 插件引擎默认为不稳定版本
         }
     }
@@ -778,6 +895,84 @@ mod tests {
         let frame = json!({ "event": "ai_event", "type": "session_end", "session_id": "s1" });
         let ev = PluginProcessEngine::parse_event_frame(&frame).expect("session_end 应解析为 AIEvent");
         assert!(matches!(ev, AIEvent::SessionEnd(_)));
+    }
+
+    #[test]
+    fn parse_session_end_with_reason() {
+        let frame = json!({ "event": "ai_event", "type": "session_end", "session_id": "s1", "reason": "error" });
+        match PluginProcessEngine::parse_event_frame(&frame).expect("带 reason 的 session_end 应解析") {
+            AIEvent::SessionEnd(e) => {
+                assert_eq!(e.reason, Some(crate::models::ai_event::SessionEndReason::Error));
+            }
+            other => panic!("期望 SessionEnd，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_token_frame() {
+        let frame = json!({ "event": "ai_event", "type": "token", "session_id": "s1", "value": "你好" });
+        match PluginProcessEngine::parse_event_frame(&frame).expect("token 应解析为 AIEvent") {
+            AIEvent::Token(e) => assert_eq!(e.value, "你好"),
+            other => panic!("期望 Token，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_thinking_frame() {
+        let frame = json!({ "event": "ai_event", "type": "thinking", "session_id": "s1", "content": "思考中" });
+        match PluginProcessEngine::parse_event_frame(&frame).expect("thinking 应解析为 AIEvent") {
+            AIEvent::Thinking(e) => assert_eq!(e.content, "思考中"),
+            other => panic!("期望 Thinking，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_session_start_with_engine_id() {
+        let frame = json!({ "event": "ai_event", "type": "session_start", "session_id": "s1", "engine_id": "codebuddy" });
+        match PluginProcessEngine::parse_event_frame(&frame).expect("session_start 应解析为 AIEvent") {
+            AIEvent::SessionStart(e) => assert_eq!(e.engine_id.as_deref(), Some("codebuddy")),
+            other => panic!("期望 SessionStart，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_cli_init_frame() {
+        let frame = json!({
+            "event": "ai_event", "type": "cli_init", "session_id": "s1",
+            "tools": ["bash", "read"], "mcp_servers": [{ "name": "m1", "status": "connected" }],
+            "model": "hy4-preview"
+        });
+        match PluginProcessEngine::parse_event_frame(&frame).expect("cli_init 应解析为 AIEvent") {
+            AIEvent::CliInit(e) => {
+                assert_eq!(e.tools.len(), 2);
+                assert_eq!(e.mcp_servers.len(), 1);
+                assert_eq!(e.mcp_servers[0].name, "m1");
+                assert_eq!(e.model.as_deref(), Some("hy4-preview"));
+            }
+            other => panic!("期望 CliInit，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_error_frame() {
+        let frame = json!({ "event": "ai_event", "type": "error", "session_id": "s1", "error": "CLI 退出码: 1" });
+        match PluginProcessEngine::parse_event_frame(&frame).expect("error 应解析为 AIEvent") {
+            AIEvent::Error(e) => assert_eq!(e.error, "CLI 退出码: 1"),
+            other => panic!("期望 Error，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_assistant_message_snake_is_delta() {
+        // 协议文档早期写 is_delta（snake），适配器实际发 isDelta——两者都应兼容
+        let frame = json!({
+            "event": "ai_event", "type": "assistant_message",
+            "session_id": "s1", "content": "hi", "is_delta": false
+        });
+        match PluginProcessEngine::parse_event_frame(&frame).expect("snake is_delta 也应解析") {
+            AIEvent::AssistantMessage(m) => assert!(!m.is_delta),
+            other => panic!("期望 AssistantMessage，得到 {:?}", other),
+        }
     }
 
     #[test]

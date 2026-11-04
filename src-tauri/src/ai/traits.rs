@@ -232,6 +232,9 @@ pub struct PluginEngineConfig {
     /// 插件安装路径（前端注册时注入，用于解析适配器入口等相对路径）
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "installPath")]
     pub install_path: Option<String>,
+    /// 引擎声明可用模型目录（如 ["hy4-preview"]）；空 = 未声明，UI 用既有选择逻辑
+    #[serde(default)]
+    pub models: Vec<String>,
 }
 
 /// 适配器进程声明 —— 描述插件引擎适配器进程的入口与协议。
@@ -675,6 +678,7 @@ pub trait AIEngine: Send + Sync {
             install_guide: None,
             npm_package: None,
             install_url: None,
+            models: Vec::new(),
             stable: false,
         }
     }
@@ -767,6 +771,10 @@ pub struct EngineMetadata {
     /// 适用于非 npm 分发的引擎，AI 引擎设置页显示「打开安装页面」按钮。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install_url: Option<String>,
+    /// 引擎声明可用模型目录（插件引擎经 contributes.engines[].models 声明）。
+    /// 空 = 未声明目录，UI 回退既有模型选择逻辑（Profile/PRESET_MODELS）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<String>,
     /// 是否为稳定版本。
     /// Claude Code 为唯一稳定引擎，其余（Simple AI/插件引擎）均为不稳定版本。
     /// 默认值 false（#[serde(default)] 保证旧配置向后兼容）。

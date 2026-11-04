@@ -194,6 +194,7 @@ class PluginRegistry {
       },
       adapter: engine.adapter,
       installPath: installPath,
+      models: engine.models ?? [],
     }
     log.info(`[registerSingleEngine] engine.id=${engine.id}, hasAdapter=${!!engine.adapter}, installPath=${installPath}, mcpEnabled=${mcpEnabled}`)
     log.info(`[PluginRegistry] 调用 register_plugin_engine: ${JSON.stringify(engineConfig)}`)

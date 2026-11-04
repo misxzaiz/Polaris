@@ -231,6 +231,8 @@ export interface PluginEngineContribution {
   mcpConsumption?: PluginEngineConsumptionStrategy
   /** 适配器进程声明（存在时走 PluginProcessEngine） */
   adapter?: PluginEngineAdapterContribution
+  /** 引擎声明可用模型目录（如 ["hy4-preview"]），声明后模型选择器直接列出这些模型 */
+  models?: string[]
   /** 引擎能力声明 */
   capabilities?: {
     tools?: boolean

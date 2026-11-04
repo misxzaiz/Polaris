@@ -442,6 +442,11 @@ function normalizeEngines(
       },
       npmPackage: asString(item.npmPackage) || undefined,
       installUrl: asString(item.installUrl) || undefined,
+      // 引擎声明模型目录（如 codebuddy hy4-preview）；normalize 不能丢——丢则引擎元数据
+      // 无 models，会话配置面板回退 PRESET_MODELS（官方 Claude 预设对插件引擎无意义）
+      models: Array.isArray(item.models)
+        ? item.models.filter((m): m is string => typeof m === 'string' && m.length > 0)
+        : undefined,
       protocol: asString(item.protocol) as PluginEngineContribution['protocol'] ?? 'pi-rpc',
       sessionFlags: asString(item.sessionFlags) as PluginEngineContribution['sessionFlags'] ?? 'pi',
       providerConfig,

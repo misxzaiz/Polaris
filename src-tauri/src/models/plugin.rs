@@ -462,6 +462,10 @@ pub struct PluginEngineManifestContribution {
     /// 后端走 PluginProcessEngine 适配器进程模式）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter: Option<PluginEngineAdapterManifest>,
+    /// 引擎声明可用模型目录（如 ["hy4-preview"]）；经 EngineMetadata.models 透传前端，
+    /// 会话配置面板直接列出这些模型（2026-11-05 codebuddy 适配新增）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<PluginEngineCapabilitiesContribution>,
 }

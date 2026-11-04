@@ -206,6 +206,7 @@ impl AIEngine for SimpleAIEngine {
             install_guide: None,
             npm_package: None,
             install_url: None,
+            models: Vec::new(),
             stable: false,
         }
     }
