@@ -180,21 +180,34 @@ git push origin vx.x.x
 
 | 产物 | 大小 | 平台 | 说明 |
 |---|---|---|---|
-| `polaris_11.2.0_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
-| `polaris_11.2.0_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
-| `polaris_11.2.0_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
-| `polaris-11.2.0-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
-| `polaris_11.2.0_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
-| `polaris-web-11.2.0-win-x64.zip` | - | Windows x64 | Web 独立服务 |
-| `polaris-web-11.2.0-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
-| `polaris-web-11.2.0-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
-| `polaris-mobile-11.2.0.apk` | - | Android arm64-v8a | Android APK |
+| `polaris_11.2.0_x64-setup.exe` | 27.9 MB | Windows x64 | NSIS 安装程序 |
+| `polaris_11.2.0_x64_en-US.msi` | 37.0 MB | Windows x64 | MSI 安装程序 |
+| `polaris_11.2.0_amd64.deb` | 44.1 MB | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-11.2.0-1.x86_64.rpm` | 44.0 MB | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_11.2.0_amd64.AppImage` | 118.3 MB | Linux x64 | 便携版（双击运行） |
+| `polaris-web-11.2.0-win-x64.zip` | 15.4 MB | Windows x64 | Web 独立服务 |
+| `polaris-web-11.2.0-linux-x86_64.tar.gz` | 16.4 MB | Linux x64 | Web 独立服务 |
+| `polaris-web-11.2.0-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务（macOS runner 重跑中） |
+| `polaris-mobile-11.2.0.apk` | 20.6 MB | Android arm64-v8a | Android APK |
+| `latest.json` | 19 KB | - | 自动更新元数据 |
+
+> 所有桌面端安装包（`.exe` / `.msi` / `.deb` / `.rpm` / `.AppImage`）均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
 
 ### 自动更新说明
 
-`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `true`，本版本**支持 Tauri 自动更新**——已生成 `latest.json` 与各安装包的 `.sig` 签名文件。updater 端点指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将拉取本版本元数据。
 
-> `cap.app.update` 能力（v11.0.2 周期落地）已支持触发即「下载→安装→重启」的应用自更新语义，但产物未附带 `.sig` 与 `latest.json`，桌面端实际自动更新仍不可用。
+配合 v11.0.2 周期落地的 `cap.app.update` 能力（触发即「下载→安装→重启」），桌面端自动更新链路首次完整可用。
+
+> **注**：v11.2.0 之前各版本 `createUpdaterArtifacts` 为 `false`，不支持自动更新。本版本为首个开启签名产物 + `latest.json` 的版本。
+
+### 构建说明：pnpm overrides 校验修复
+
+本版本发布过程中，`.npmrc` 初版采用 `overrides.axios=^1.20.0` / `overrides.follow-redirects=^1.16.1` 的 dotted-key 语法。pnpm v10（CI 环境）对 `.npmrc` overrides 与 lockfile 的一致性校验报 `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`，导致首次 tag 推送时 **Release / Release APK 三平台 `frozen-lockfile` 安装全部失败**（本地较新 pnpm 版本能通过该校验，故本地未暴露）。
+
+修复提交 `600c54a1 fix(build): pnpm overrides 迁至 package.json 标准 pnpm.overrides 字段`：将 overrides 移至 `package.json` 的 `pnpm.overrides` 官方标准字段，`.npmrc` 恢复为仅保留 `node-linker` / `onlyBuiltDependencies`。lockfile 结构不变，frozen 校验通过。删除旧 tag 后重新推送 `v11.2.0`，三平台构建由修复后的提交触发。
+
+> 后续维护：`overrides` 一律写在 `package.json` 的 `pnpm.overrides`，不要写进 `.npmrc` 的 dotted-key。
 
 ### 变更内容
 
@@ -261,7 +274,7 @@ git push origin vx.x.x
 - ci: 新增 rust-gate 门控并移除 security 审计放行；commitlint 正文行宽降级为 warning
 - chore(lint): 清理 unused-vars/console/冗余豁免指令；eslint 忽略 agent 工作区产物
 - fix: 升级 dompurify/axios/follow-redirects 治理生产依赖高危漏洞
-- chore(release): .npmrc 新增传递依赖安全底线（axios>=1.20.0 / follow-redirects>=1.16.1）
+- chore(release): 传递依赖安全底线写入 package.json `pnpm.overrides`（axios>=1.20.0 / follow-redirects>=1.16.1）
 - fix(storage): SQLite pragma 顺序统一到 session_db 范式 + 补 journal_size_limit
 - fix(proxy): 修复 assistant 结尾请求触发 400 inference request is invalid
 - fix(compact-handoff): 修复空简报根因 + 新增复制提示词模式
