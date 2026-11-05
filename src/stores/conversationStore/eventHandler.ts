@@ -508,6 +508,19 @@ export function handleAIEvent(
     case 'assistant_message':
       // 仅增量计入；isDelta=false 的整块补发与 token/增量重复，会重复计数
       if (event.isDelta) pushStreamDelta(state, set, event.receivedAtMs, event.content)
+      // 兜底：isDelta=false 的完整帧在已有流式增量（token 已追加）时跳过，
+      // 防止引擎先发 token 增量再发完整 assistant_message 帧导致正文翻倍。
+      // codebuddy adapter 侧已跳过回放帧，此为宿主侧第二道闸——覆盖所有引擎。
+      if (!event.isDelta) {
+        const cur = state.currentMessage
+        if (cur) {
+          const hasText = cur.blocks.some((b: any) => b.type === 'text' && (b.content || '').length > 0)
+          if (hasText) {
+            log?.debug?.('[eventHandler] assistant_message(isDelta=false) 跳过：已有流式文本，完整帧回放')
+            break
+          }
+        }
+      }
       state.appendTextBlock(event.content)
       break
 
