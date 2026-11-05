@@ -2,6 +2,7 @@ import type { ChatMessage, EngineId, Workspace } from '@/types'
 import type { SessionRuntimeConfig, ProfileMode } from '@/types/sessionConfig'
 import { sessionStoreManager } from './sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { listPluginMcpServerStatuses } from '@/plugin-system'
 import { usePluginStore } from '../pluginStore'
 import { useConfigStore } from '../configStore'
@@ -39,21 +40,35 @@ export function resolveRuntimeConfigForEngine(
 ): Partial<SessionRuntimeConfig> {
   const model = sessionConfig.model || undefined
 
+  // agent / effort 透传引擎能力驱动，不再按引擎 ID 硬编码白名单：
+  // - 引擎声明 sessionConfig.selectors 含 'agent' / 'effort' → 透传（插件引擎声明优先）
+  // - 未声明的引擎按能力标志兜底：有 tools 能力（可调用工具 → 可有人格）→ agent；
+  //   内置引擎（claude-code/simple-ai）恒支持 effort（历史行为保持）
+  // - 权限模式对所有引擎透传（各引擎 adapter 自行映射白名单值）
+  const meta = useEngineMetadataStore.getState().getEngine(engineId as string)
+  const declaredSelectors = meta?.sessionConfig?.selectors
+  const caps = meta?.capabilities
+
+  const agentSupported = declaredSelectors
+    ? declaredSelectors.includes('agent')
+    : engineId === 'claude-code' || engineId === 'simple-ai' || (caps?.tools ?? false)
+  const effortSupported = declaredSelectors
+    ? declaredSelectors.includes('effort')
+    : engineId === 'claude-code' || engineId === 'simple-ai'
+
   return {
     // agent persona 透传：
     // - claude-code：经 --agent 透传 CLI（注：当前 corpus 未暴露给 CLI，U2-4 待补）
     // - simple-ai：经 SessionOptions.agent 注入 corpus persona（见 simple_ai/mod.rs start_session）
-    agent: (engineId === 'claude-code' || engineId === 'simple-ai')
-      ? sessionConfig.agent || undefined
-      : undefined,
+    // - 插件引擎：引擎声明 selectors 含 agent 即透传（如 codebuddy --agent）
+    agent: agentSupported ? sessionConfig.agent || undefined : undefined,
     model,
     // effort 透传：
     // - claude-code：经 --effort 传给 CLI
     // - simple-ai：经 SessionOptions.effort 注入请求体（OpenAIChat → reasoning_effort /
     //   Anthropic → thinking.budget_tokens / Responses → reasoning.effort，见 simple_ai_protocol.rs）
-    effort: (engineId === 'claude-code' || engineId === 'simple-ai')
-      ? sessionConfig.effort || undefined
-      : undefined,
+    // - 插件引擎：引擎声明 selectors 含 effort 即透传（如 codebuddy --effort）
+    effort: effortSupported ? sessionConfig.effort || undefined : undefined,
     permissionMode: sessionConfig.permissionMode || undefined,
   }
 }

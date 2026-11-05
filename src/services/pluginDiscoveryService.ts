@@ -382,6 +382,23 @@ function normalizeStyles(value: unknown, errors: string[]): PluginStyleContribut
   })
 }
 
+/** 解析会话配置选项数组（effort/permission 通用） */
+function parseConfigOptions(
+  raw: unknown
+): { value: string; label: string; description?: string }[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const result: { value: string; label: string; description?: string }[] = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const value = asString(item.value)
+    const label = asString(item.label)
+    if (!value || !label) continue
+    const description = asString(item.description) || undefined
+    result.push({ value, label, description })
+  }
+  return result.length > 0 ? result : undefined
+}
+
 function normalizeEngines(
   value: unknown,
   _errors: string[]
@@ -447,6 +464,14 @@ function normalizeEngines(
       models: Array.isArray(item.models)
         ? item.models.filter((m): m is string => typeof m === 'string' && m.length > 0)
         : undefined,
+      // 引擎会话配置声明（选择器列表 + 各选项值）；逐字段重建防丢
+      sessionConfig: isRecord(item.sessionConfig) ? {
+        selectors: Array.isArray(item.sessionConfig.selectors)
+          ? item.sessionConfig.selectors.filter((s): s is string => typeof s === 'string')
+          : undefined,
+        effortOptions: parseConfigOptions(item.sessionConfig.effortOptions),
+        permissionOptions: parseConfigOptions(item.sessionConfig.permissionOptions),
+      } : undefined,
       protocol: asString(item.protocol) as PluginEngineContribution['protocol'] ?? 'pi-rpc',
       sessionFlags: asString(item.sessionFlags) as PluginEngineContribution['sessionFlags'] ?? 'pi',
       providerConfig,

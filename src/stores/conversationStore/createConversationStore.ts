@@ -2439,10 +2439,10 @@ export function createConversationStore(
             disabledMcpServers,
             attachments: attachmentsForBackend,
             additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
-            agent: sendOptions?.runtimeOverride?.agent ?? runtimeConfig.agent,
+            agent: sendOptions?.runtimeOverride?.agent ?? sessionMeta?.agent ?? runtimeConfig.agent,
             model: resolvedModel,
-            effort: sendOptions?.runtimeOverride?.effort ?? runtimeConfig.effort,
-            permissionMode: sendOptions?.runtimeOverride?.permissionMode ?? runtimeConfig.permissionMode,
+            effort: sendOptions?.runtimeOverride?.effort ?? sessionMeta?.effort ?? runtimeConfig.effort,
+            permissionMode: sendOptions?.runtimeOverride?.permissionMode ?? sessionMeta?.permissionMode ?? runtimeConfig.permissionMode,
             allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
               ? sendOptions.allowedTools
               : undefined,
@@ -2711,10 +2711,10 @@ export function createConversationStore(
               enableMcpTools: true,
               disabledMcpServers,
               additionalDirs: contextWorkspaces.map(w => w.path).filter(Boolean),
-              agent: runtimeConfig.agent,
+              agent: sessionMeta?.agent ?? runtimeConfig.agent,
               model: resolvedModel,
-              effort: runtimeConfig.effort,
-              permissionMode: runtimeConfig.permissionMode,
+              effort: sessionMeta?.effort ?? runtimeConfig.effort,
+              permissionMode: sessionMeta?.permissionMode ?? runtimeConfig.permissionMode,
               // 并入会话级放行集合：scope=session/global 授权过的工具在本会话续聊中持续放行（每次新进程 --resume 自动携带）。
               // 普通续聊（无显式 allowedTools）同样并入，这是期望行为——会话内放行应跨轮持续生效。
               allowedTools: (() => {

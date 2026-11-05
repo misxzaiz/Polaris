@@ -1176,6 +1176,7 @@ impl AIEngine for ClaudeEngine {
             npm_package: None,
             install_url: None,
             models: Vec::new(),
+            session_config: None,
             stable: true, // Claude Code 是唯一稳定引擎
         }
     }

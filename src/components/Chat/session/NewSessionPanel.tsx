@@ -240,6 +240,9 @@ export const NewSessionPanel = memo(function NewSessionPanel({
     profileMode: 'official' | 'profile'
     modelProfileId?: string
     model?: string
+    effort?: string
+    permissionMode?: string
+    agent?: string
   } => {
     const official = providerModeRef.current === 'official'
     return {
@@ -250,8 +253,13 @@ export const NewSessionPanel = memo(function NewSessionPanel({
           ? { modelProfileId: modelProfileIdRef.current }
           : {}),
       ...(modelRef.current ? { model: modelRef.current } : {}),
+      // 面板内选择的 effort/permission/agent 透传为会话级配置——
+      // 此前只透传 profile 三件套，effort 等选了即丢（后端日志 effort=- 实证）
+      ...(providerConfig.effort ? { effort: providerConfig.effort } : {}),
+      ...(providerConfig.permissionMode ? { permissionMode: providerConfig.permissionMode } : {}),
+      ...(providerConfig.agent ? { agent: providerConfig.agent } : {}),
     }
-  }, [])
+  }, [providerConfig.effort, providerConfig.permissionMode, providerConfig.agent])
 
   // 创建会话（带主+关联工作区）
   const handleCreateWithWorkspace = useCallback(() => {
@@ -351,12 +359,12 @@ export const NewSessionPanel = memo(function NewSessionPanel({
           ))}
         </div>
 
-        {/* 模型供应商 + 模型（按当前待选引擎过滤 Profile；面板内选择，不写回当前会话） */}
+        {/* 会话配置选择器：展示哪些选择器由引擎声明（sessionConfig.selectors）
+            或能力标志推导——引擎声明优先，此处不硬编码列表。 */}
         <div className="px-1 pt-2 mt-2 border-t border-border-subtle">
           <SessionConfigSelector
             config={providerConfig}
             onChange={setProviderConfig}
-            visibleTypes={['profile', 'model']}
             variant="panel"
             engineOverride={selectedEngineId}
             writeThroughToSession={false}

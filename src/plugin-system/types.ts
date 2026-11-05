@@ -233,6 +233,8 @@ export interface PluginEngineContribution {
   adapter?: PluginEngineAdapterContribution
   /** 引擎声明可用模型目录（如 ["hy4-preview"]），声明后模型选择器直接列出这些模型 */
   models?: string[]
+  /** 引擎会话配置声明（选择器列表 + 各选项值），不声明时按能力标志推导兜底 */
+  sessionConfig?: EngineSessionConfigContribution
   /** 引擎能力声明 */
   capabilities?: {
     tools?: boolean
@@ -240,6 +242,23 @@ export interface PluginEngineContribution {
     interrupt?: boolean
     resume?: boolean
   }
+}
+
+/** 引擎会话配置声明——描述支持的选择器及各选择器的选项值 */
+export interface EngineSessionConfigContribution {
+  /** 显示的选择器列表（不声明则按 capabilities 推导兜底） */
+  selectors?: string[]
+  /** 努力级别选项（不声明则用宿主全局 EFFORT_OPTIONS） */
+  effortOptions?: SessionConfigOptionContribution[]
+  /** 权限模式选项（不声明则用宿主全局 PERMISSION_MODE_OPTIONS） */
+  permissionOptions?: SessionConfigOptionContribution[]
+}
+
+/** 会话配置选项（通用 value/label/description 三元组） */
+export interface SessionConfigOptionContribution {
+  value: string
+  label: string
+  description?: string
 }
 
 /**

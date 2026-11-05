@@ -117,8 +117,17 @@ export interface EngineMetadata {
   installUrl?: string
   /** 引擎声明可用模型目录（插件引擎经 contributes.engines[].models 声明）；空/缺省 = 未声明，UI 回退既有选择逻辑 */
   models?: string[]
+  /** 引擎会话配置声明（选择器列表 + 各选项值），不声明时按能力标志推导兜底 */
+  sessionConfig?: EngineSessionConfigMeta
   /** 是否为稳定版本（默认 false；Claude Code 为唯一稳定引擎） */
   stable?: boolean
+}
+
+/** 引擎会话配置元数据（对应 Rust PluginEngineSessionConfigManifest） */
+export interface EngineSessionConfigMeta {
+  selectors?: string[]
+  effortOptions?: { value: string; label: string; description?: string }[]
+  permissionOptions?: { value: string; label: string; description?: string }[]
 }
 
 // ============================================================================

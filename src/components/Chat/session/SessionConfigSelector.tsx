@@ -25,6 +25,7 @@ import { useAgentStore } from '@/stores/agentStore'
 import { useConfigStore } from '@/stores'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
+import { getEngineEffortOptions, getEnginePermissionOptions } from '@/utils/engineCapabilities'
 import { isProfileForEngine, OFFICIAL_API_PROFILE, profileModelOptions, type WireApi } from '@/types/modelProfile'
 import { useActiveSessionId, useSessionMetadataList, sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
@@ -275,15 +276,20 @@ export function SessionConfigSelector({
 
   const getEffortLabel = useCallback((effort?: EffortLevel | '') => {
     if (!effort) return t('sessionConfig.noEffort')
+    // 引擎声明的选项优先（标签可能自定义），降级全局 EFFORT_OPTIONS
+    const declared = getEngineEffortOptions(currentEngine)?.find(o => o.value === effort)
+    if (declared) return declared.label
     const opt = EFFORT_OPTIONS.find(o => o.value === effort)
     return opt?.label || effort
-  }, [t])
+  }, [t, currentEngine])
 
   const getPermissionLabel = useCallback((mode?: PermissionMode | '') => {
     if (!mode) return t('sessionConfig.noPermission')
+    const declared = getEnginePermissionOptions(currentEngine)?.find(o => o.value === mode)
+    if (declared) return declared.label
     const opt = PERMISSION_MODE_OPTIONS.find(o => o.value === mode)
     return opt?.label || mode
-  }, [t])
+  }, [t, currentEngine])
 
   // 通用选择处理
   const handleSelect = useCallback((type: SelectorType, value: string) => {
@@ -377,20 +383,27 @@ export function SessionConfigSelector({
           description: m.description,
         })))
         break
-      case 'effort':
-        items.push(...EFFORT_OPTIONS.map(o => ({
+      case 'effort': {
+        // 引擎声明的 effort 选项优先（如 codebuddy 的 minimal 值），
+        // 无声明降级到全局 EFFORT_OPTIONS（向后兼容）
+        const opts = getEngineEffortOptions(currentEngine) ?? EFFORT_OPTIONS
+        items.push(...opts.map(o => ({
           value: o.value,
           label: o.label,
           description: o.description,
         })))
         break
-      case 'permission':
-        items.push(...PERMISSION_MODE_OPTIONS.map(o => ({
+      }
+      case 'permission': {
+        // 引擎声明的 permission 选项优先，无声明降级到全局 PERMISSION_MODE_OPTIONS
+        const opts = getEnginePermissionOptions(currentEngine) ?? PERMISSION_MODE_OPTIONS
+        items.push(...opts.map(o => ({
           value: o.value,
           label: o.label,
           description: o.description,
         })))
         break
+      }
       case 'profile': {
         // P2/P3: 区块 = 官方 API / 分组路由(多分组) / 指定 Profile
         // 区块 1：官方 API（value='' → profileMode=official）

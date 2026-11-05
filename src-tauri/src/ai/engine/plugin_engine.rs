@@ -1143,6 +1143,7 @@ impl AIEngine for PluginEngineRunner {
             npm_package: self.config.npm_package.clone(),
             install_url: self.config.install_url.clone(),
             models: self.config.models.clone(),
+            session_config: self.config.session_config.clone(),
             stable: false, // 插件引擎默认为不稳定版本
         }
     }

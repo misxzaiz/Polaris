@@ -466,8 +466,37 @@ pub struct PluginEngineManifestContribution {
     /// 会话配置面板直接列出这些模型（2026-11-05 codebuddy 适配新增）
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub models: Vec<String>,
+    /// 引擎会话配置声明——描述支持的选择器及各选择器的选项值。
+    /// 不声明时宿主按 EngineCapabilities 推导 + 全局硬编码选项兜底（向后兼容）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_config: Option<PluginEngineSessionConfigManifest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<PluginEngineCapabilitiesContribution>,
+}
+
+/// 引擎会话配置声明（manifest 层）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginEngineSessionConfigManifest {
+    /// 显示的选择器列表（不声明则按 capabilities 推导兜底）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selectors: Vec<String>,
+    /// 努力级别选项（不声明则用宿主全局 EFFORT_OPTIONS）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effort_options: Vec<SessionConfigOptionManifest>,
+    /// 权限模式选项（不声明则用宿主全局 PERMISSION_MODE_OPTIONS）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub permission_options: Vec<SessionConfigOptionManifest>,
+}
+
+/// 会话配置选项（通用 value/label/description 三元组）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionConfigOptionManifest {
+    pub value: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// 插件引擎适配器声明（manifest 层，透传给 PluginEngineConfig.adapter）

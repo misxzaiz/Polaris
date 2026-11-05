@@ -777,6 +777,18 @@ export interface SessionMetadata {
    */
   agent?: string
   /**
+   * 会话绑定的努力级别（会话级覆盖）。
+   * - `undefined`：未设置 → 发送时跟随全局 sessionConfig.effort
+   * - 非空：新建会话面板选择的 effort 透传为会话级配置
+   */
+  effort?: string
+  /**
+   * 会话绑定的权限模式（会话级覆盖）。
+   * - `undefined`：未设置 → 发送时跟随全局 sessionConfig.permissionMode
+   * - 非空：新建会话面板选择的 permissionMode 透传为会话级配置
+   */
+  permissionMode?: string
+  /**
    * 会话用途标记。
    * - 'commit-message'  = GitPanel 触发的提交信息生成会话，用于回流定位
    * - 'git-atomic'      = GitPanel 触发的原子提交分组建议会话（AI-2 解释层）
@@ -819,6 +831,10 @@ export interface CreateSessionOptions {
   profileMode?: ProfileMode
   /** 会话绑定的专家 agent slug（可选，不指定则无专家） */
   agent?: string
+  /** 会话绑定的努力级别（可选；面板选择的 effort 透传为会话级配置） */
+  effort?: string
+  /** 会话绑定的权限模式（可选；面板选择的 permissionMode 透传为会话级配置） */
+  permissionMode?: string
   /** 会话用途标记（透传到 SessionMetadata.kind） */
   kind?: 'commit-message' | 'git-atomic' | 'prompt-optimize' | 'title-generation' | 'radio-broadcast'
   /** commit-message / git-atomic 会话关联的工作区 ID（透传到 SessionMetadata.commitWorkspaceId） */

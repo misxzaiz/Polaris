@@ -235,6 +235,9 @@ pub struct PluginEngineConfig {
     /// 引擎声明可用模型目录（如 ["hy4-preview"]）；空 = 未声明，UI 用既有选择逻辑
     #[serde(default)]
     pub models: Vec<String>,
+    /// 引擎会话配置声明（选择器列表 + 各选项值），不声明时按能力标志推导兜底
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_config: Option<crate::models::plugin::PluginEngineSessionConfigManifest>,
 }
 
 /// 适配器进程声明 —— 描述插件引擎适配器进程的入口与协议。
@@ -679,6 +682,7 @@ pub trait AIEngine: Send + Sync {
             npm_package: None,
             install_url: None,
             models: Vec::new(),
+            session_config: None,
             stable: false,
         }
     }
@@ -775,6 +779,9 @@ pub struct EngineMetadata {
     /// 空 = 未声明目录，UI 回退既有模型选择逻辑（Profile/PRESET_MODELS）。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub models: Vec<String>,
+    /// 引擎会话配置声明（选择器列表 + 各选项值），不声明时按能力标志推导兜底
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_config: Option<crate::models::plugin::PluginEngineSessionConfigManifest>,
     /// 是否为稳定版本。
     /// Claude Code 为唯一稳定引擎，其余（Simple AI/插件引擎）均为不稳定版本。
     /// 默认值 false（#[serde(default)] 保证旧配置向后兼容）。

@@ -122,6 +122,8 @@ function createSessionManagerStore() {
         model: options.model,
         profileMode: options.profileMode,
         agent: options.agent,
+        effort: options.effort,
+        permissionMode: options.permissionMode,
         kind: options.kind,
         commitWorkspaceId: options.commitWorkspaceId,
       }

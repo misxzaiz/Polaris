@@ -454,6 +454,14 @@ fn build_start_params(
         params["additional_dirs"] = serde_json::json!(options.additional_dirs);
     }
 
+    // 工具白名单/黑名单（与 claude 引擎 build_command 对齐）
+    if !options.allowed_tools.is_empty() {
+        params["allowed_tools"] = serde_json::json!(options.allowed_tools);
+    }
+    if !options.disallowed_tools.is_empty() {
+        params["disallowed_tools"] = serde_json::json!(options.disallowed_tools);
+    }
+
     // Provider 配置
     if let Some(ref pcfg) = options.pi_provider_config {
         params["provider_config"] = serde_json::json!({
@@ -713,6 +721,7 @@ impl AIEngine for PluginProcessEngine {
             npm_package: self.config.npm_package.clone(),
             install_url: self.config.install_url.clone(),
             models: self.config.models.clone(),
+            session_config: self.config.session_config.clone(),
             stable: false, // 插件引擎默认为不稳定版本
         }
     }

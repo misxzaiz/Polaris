@@ -25,13 +25,25 @@ const FALLBACK_ENGINE_SELECTOR_CAPABILITIES: Record<string, SelectorType[]> = {
 }
 
 /**
- * 根据后端引擎元数据的能力标志动态推导选择器列表。
+ * 根据后端引擎元数据推导选择器列表。
+ *
+ * 优先级：引擎声明的 sessionConfig.selectors > 能力标志推导 > 静态兜底。
+ * 引擎声明优先，使插件引擎能精确控制展示哪些选择器（而非依赖能力标志的
+ * 间接映射——如 effort 绑 interrupt、permission 绑 stdinInput 是 claude 的
+ * 语义，不适用于所有引擎）。
  */
 function deriveSelectorsFromCapabilities(engineId: string): SelectorType[] {
   const meta = useEngineMetadataStore.getState().getEngine(engineId)
   if (!meta) {
     return FALLBACK_ENGINE_SELECTOR_CAPABILITIES[engineId] ?? FALLBACK_ENGINE_SELECTOR_CAPABILITIES['claude-code']
   }
+
+  // 引擎声明优先：manifest sessionConfig.selectors 直接指定展示哪些选择器
+  if (meta.sessionConfig?.selectors && meta.sessionConfig.selectors.length > 0) {
+    return meta.sessionConfig.selectors as SelectorType[]
+  }
+
+  // 兜底：按能力标志推导（与既有行为一致，向后兼容）
   const caps = meta.capabilities
   const selectors: SelectorType[] = ['profile'] // profile 始终可用
   if (caps.tools) selectors.push('agent')
@@ -39,6 +51,24 @@ function deriveSelectorsFromCapabilities(engineId: string): SelectorType[] {
   if (caps.interrupt) selectors.push('effort')
   if (caps.stdinInput) selectors.push('permission')
   return selectors
+}
+
+/**
+ * 获取引擎声明的 effort 选项（无声明返回 null，调用方降级到全局 EFFORT_OPTIONS）
+ */
+export function getEngineEffortOptions(engineId: string | null | undefined): { value: string; label: string; description?: string }[] | null {
+  const id = normalizeEngineId(engineId)
+  const meta = useEngineMetadataStore.getState().getEngine(id)
+  return meta?.sessionConfig?.effortOptions ?? null
+}
+
+/**
+ * 获取引擎声明的 permission 选项（无声明返回 null，调用方降级到全局 PERMISSION_MODE_OPTIONS）
+ */
+export function getEnginePermissionOptions(engineId: string | null | undefined): { value: string; label: string; description?: string }[] | null {
+  const id = normalizeEngineId(engineId)
+  const meta = useEngineMetadataStore.getState().getEngine(id)
+  return meta?.sessionConfig?.permissionOptions ?? null
 }
 
 /**

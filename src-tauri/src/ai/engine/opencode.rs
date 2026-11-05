@@ -1133,6 +1133,7 @@ impl AIEngine for OpencodeEngine {
             npm_package: Some("opencode".into()),
             install_url: None,
             models: Vec::new(),
+            session_config: None,
             stable: false,
         }
     }
