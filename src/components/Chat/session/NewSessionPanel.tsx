@@ -20,7 +20,8 @@ import {
   readNewSessionPrefs,
   persistNewSessionPrefs,
 } from '@/services/newSessionPrefsService';
-import { OFFICIAL_API_PROFILE } from '@/types/modelProfile';
+import { OFFICIAL_API_PROFILE, isProfileForEngine } from '@/types/modelProfile';
+import { useModelProfileStore } from '@/stores/modelProfileStore';
 
 /**
  * 新建会话面板（共享面板体，原 NewSessionButton 内联面板抽出）
@@ -202,6 +203,22 @@ export const NewSessionPanel = memo(function NewSessionPanel({
           modelProfileId: prefs.modelProfileId,
           model: prefs.model,
         });
+      }
+      // 当前选中的 Profile 不适用于该引擎时自动切「官方 API」：
+      // 插件引擎（如 qoder）的 Profile targetEngines 通常不含它，残留全局
+      // activeProfileId 会被后端 incompatibleRuntime 守卫拦截（start_chat 直接中断）。
+      // 注意：判定对象是「面板当前选中/全局激活的 Profile」而非「是否存在兼容 Profile」
+      // ——空 targetEngines（=全选）的其他 Profile 存在不代表选中者可用。
+      const profiles = useModelProfileStore.getState().profiles;
+      const selectedId = useModelProfileStore.getState().activeProfileId;
+      const selected = profiles.find((p) => p.id === selectedId);
+      if (selected && !isProfileForEngine(selected, selectedEngineId)) {
+        setProviderConfig((prev) => ({
+          ...prev,
+          // 引擎声明模型目录时保留所选模型；否则清空（PRESET 对插件引擎无意义）
+          profileMode: 'official',
+          modelProfileId: OFFICIAL_API_PROFILE,
+        }));
       }
     });
     return () => { cancelled = true; };
