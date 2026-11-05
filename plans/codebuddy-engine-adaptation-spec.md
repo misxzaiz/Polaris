@@ -56,6 +56,34 @@
   `PluginEngineConfig.models` → `EngineMetadata.models` → engineMetadataStore →
   SessionConfigSelector 引擎声明目录优先分支（首项「不设置」= 引擎默认）。
 
+### 引擎会话配置声明（sessionConfig，2026-11-05 第二轮）
+
+消除「每个引擎写死自己一份」的配置硬编码。引擎经 manifest
+`contributes.engines[].sessionConfig` 声明：
+- `selectors`：显示哪些选择器（agent/model/effort/permission/profile）
+- `effortOptions` / `permissionOptions`：各选择器的选项值（label/description 自定义）
+
+数据流：manifest → `PluginEngineSessionConfigManifest`（新增 Rust schema）→
+normalizeEngines `parseConfigOptions` 透传 → `PluginEngineConfig.session_config` →
+`EngineMetadata.session_config` → 前端三消费点：
+- `getEngineSelectors`：选择器列表（声明优先，能力标志推导兜底）
+- `getEngineEffortOptions` / `getEnginePermissionOptions`：选项值与标签
+
+拆除的硬编码断点（全部浏览器实测定位）：
+1. NewSessionPanel `visibleTypes=['profile','model']` 硬编码 → 引擎声明驱动
+2. `resolveRuntimeConfigForEngine` 按引擎 ID 白名单透传 agent/effort → 引擎声明
+   selectors 优先 + 能力标志兜底
+3. `CreateSessionOptions`/`SessionMetadata` 缺 effort/permissionMode → 补全（面板
+   选择的 effort 建会话时不再丢弃）
+4. 发送链会话级优先（`sessionMeta?.effort ?? runtimeConfig.effort`），与 model 三态同模式
+5. `getEffortLabel`/`getPermissionLabel` 标签查全局硬编码表 → 引擎声明优先
+
+配套：`build_start_params` 补转发 allowed_tools/disallowed_tools；
+adapter 透传 `--effort/--agent/--system-prompt/--append-system-prompt/--add-dir/
+--allowedTools/--disallowedTools`。
+
+无声明引擎行为不变（全兜底链），内置引擎（claude/simple-ai）走既有推导。
+
 ## 数据面变化
 
 - codebuddy 插件源迁入 Polaris-plugin 仓，数据根目录换 junction（`Polaris-dev\plugins\codebuddy`
@@ -70,6 +98,8 @@
 - [x] 真宿主 E2E（Playwright 驱动 127.0.0.1:9827）：新建会话选 CodeBuddy → 模型选择器列出
       声明目录 → 发消息流式回复可见（思考块 + 正文 + 用量 3万/20万）→ 长任务中断
       （日志证实适配器窗口内树杀、宿主补杀时进程已清、无孤儿）→ 会话落盘 JSONL
+- [x] sessionConfig E2E：effort 下拉含引擎独有 minimal 值；面板选「极高」→ 建会话发消息 →
+      后端日志 `effort=xhigh` 全链透传实证；permission 选项由引擎声明渲染
 - [ ] MSI 打包（tauri:build:test）供用户安装
 
 ## 已知边界
