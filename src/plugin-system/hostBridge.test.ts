@@ -54,7 +54,7 @@ export default () => null`
   it('require 形态同样重写', () => {
     const code = `const R = require("react"); const F = require('polaris-host/form');`
     const out = rewriteForPluginModule(code, REACT_URL)
-    expect(out).toContain(`require('${REACT_URL}')`)
+    expect(out).toContain(`require("${REACT_URL}")`)
     expect(out).not.toContain("polaris-host/form'")
   })
 
