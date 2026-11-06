@@ -617,6 +617,12 @@ fn build_start_params(
                             if let Ok(mut map) = resume_tokens.lock() {
                                 map.insert(current_session_id.clone(), rt.to_string());
                                 if let Some(path) = &resume_tokens_file {
+                                    // 先建目录再写：engine_id 子目录通常不存在（仅历史引擎
+                                    // 碰巧建过），fs::write 到缺失目录静默失败曾导致
+                                    // resume_token 从未持久化——重启即丢，续聊退化为新会话
+                                    if let Some(dir) = path.parent() {
+                                        let _ = fs::create_dir_all(dir);
+                                    }
                                     if let Ok(s) = serde_json::to_string_pretty(&*map) {
                                         let _ = fs::write(path, s);
                                     }
