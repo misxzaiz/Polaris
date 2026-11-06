@@ -201,3 +201,34 @@ interactive-component/
 ## 6. 拍板清单（实施前）
 
 ① D2 前审计 AskQuestionCard 宿主耦合点清单；② cap deny 清单初版范围评审；③ 模板覆盖权限分级（建议 L2：第三方不得覆盖内置模板 id）；④ `mcpServerId` 保留 `polaris-prd-preview` 命名空间的确认（历史 toolName 兼容）。
+
+---
+
+## 9. 实施记录（feat/interactive-component，2026-11-07）
+
+> 主仓 worktree `../polaris-ic`；插件仓 Polaris-plugin 分支 `feat/interactive-component`。
+
+| 批 | 主仓 commit | 内容 |
+|---|---|---|
+| A+B | `8f4c6270` | 宿主桥（artifact/form/cap 封闭清单+报错 stub）、rewriter 规则制泛化、component_register + build_component_hold（collect reply 携带 receipt）、组件回执队列 + sendMessage 一次性注入 |
+| D1 | `57ad887f` | PRD 域退役（Rust 557 + 壳 400 + 6 注册点，含 polaris_mcp 子命令臂与用法串 3 处——复审项全落地） |
+| D+D2 | `fe52a954` | blockRenderers 注册表 + BlockDelegation（updateBlock 宿主回调）+ core:true 守卫（Rust manifest 字段 + uninstall 拒绝）；FormCard/AskQuestionCard 删除 |
+| E | `0e37e024` | uiTemplateRegistry（命名空间/保留名/二选一/跨插件覆盖拒绝）+ Rust contributes 扩展 + cap 桥 deny 清单与声明白名单 + renderer/cap 透传 + server caps 参数 |
+| test | `7a46023e` | 断言引号修正 |
+
+插件仓 commit `3ee0d87`：interactive-component v1.0.0（server 移植 + 三 bundle + 测试 harness）。
+
+### 验证证据
+
+- `tsc --noEmit`：全绿（每批后实跑）
+- `cargo check --lib`：0 error（B/E 批后）；`cargo check --no-default-features --bin polaris-web --bin polaris-mcp`：绿（D1/E 后）
+- `cargo build --bin polaris-mcp`：重建成功，冒烟——子命令清单无 prd-preview、requirements server 工具正常（stale usage 串经冒烟揪出并修正，验证了 AGENTS.md 重建纪律的价值）
+- vitest：全量 112 文件/1470 用例绿（D2 后）；E 批受影响 5 文件 44 用例绿
+- 插件服务端测试 4/4（金标三条错误路径 + 落盘/版本递增 + form/caps marker）；bundle：card 9.8KB / form-card 30KB / ask-card 32.5KB
+
+### 与方案的偏差（如实登记）
+
+1. `sessionId` 经 `PluginChatCardProps`（block.sessionId 已存在）而非 Context——避免投机性通用面（[A-6]）
+2. 模板内 toast → 卡片旁瞬态横幅（宿主 store 不可 import，[S-4]）；i18n → t 兜底直出（文案即中文原文）
+3. uiTemplates 本批交付契约+注册+校验（[R-12..R-14]）；「卡片即数据」渲染消费与 chatActions 留后续批次
+4. 未做真机双端冒烟（worktree 无运行联调环境）——合并 main 后按 §4 验证矩阵补
