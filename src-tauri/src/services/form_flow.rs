@@ -120,6 +120,56 @@ pub fn build_hold(
     })
 }
 
+/// 构造「组件型 hold」（自由交互组件的表单契约，cap.ai.chat `component_register` 登记）。
+///
+/// 与 [`build_hold`]（schema 型）共享同一条提交管线：`submit_form` 的 collect 分支。
+/// 信任边界零分叉——read 三态 / secret 掩码 / 回执脱敏全部复用 form_core：
+/// - mode 固定 `collect`：组件提交的 values 不转发目标能力，经回执回喂 AI 自行处理；
+/// - 无 fields schema（自由 HTML 里字段是 AI 自己画的）；`secret_keys` 折算为
+///   `hidden = true` 伪字段——`build_receipt_opts` 在 full 模式下对它们显示
+///   `<已隐藏>`，「声明为 secret 的键值不进 AI 上下文」由服务端强制（spec [S-7]）；
+/// - target/action 留空：collect 分支不做转发，自然不用。
+///
+/// component_id 记录在 title 前缀（观测面可见），不做信任判断——组件实例与
+/// iframe 的绑定在前端 postMessage 桥（event.source + componentId）强制。
+pub fn build_component_hold(
+    form_id: &str,
+    session_id: &str,
+    component_id: &str,
+    read: &str,
+    title: &str,
+    secret_keys: &[String],
+) -> FormHold {
+    let read_mode = match read {
+        "none" => "none",
+        _ => "full",
+    };
+    // secretKeys → hidden 伪字段：复用 form_core 既有掩码机制，不加新信任分支
+    let fields: Vec<Value> = secret_keys
+        .iter()
+        .filter(|k| !k.trim().is_empty())
+        .map(|k| json!({ "name": k.trim(), "type": "secret", "hidden": true }))
+        .collect();
+    let display_title = if title.trim().is_empty() {
+        format!("[组件 {}]", component_id)
+    } else {
+        title.to_string()
+    };
+    FormHold {
+        form_id: form_id.to_string(),
+        title: display_title,
+        session_id: session_id.to_string(),
+        target: String::new(),
+        action: String::new(),
+        read: read_mode.to_string(),
+        fields,
+        mode: "collect".to_string(),
+        style: json!({}),
+        template: json!({}),
+        created_at: Instant::now(),
+    }
+}
+
 /// 提交表单：组 payload、转发目标、生成回执。
 ///
 /// `private = true`（用户私密提交）：强制以 `read=none` 构建回执并脱敏 exec，
@@ -145,7 +195,12 @@ pub fn submit_form(
             &Ok(json!({"collected": true})),
             private,
         );
-        return (receipt, true, Ok(json!({"collected": true})));
+        // reply 携带回执（v2 交互组件回流传债）：collect 模式无挂起工具 sender 可
+        // 喂（组件不是阻塞工具调用），form-answered 事件只达前端卡片；把 receipt
+        // 放进 reply，经 polaris-host/form 桥收到的调用方（交互组件卡片）据此把
+        // 回执注入下一轮上下文（组件回执队列）。additive 字段，FormCard 不受影响
+        // （它读 form-answered 事件，不读 reply）。
+        return (receipt.clone(), true, Ok(json!({"collected": true, "receipt": receipt})));
     }
 
     // 0b. dispatch 模式：白名单纵深防御——拉起时可能被绕过（如 hold 被篡改），

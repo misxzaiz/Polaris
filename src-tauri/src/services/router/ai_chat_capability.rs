@@ -46,6 +46,7 @@ const SYNC_ACTIONS: &[&str] = &[
     "respond_plugin_card",
     "form_submit",
     "form_skip",
+    "component_register",
     "form_template_save",
     "form_template_list",
     "register_pending_question",
@@ -93,6 +94,10 @@ fn describe_value() -> Value {
                 "returns": "目标能力执行结果（dispatch 模式转发目标能力 reply；collect 模式为 { collected: true }）"
             },
             "form_skip": { "params": { "formId": "string（必填）" }, "returns": "{ ok: true }" },
+            "component_register": {
+                "params": { "sessionId": "string（必填）", "componentId": "string（必填，卡片桥下发的组件实例 id）", "formId": "string（必填，marker 声明的表单契约 id）", "read": "string（full|none，AI 经 marker 声明）", "secretKeys": "string[]?（掩码键，服务端折算 hidden 伪字段）", "title": "string?" },
+                "returns": "{ ok: true, formId }（建立组件型 hold；用户提交走 form_submit，同一信任边界）"
+            },
             "form_template_save": {
                 "params": { "formId": "string（必填）", "templateName": "string?（缺省用表单标题，再缺省取 formId 前缀）", "version": "string?（缺省 v1）" },
                 "returns": "{ ok, name, version, title, slugified }（name 为最终落盘名，可能已 slug 化）"
@@ -407,6 +412,59 @@ impl Capability for AiChatCapability {
                             .await
                             .map_err(|e| e.to_message())?;
                         Ok(serde_json::json!({ "ok": true }))
+                    }
+                    "component_register" => {
+                        // 自由交互组件的表单契约登记（plugin-ui-contribution-spec [S-7]）。
+                        // AI 经 render_component marker 声明 read/secretKeys；此处建立
+                        // 「组件型 hold」（mode=collect，无 fields schema，secretKeys 折算
+                        // 为 hidden 伪字段），用户提交仍走现有 form_submit——信任边界
+                        // 零分叉：read 三态 / secret 掩码 / 回执脱敏全部在 form_core。
+                        // 前端保障：componentId↔iframe 实例绑定在 postMessage 桥
+                        // （event.source 严格比对），后端此处只做参数卫生校验。
+                        let session_id = get("sessionId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let component_id = get("componentId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let form_id = get("formId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if component_id.trim().is_empty() || form_id.trim().is_empty() {
+                            return Err("component_register 需要 componentId 与 formId 参数".to_string());
+                        }
+                        let read = get("read").and_then(|v| v.as_str()).unwrap_or("full").to_string();
+                        if read != "full" && read != "none" {
+                            return Err(format!("component_register read 仅支持 full/none，收到: {}", read));
+                        }
+                        let title = get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let secret_keys: Vec<String> = get("secretKeys")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|k| k.as_str().map(String::from))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        if secret_keys.len() > 64 {
+                            return Err("component_register secretKeys 过多（上限 64）".to_string());
+                        }
+                        let hold = crate::services::form_flow::build_component_hold(
+                            &form_id,
+                            &session_id,
+                            &component_id,
+                            &read,
+                            &title,
+                            &secret_keys,
+                        );
+                        {
+                            let mut holds = s.form_holds.lock().ok().ok_or_else(|| {
+                                "表单存储已损坏（form_holds 锁中毒）".to_string()
+                            })?;
+                            holds.insert(form_id.clone(), hold);
+                        }
+                        tracing::info!(
+                            "[Component] 组件型 hold 已登记 formId={} componentId={} read={} secretKeys={}",
+                            form_id,
+                            component_id,
+                            read,
+                            secret_keys.len()
+                        );
+                        Ok(serde_json::json!({ "ok": true, "formId": form_id }))
                     }
                     "form_submit" => {
                         // 表单工具回填：按 formId 取 hold，原文转发目标能力，回执喂回前端/引擎。

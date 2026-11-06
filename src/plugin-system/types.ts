@@ -467,6 +467,8 @@ export interface PluginChatCardProps {
   data: unknown
   /** interaction 模式已提交的应答（历史恢复时回显） */
   response?: unknown
+  /** 归属会话 id（v2 交互组件：表单契约登记 component_register 需要；additive 可选） */
+  sessionId?: string
   /** 注入下一轮聊天消息（展示型可用） */
   onSendToChat?: (message: string) => void | Promise<void>
   /** 提交应答（仅 interaction 且 status === 'pending' 时提供） */
