@@ -257,6 +257,33 @@ pub async fn handle_ipc_bridge(
         "read_commands" => dispatch_read_commands(&args).await,
         "download_file_binary" => dispatch_download_file_binary(&args).await,
 
+        // ── LSP 语言服务器配置（需求库 #030 Web 侧补齐）────────────────────
+        // lsp_config_* 五命令此前在 Web ipc 桥无路由，HTTP invoke 落 NotFound，
+        // LSP 设置页在 tauri:dev:web（HTTP 传输）下保存/开关/删除全部静默失败。
+        // 进程管理四命令（lsp_start/send/stop/list_sessions）依赖 tauri-app 事件
+        // 通道（AppHandle emit），Web 模式明确 4xx 拒绝而非静默 NotFound。
+        "lsp_config_list" => dispatch_lsp_config_list(&state),
+        "lsp_config_upsert" => dispatch_lsp_config_upsert(&state, &args),
+        "lsp_config_remove" => dispatch_lsp_config_remove(&state, &args),
+        "lsp_config_toggle" => dispatch_lsp_config_toggle(&state, &args),
+        "lsp_check_command" => dispatch_lsp_check_command(&args),
+        "lsp_index_references" => dispatch_lsp_index_references(&state, &args),
+        "lsp_index_definition" => dispatch_lsp_index_definition(&state, &args),
+        "lsp_index_open" => dispatch_lsp_index_open(&state, &args),
+        "lsp_index_close" => dispatch_lsp_index_close(&state, &args),
+        "lsp_index_rebuild" => dispatch_lsp_index_rebuild(&state, &args),
+        "lsp_index_status" => dispatch_lsp_index_status(&state, &args),
+        "lsp_index_update_file" => dispatch_lsp_index_update_file(&state, &args),
+        cmd if cmd.starts_with("lsp_start")
+            || cmd.starts_with("lsp_send")
+            || cmd.starts_with("lsp_stop")
+            || cmd.starts_with("lsp_list_sessions") =>
+        {
+            Err(WebError::BadRequest(
+                "LSP 进程管理需要桌面 Tauri 运行时（tauri-app feature），web 模式不可用".into(),
+            ))
+        }
+
         // ── Git ──────────────────────────────────────────────────────────────
         // PR-1（git 面板 vNext）：git_* 统一转发 cap.git（RouterBus 能力内薄转发），
         // 旧 web/api/git_dispatch.rs 双写派发表已删。兼容语义保持：成功返回裸结果
@@ -1547,6 +1574,323 @@ async fn dispatch_read_commands(args: &Value) -> Result<Json<Value>, WebError> {
 async fn dispatch_download_file_binary(args: &Value) -> Result<Json<Value>, WebError> {
     let path = require_string(args, "path")?;
     json_result!(crate::commands::file_explorer::download_file_binary(path).await)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LSP 语言服务器配置（需求库 #030：Web 模式 lsp_config_* 桥接）
+//
+// 实现走 LspConfigRepository 直读写（config_dir/lsp/servers.json），
+// 与桌面端 commands::lsp.rs 同一持久化路径。注意【每次调用构建新鲜仓库实例】
+// 而非复用 state.lsp_config 长驻缓存：桌面端（主实例）与本 Web 实例可能同时
+// 编辑同一文件，长驻缓存的整表覆盖写会拿陈旧快照 clobber 掉对方写入；
+// 每次从磁盘现读现写（文件仅数 KB）则天然收敛到最新状态。
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 每次调用新建 LSP 配置仓库（现读磁盘，避免跨实例陈旧缓存覆盖）
+fn lsp_config_repo(state: &AppState) -> Result<crate::services::lsp_config_repository::LspConfigRepository, WebError> {
+    let config_dir = state
+        .app_config_dir
+        .get()
+        .cloned()
+        .unwrap_or_else(|| crate::services::data_root::data_root().config_dir());
+    Ok(crate::services::lsp_config_repository::LspConfigRepository::new(&config_dir))
+}
+
+fn dispatch_lsp_config_list(state: &AppState) -> Result<Json<Value>, WebError> {
+    let repo = lsp_config_repo(state)?;
+    serde_json::to_value(repo.list().to_vec())
+        .map(Json)
+        .map_err(|e| WebError::Internal(format!("Serialization error: {}", e)))
+}
+
+fn dispatch_lsp_config_upsert(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct EntryArgs {
+        id: String,
+        name: String,
+        languages: Vec<String>,
+        #[serde(default)]
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+        #[serde(default = "default_true")]
+        enabled: bool,
+        #[serde(default = "default_mode")]
+        mode: String,
+    }
+    fn default_true() -> bool {
+        true
+    }
+    fn default_mode() -> String {
+        "lsp".to_string()
+    }
+
+    let entry: EntryArgs = serde_json::from_value(args.get("entry").cloned().unwrap_or(Value::Null))
+        .map_err(|e| WebError::BadRequest(format!("Invalid entry: {}", e)))?;
+    let entry = crate::services::lsp_config_repository::LspServerEntry {
+        id: entry.id,
+        name: entry.name,
+        languages: entry.languages,
+        command: entry.command,
+        args: entry.args,
+        enabled: entry.enabled,
+        mode: entry.mode,
+    };
+    let mut repo = lsp_config_repo(state)?;
+    repo.upsert(entry)?;
+    Ok(Json(Value::Null))
+}
+
+fn dispatch_lsp_config_remove(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let id = require_string(args, "id")?;
+    let mut repo = lsp_config_repo(state)?;
+    repo.remove(&id)?;
+    Ok(Json(Value::Null))
+}
+
+fn dispatch_lsp_config_toggle(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let id = require_string(args, "id")?;
+    let enabled = args
+        .get("enabled")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| WebError::BadRequest("Missing required field: enabled".into()))?;
+    let mut repo = lsp_config_repo(state)?;
+    repo.set_enabled(&id, enabled)?;
+    Ok(Json(Value::Null))
+}
+
+/// 命令存在性校验（与桌面 lsp_check_command 同实现，纯 PATH 探测无 AppHandle 依赖）
+fn dispatch_lsp_check_command(args: &Value) -> Result<Json<Value>, WebError> {
+    let command = require_string(args, "command")?;
+    let resolved = crate::services::lsp::which_command(&command);
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct LspCommandCheck {
+        found: bool,
+        resolved_path: Option<String>,
+    }
+    serde_json::to_value(LspCommandCheck {
+        found: resolved.is_some(),
+        resolved_path: resolved,
+    })
+    .map(Json)
+    .map_err(|e| WebError::Internal(format!("Serialization error: {}", e)))
+}
+
+// ── LSP 索引模式（tree-sitter + SQLite，无常驻进程，Web 模式可用）──────────
+
+fn dispatch_lsp_index_references(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    #[cfg(not(feature = "lsp-index"))]
+    {
+        let _ = (state, args);
+        Err(WebError::BadRequest(
+            "LSP 索引引擎未编译（lsp-index feature 关闭）".into(),
+        ))
+    }
+    #[cfg(feature = "lsp-index")]
+    {
+        let root = require_string(args, "root")?;
+        let symbol = require_string(args, "symbol")?;
+        let extensions: Vec<String> = args
+            .get("extensions")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        // 与桌面命令同语义：性能开关关闭或索引未就绪时回退 regex 扫描
+        let enabled = state
+            .config_store
+            .lock()
+            .ok()
+            .map(|s| s.get().performance.lsp_index)
+            .unwrap_or(false);
+        if !enabled {
+            return json_result!(crate::services::lsp_index::find_references(&root, &symbol, &extensions));
+        }
+        let svc = state.lsp_index_service.clone();
+        let workspace = std::path::Path::new(&root);
+        let _ = svc.open_workspace(workspace);
+        let status = svc.status(workspace);
+        if status.files > 0 {
+            let dirty = parse_dirty_buffers(args);
+            json_result!(svc.find_references(workspace, &symbol, 5000, &dirty))
+        } else {
+            json_result!(crate::services::lsp_index::find_references(&root, &symbol, &extensions))
+        }
+    }
+}
+
+fn dispatch_lsp_index_definition(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    #[cfg(not(feature = "lsp-index"))]
+    {
+        let _ = (state, args);
+        Err(WebError::BadRequest(
+            "LSP 索引引擎未编译（lsp-index feature 关闭）".into(),
+        ))
+    }
+    #[cfg(feature = "lsp-index")]
+    {
+        let root = require_string(args, "root")?;
+        let symbol = require_string(args, "symbol")?;
+        let language = require_string(args, "language")?;
+        let extensions: Vec<String> = args
+            .get("extensions")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let current_file = args.get("currentFile").and_then(|v| v.as_str()).map(String::from);
+        let enabled = state
+            .config_store
+            .lock()
+            .ok()
+            .map(|s| s.get().performance.lsp_index)
+            .unwrap_or(false);
+        if !enabled {
+            return json_result!(crate::services::lsp_index::find_definition(&root, &symbol, &language, &extensions));
+        }
+        let svc = state.lsp_index_service.clone();
+        let workspace = std::path::Path::new(&root);
+        let _ = svc.open_workspace(workspace);
+        let status = svc.status(workspace);
+        if status.files > 0 {
+            let dirty = parse_dirty_buffers(args);
+            json_result!(svc.find_definition(workspace, &symbol, current_file.as_deref(), &dirty))
+        } else {
+            json_result!(crate::services::lsp_index::find_definition(&root, &symbol, &language, &extensions))
+        }
+    }
+}
+
+#[cfg(feature = "lsp-index")]
+fn parse_dirty_buffers(args: &Value) -> Vec<crate::services::lsp_index::DirtyBuffer> {
+    args.get("liveOverrides")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn dispatch_lsp_index_open(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    #[cfg(not(feature = "lsp-index"))]
+    {
+        let _ = (state, args);
+        Err(WebError::BadRequest(
+            "LSP 索引引擎未编译（lsp-index feature 关闭）".into(),
+        ))
+    }
+    #[cfg(feature = "lsp-index")]
+    {
+        let root = require_string(args, "root")?;
+        // 与桌面命令同语义：性能开关关闭时明确报错（前端 IndexEngineSection 据此提示）
+        let enabled = state
+            .config_store
+            .lock()
+            .ok()
+            .map(|s| s.get().performance.lsp_index)
+            .unwrap_or(false);
+        if !enabled {
+            return Err(WebError::BadRequest(
+                "LSP 智能索引已禁用（performance.lspIndex=false）".into(),
+            ));
+        }
+        let svc = state.lsp_index_service.clone();
+        let workspace = std::path::Path::new(&root);
+        json_result!(svc.open_workspace(workspace).map(|_| svc.status(workspace)))
+    }
+}
+
+fn dispatch_lsp_index_close(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    #[cfg(not(feature = "lsp-index"))]
+    {
+        let _ = (state, args);
+        Err(WebError::BadRequest(
+            "LSP 索引引擎未编译（lsp-index feature 关闭）".into(),
+        ))
+    }
+    #[cfg(feature = "lsp-index")]
+    {
+        let root = require_string(args, "root")?;
+        let svc = state.lsp_index_service.clone();
+        svc.close_workspace(std::path::Path::new(&root));
+        Ok(Json(Value::Null))
+    }
+}
+
+fn dispatch_lsp_index_rebuild(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    #[cfg(not(feature = "lsp-index"))]
+    {
+        let _ = (state, args);
+        Err(WebError::BadRequest(
+            "LSP 索引引擎未编译（lsp-index feature 关闭）".into(),
+        ))
+    }
+    #[cfg(feature = "lsp-index")]
+    {
+        let root = require_string(args, "root")?;
+        let enabled = state
+            .config_store
+            .lock()
+            .ok()
+            .map(|s| s.get().performance.lsp_index)
+            .unwrap_or(false);
+        if !enabled {
+            return Ok(Json(Value::Null));
+        }
+        let svc = state.lsp_index_service.clone();
+        // 后台全量重建：触发失败仅告警（与桌面命令「静默跳过」语义一致，不阻塞响应）
+        if let Err(e) = svc.rebuild_full_async(std::path::Path::new(&root)) {
+            tracing::warn!("[Web:IPC] lsp_index_rebuild 触发失败: {}", e);
+        }
+        Ok(Json(Value::Null))
+    }
+}
+
+fn dispatch_lsp_index_status(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    #[cfg(not(feature = "lsp-index"))]
+    {
+        let _ = (state, args);
+        Err(WebError::BadRequest(
+            "LSP 索引引擎未编译（lsp-index feature 关闭）".into(),
+        ))
+    }
+    #[cfg(feature = "lsp-index")]
+    {
+        let root = require_string(args, "root")?;
+        let svc = state.lsp_index_service.clone();
+        let status = svc.status(std::path::Path::new(&root));
+        serde_json::to_value(status)
+            .map(Json)
+            .map_err(|e| WebError::Internal(format!("Serialization error: {}", e)))
+    }
+}
+
+fn dispatch_lsp_index_update_file(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    #[cfg(not(feature = "lsp-index"))]
+    {
+        let _ = (state, args);
+        Err(WebError::BadRequest(
+            "LSP 索引引擎未编译（lsp-index feature 关闭）".into(),
+        ))
+    }
+    #[cfg(feature = "lsp-index")]
+    {
+        let root = require_string(args, "root")?;
+        let abs_path = require_string(args, "absPath")?;
+        let enabled = state
+            .config_store
+            .lock()
+            .ok()
+            .map(|s| s.get().performance.lsp_index)
+            .unwrap_or(false);
+        if !enabled {
+            return Ok(Json(Value::Null));
+        }
+        let svc = state.lsp_index_service.clone();
+        json_result!(svc.update_file(std::path::Path::new(&root), std::path::Path::new(&abs_path)))
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
