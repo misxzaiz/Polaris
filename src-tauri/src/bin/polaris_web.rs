@@ -16,8 +16,14 @@
 //! Token authentication is disabled by default. Enable via --token flag,
 //! POLARIS_WEB_TOKEN env var, Web UI Settings page, or edit config.json
 //! at ~/.config/Polaris/config.json
-
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+//!
+//! 注意：这里刻意【不】加 `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`
+//! （需求库 #031 根因修复）。polaris-web 是 headless 服务器程序，关闭依赖
+//! `tokio::signal::ctrl_c()` 优雅关停；而 windows_subsystem="windows" 会让
+//! release exe 成为 GUI 子系统进程，不附着任何控制台，Ctrl+C 永远送达不了
+//! ctrl_c() handler——用户关闭时进程拒绝退出，`taskkill` 报
+//! 「只能强制终止这个进程(带 /F 选项)」。（桌面 main.rs 保留该属性是对的：
+//! GUI 应用不该弹控制台；此处语义相反。）
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

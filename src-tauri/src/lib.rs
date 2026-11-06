@@ -1673,6 +1673,14 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
             }
         }
         handle.shutdown.cancel();
-        let _ = handle.task.await;
+        // 优雅关停等待上限 10s：axum graceful shutdown 在有长连接（WS/慢响应）
+        // 时会拖住 task 不结束；超时后放弃等待直接退出进程（关闭路径不设
+        // 超时会表现为「Ctrl+C 后进程卡住不退出」——需求库 #031 关联治理）。
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            handle.task,
+        )
+        .await;
+        tracing::info!("[Polaris-Web] Shutdown complete, exiting");
     });
 }
