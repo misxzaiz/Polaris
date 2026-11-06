@@ -88,7 +88,7 @@ pub struct PluginProcessEngine {
     /// 泄漏到 &'static str 的描述
     leaked_description: &'static str,
     /// 持久 resume_token 映射（polaris session_id → resume_token）
-    resume_tokens: std::sync::Mutex<HashMap<String, String>>,
+    resume_tokens: std::sync::Arc<std::sync::Mutex<HashMap<String, String>>>,
     /// 持久化文件路径
     resume_tokens_file: Option<PathBuf>,
 }
@@ -118,7 +118,7 @@ impl PluginProcessEngine {
             sessions: SessionManager::new(),
             leaked_name,
             leaked_description,
-            resume_tokens: std::sync::Mutex::new(resume_tokens),
+            resume_tokens: std::sync::Arc::new(std::sync::Mutex::new(resume_tokens)),
             resume_tokens_file,
         })
     }
@@ -504,7 +504,10 @@ fn build_start_params(
         let on_error = options.on_error.clone();
         let current_session_id = session_id.clone();
         let engine_id = self.config.id.clone();
-        let resume_tokens = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+        // 共享实例级 map（2026-11-06 续聊真根因修复）：此前每轮 spawn 都新建局部空 map，
+        // 响应帧 token 写进局部 map——continue_session 查 self.resume_tokens 永远为 None，
+        // 续聊从未带上 --resume（文件偶然成功是重启后构造函数读文件的巧合）。
+        let resume_tokens = self.resume_tokens.clone();
         let resume_tokens_file = self.resume_tokens_file.clone();
 
         let (input_sender, input_receiver) = std::sync::mpsc::channel::<String>();
@@ -613,6 +616,15 @@ fn build_start_params(
                 } else if val.get("id").is_some() {
                     // 响应帧
                     if val.get("result").is_some() {
+                        // 诊断日志（2026-11-06 续聊排查）：token 到达即打印——空/缺失一眼可见
+                        let rt_debug = val
+                            .pointer("/result/resume_token")
+                            .map(|v| v.as_str().map(|s| s.to_string()).unwrap_or_else(|| "(非字符串)".to_string()))
+                            .unwrap_or_else(|| "(缺失)".to_string());
+                        tracing::info!(
+                            "[PluginProcess:{}] 响应帧到达: session={} resume_token={}",
+                            engine_id, current_session_id, rt_debug
+                        );
                         if let Some(rt) = val.pointer("/result/resume_token").and_then(|v| v.as_str()) {
                             if let Ok(mut map) = resume_tokens.lock() {
                                 map.insert(current_session_id.clone(), rt.to_string());
@@ -821,6 +833,12 @@ impl AIEngine for PluginProcessEngine {
         // 从 resume_tokens 取续聊令牌
         let resume_token = self.resume_tokens.lock().ok()
             .and_then(|m| m.get(session_id).cloned());
+        // 诊断日志（2026-11-06 续聊排查）：continue 时 map 查得值即打印——
+        // None=内存 map 丢失（注销重建/未写入），Some=透传给 adapter
+        tracing::info!(
+            "[PluginProcess:{}] continue 查 map: session={} token={:?}",
+            engine_id, session_id, resume_token
+        );
 
         let mut cmd = self.build_adapter_command()?;
         let child = cmd.spawn()
