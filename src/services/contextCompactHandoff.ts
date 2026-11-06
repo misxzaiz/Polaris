@@ -239,11 +239,18 @@ function throwIfAborted(signal?: AbortSignal): void {
 /**
  * 等待压缩会话流式结束（后端状态 running → idle 下降沿）。
  * 支持取消（中断会话）与超时兜底。
+ *
+ * requireRunEvidence（2026-11-06 空窗竞态修复）：sendMessage dispatch 返回后、
+ * claude-code 等 CLI 引擎产出首个事件前有秒级空窗，后端 lifecycle 事件日志
+ * 尚空（session_start 由首事件补写），此时查询得 idle 并非「已结束」而是
+ * 「尚未开始」——必须先观测到 running 才认后续下降沿，否则空简报误报 +
+ * finally 掐死刚起步的压缩运行。详见 plans/compact-handoff-pre-start-race-fix.md。
  */
 function waitForIdle(sessionId: string, signal?: AbortSignal): Promise<void> {
   return waitKernelSessionStreamEnd(sessionId, {
     timeoutMs: COMPACT_TIMEOUT_MS,
     signal,
+    requireRunEvidence: true,
   }).catch(async (err) => {
     // 超时/取消：中断压缩会话
     const store = sessionStoreManager.getState().stores.get(sessionId)

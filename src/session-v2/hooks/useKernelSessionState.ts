@@ -85,16 +85,27 @@ export function subscribeKernelSessionState(
  * - 若在等待期间发生 error 且从未进入 running → resolve（失败由调用方凭 error 判断）
  * - 可选 timeout：超时后中断会话并 reject（对齐消费方既有超时兜底）
  * - 支持 AbortSignal 取消（文档阶段 4 O2）
+ *
+ * requireRunEvidence（2026-11-06，压缩交接空窗竞态修复）：
+ * - 空窗问题：调用方刚 dispatch 完 sendMessage（引擎已 spawn）但引擎尚未产出
+ *   首个事件——后端 lifecycle 事件日志尚空（session_start 由首事件补写，
+ *   ai_chat_core.rs），此时查询得 idle 并非「已结束」，而是「尚未开始」。
+ *   默认语义在此窗口提前 resolve，调用方（压缩交接）拿空消息报
+ *   「压缩引擎未产出简报内容」并把刚起步的运行掐死。
+ * - 开启后：必须先观测到 running（订阅推送或一次性查询任一来源），
+ *   此后才认 idle/error 下降沿；从未观测到 running 则保持等待，由 timeout 兜底。
+ * - 默认关闭，既有消费方（radioBroadcastController 等）行为零变更。
  */
 export function waitKernelSessionStreamEnd(
   sessionId: string,
-  opts?: { timeoutMs?: number; signal?: AbortSignal },
+  opts?: { timeoutMs?: number; signal?: AbortSignal; requireRunEvidence?: boolean },
 ): Promise<void> {
-  const { timeoutMs, signal } = opts ?? {}
+  const { timeoutMs, signal, requireRunEvidence = false } = opts ?? {}
 
   return new Promise<void>((resolve, reject) => {
     const cleanupFns: Array<() => void> = []
     let settled = false
+    let sawRunning = false
     let unsubscribe: (() => void) | null = null
     let timer: ReturnType<typeof setTimeout> | null = null
 
@@ -118,13 +129,21 @@ export function waitKernelSessionStreamEnd(
       resolve()
     }
 
-    // 订阅 kernel 状态（running → idle/error 即流式结束）
-    unsubscribe = subscribeKernelSessionState(sessionId, (state) => {
-      // 已离开 running（idle 或 error 都算结束）
-      if (state.state === 'idle' || state.state === 'error') {
-        settleIdle()
+    /** 状态到达：requireRunEvidence 门控下，running 只记账不收尾 */
+    const onState = (state: KernelSessionState) => {
+      if (state.state === 'running') {
+        sawRunning = true
+        return
       }
-    })
+      // 已离开 running（idle 或 error 都算结束）；
+      // requireRunEvidence 下，running 之前的 idle/error 处于「引擎尚未产出
+      // 首事件」空窗，不收尾（timeout 兜底），running 之后的才认下降沿。
+      if (requireRunEvidence && !sawRunning) return
+      settleIdle()
+    }
+
+    // 订阅 kernel 状态（running → idle/error 即流式结束）
+    unsubscribe = subscribeKernelSessionState(sessionId, onState)
     cleanupFns.push(() => unsubscribe?.())
 
     if (timeoutMs) {
@@ -138,13 +157,18 @@ export function waitKernelSessionStreamEnd(
     }
 
     signal?.addEventListener('abort', onAbort)
-    cleanupFns.push(() => signal?.removeEventListener('abort', onAbort))
+    cleanupFns.push(() => { signal?.removeEventListener('abort', onAbort) })
 
     // 订阅建立前可能已 idle（会话从未运行 / 已结束）：查询当前状态兜底，
     // 避免只靠事件驱动而永久挂起（对齐旧 waitForIdle 的竞态兜底语义）。
+    // requireRunEvidence 下同样遵守门控：查询得 running 记账、非 running 不收尾。
     void kernelSessionIsStreaming(sessionId).then((streaming) => {
       if (settled) return
-      if (!streaming) settleIdle()
+      if (streaming) {
+        sawRunning = true
+      } else if (!requireRunEvidence) {
+        settleIdle()
+      }
     }).catch(() => { /* 查询失败：保持订阅等待事件 */ })
   })
 }

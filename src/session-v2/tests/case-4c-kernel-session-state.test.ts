@@ -143,6 +143,49 @@ describe('waitKernelSessionStreamEnd', () => {
   })
 })
 
+describe('waitKernelSessionStreamEnd（requireRunEvidence 空窗门控）', () => {
+  it('空窗：初始查询 idle + 稍后 running→idle → 认下降沿 resolve（压缩交接主场景）', async () => {
+    // 复刻真实时序：订阅建立时后端 lifecycle 尚空（idle），引擎首个事件
+    // 到达后才 running，随后结束回落 idle。默认语义会在初始 idle 即提前
+    // resolve（空窗竞态）；requireRunEvidence 必须挺过空窗、认到真下降沿。
+    fakeKernel.getSessionState.mockResolvedValue(makeState({ state: 'idle', isStreaming: false }))
+    const p = waitKernelSessionStreamEnd('s1', { requireRunEvidence: true, timeoutMs: 5000 })
+    await waitFor(() => expect(lastSubscribeHandler).not.toBeNull())
+    await new Promise((r) => setTimeout(r, 20)) // 让一次性兜底查询落地（idle，不收尾）
+    act(() => {
+      lastSubscribeHandler?.(makeState({ state: 'running', isStreaming: true }), makeState())
+      lastSubscribeHandler?.(makeState({ state: 'idle', isStreaming: false }), makeState({ state: 'running', isStreaming: true }))
+    })
+    await expect(p).resolves.toBeUndefined()
+  })
+
+  it('从未 running → 不提前 resolve，由 timeout 兜底 reject', async () => {
+    fakeKernel.getSessionState.mockResolvedValue(makeState({ state: 'idle', isStreaming: false }))
+    const p = waitKernelSessionStreamEnd('s1', { requireRunEvidence: true, timeoutMs: 60 })
+    // 初始 idle + 无任何事件：门控生效，不提前 resolve，等超时
+    await expect(p).rejects.toThrow('timeout')
+  })
+
+  it('订阅推送 running 之前到达的 idle 不收尾，running 后的 error 也认结束', async () => {
+    fakeKernel.getSessionState.mockResolvedValue(makeState({ state: 'idle', isStreaming: false }))
+    const p = waitKernelSessionStreamEnd('s1', { requireRunEvidence: true, timeoutMs: 5000 })
+    await waitFor(() => expect(lastSubscribeHandler).not.toBeNull())
+    act(() => {
+      // 空窗内先推一条 idle（如其他会话事件触发的状态刷新）：不收尾
+      lastSubscribeHandler?.(makeState({ state: 'idle', isStreaming: false }), makeState())
+      lastSubscribeHandler?.(makeState({ state: 'running', isStreaming: true }), makeState())
+      // 引擎报错结束：running 之后的 error 认下降沿
+      lastSubscribeHandler?.(makeState({ state: 'error', isStreaming: false, error: 'boom' }), makeState({ state: 'running', isStreaming: true }))
+    })
+    await expect(p).resolves.toBeUndefined()
+  })
+
+  it('默认语义零回归：不传 requireRunEvidence 时初始 idle 仍立即 resolve', async () => {
+    fakeKernel.getSessionState.mockResolvedValue(makeState({ state: 'idle', isStreaming: false }))
+    await expect(waitKernelSessionStreamEnd('s1')).resolves.toBeUndefined()
+  })
+})
+
 describe('kernelSessionIsStreaming', () => {
   it('后端 running → true', async () => {
     fakeKernel.getSessionState.mockResolvedValue(makeState({ state: 'running', isStreaming: true }))
