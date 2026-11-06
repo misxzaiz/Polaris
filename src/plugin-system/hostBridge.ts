@@ -21,15 +21,34 @@ export const HOST_BRIDGE_NAMES: readonly HostBridgeName[] = ['artifact', 'form',
 
 const windowKey = (name: string): string => `__POLARIS_HOST_${name.toUpperCase()}__`
 
+/** 各桥的命名导出成员（与宿主注册对象接口对齐；spec [S-3] 只增不改） */
+const HOST_BRIDGE_MEMBERS: Record<HostBridgeName, readonly string[]> = {
+  artifact: [
+    'ArtifactPreviewRenderer',
+    'buildArtifactBlockFromData',
+    'normalizeArtifactLikeBlock',
+    'useArtifactVersions',
+    'useIsSupersededArtifactVersion',
+    'readArtifactHtml',
+    'openArtifactSource',
+  ],
+  form: ['registerComponent', 'submitForm', 'skipForm', 'answerQuestion', 'saveFormTemplate'],
+  cap: ['dispatch'],
+}
+
 /**
- * 生成一座桥的重导出 shim 源码：import shim 即从 window 对象取成员。
- * 用函数包装避免宿主对象未就绪时模块求值失败——调用期才解引用。
+ * 生成一座桥的重导出 shim 源码：命名导出（插件 `import { X } from 'polaris-host/<name>'`）
+ * + default 整对象。命名成员在模块求值期即解引用——宿主对象必须先注册
+ * （loadModuleFromFile 的 ensureBridgesReady 保证），缺成员在 import 阶段报明确错误。
  */
 function shimSource(name: HostBridgeName): string {
   const key = windowKey(name)
+  const members = HOST_BRIDGE_MEMBERS[name]
+    .map((m) => `export const ${m} = H.${m};`)
+    .join('\n')
   return `const H = window[${JSON.stringify(key)}];
 if (!H) throw new Error('polaris-host/${name} 宿主桥未就绪（window.${key} 缺失）');
-const wrap = (fnName) => (...args) => H[fnName](...args);
+${members}
 export default H;
 `
 }

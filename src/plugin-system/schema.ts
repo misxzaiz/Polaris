@@ -110,6 +110,8 @@ export const discoveredManifestShapeSchema = z
     description: z.string().optional(),
     builtin: z.boolean().optional(),
     enabledByDefault: z.boolean().optional(),
+    // 核心通道插件（plugin-ui-contribution-spec [S-9]）：承载宿主核心交互渲染
+    core: z.boolean().optional(),
     manifestVersion: z.string().optional(),
     contributes: z.record(z.string(), z.unknown()).optional(),
     permissions: z.record(z.string(), z.unknown()).optional(),
