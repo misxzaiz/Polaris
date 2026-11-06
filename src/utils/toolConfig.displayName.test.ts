@@ -4,6 +4,7 @@ import {
   getToolDisplayName,
   getToolShortName,
   getToolCategory,
+  extractToolKeyInfo,
 } from './toolConfig'
 
 describe('parseMcpToolName', () => {
@@ -96,5 +97,46 @@ describe('getToolCategory - 未注册工具按关键词推断', () => {
   it('已注册工具分类不变', () => {
     expect(getToolCategory('Bash')).toBe('execute')
     expect(getToolCategory('Grep')).toBe('search')
+  })
+})
+
+describe('extractToolKeyInfo - 嵌套参数提取（MCP / 未知工具）', () => {
+  it('MCP 工具嵌套 payload 提取命令', () => {
+    // 实测形态：mcp__polaris-bus__bus_dispatch input = { payload: { command, workdir } }
+    const info = extractToolKeyInfo('mcp__polaris-bus__bus_dispatch', {
+      payload: { command: 'git status --short', workdir: 'D:/space/base/Polaris' },
+    })
+    expect(info).toContain('git status')
+  })
+
+  it('MCP 工具嵌套 args 提取路径', () => {
+    const info = extractToolKeyInfo('mcp__some-server__open_file', {
+      args: { file_path: 'src/main.rs' },
+    })
+    expect(info).toContain('main.rs')
+  })
+
+  it('MCP 工具嵌套 payload 提取查询词', () => {
+    const info = extractToolKeyInfo('mcp__feed-radar__radar_search', {
+      params: { query: 'rust' },
+    })
+    expect(info).toContain('rust')
+  })
+
+  it('顶层已知字段优先于嵌套', () => {
+    const info = extractToolKeyInfo('Bash', { command: 'ls -la', payload: { command: 'nested' } })
+    expect(info).toContain('ls -la')
+  })
+
+  it('无任何可提取字段返回空串', () => {
+    const info = extractToolKeyInfo('mcp__server__op', {})
+    expect(info).toBe('')
+  })
+
+  it('嵌套深层（payload > args）可提取', () => {
+    const info = extractToolKeyInfo('mcp__server__op', {
+      payload: { args: { command: 'npm test' } },
+    })
+    expect(info).toContain('npm test')
   })
 })

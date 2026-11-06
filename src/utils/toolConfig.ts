@@ -270,6 +270,26 @@ const NAME_WORD_ZH: Record<string, string> = {
   db: '数据库',
   database: '数据库',
   sql: 'SQL',
+  // 常见 MCP server 名（server 段词典，MCP 工具显示名用）
+  marketplace: '商城',
+  'marketplace-server': '商城',
+  'polaris-bus': '总线',
+  'polaris-dispatch': '派发',
+  'polaris-computer': '电脑',
+  'polaris-browser': '浏览器',
+  'chrome-devtools': '浏览器',
+  'polaris-ask': '询问',
+  'mimo-tts': '语音',
+  'daw-studio': '音乐',
+  'feed-radar': '资讯',
+  'quote-sentinel': '行情',
+  'pocket-ledger': '账本',
+  'image-recognition': '识图',
+  'flashforge': '闪铸',
+  'needs': '需求',
+  'exec-sandbox': '沙箱',
+  'query-plan-lens': '查询',
+  'prd-preview': '预览',
 };
 
 /**
@@ -793,6 +813,38 @@ function extractPromptLike(input: Record<string, unknown> | undefined, maxLen = 
   return '';
 }
 
+/**
+ * 递归提取嵌套参数中的关键值（MCP 工具 input 常为 { payload: { command, ... } } /
+ * { args: { ... } } / { params: { ... } } 形态，顶层找不到时深入一层）。
+ *
+ * 按字段优先级返回第一个命中的字符串值；数组/对象继续下钻一层（防深层循环，
+ * 深度上限 3）。命中后截断到 maxLen。
+ */
+function extractDeepValue(
+  input: Record<string, unknown> | undefined,
+  keys: readonly string[],
+  maxLen: number,
+  depth = 0,
+): string {
+  if (!input || depth > 3) return '';
+  for (const key of keys) {
+    const v = input[key];
+    if (typeof v === 'string' && v.trim()) {
+      const val = v.trim();
+      return val.length > maxLen ? val.slice(0, maxLen - 3) + '...' : val;
+    }
+  }
+  // 常见包装键：payload / args / params / arguments / data / body
+  for (const wrap of ['payload', 'args', 'params', 'arguments', 'data', 'body']) {
+    const w = input[wrap];
+    if (w && typeof w === 'object' && !Array.isArray(w)) {
+      const found = extractDeepValue(w as Record<string, unknown>, keys, maxLen, depth + 1);
+      if (found) return found;
+    }
+  }
+  return '';
+}
+
 export function extractToolKeyInfo(toolName: string, input: Record<string, unknown> | undefined): string {
   const category = TOOL_CATEGORY[toolName];
 
@@ -918,7 +970,20 @@ export function extractToolKeyInfo(toolName: string, input: Record<string, unkno
     case 'agent':
       // Workflow / dispatch_agent / read_skill 等：提取指令字段，退化为技能名/查询词
       return extractPromptLike(input) || extractSearchQuery(input);
-    default:
-      return extractFileName(input) || extractCommand(input) || extractSearchQuery(input) || '';
+    default: {
+      // MCP/未知工具：先按已知分类提取；未命中时递归深入嵌套参数
+      // （MCP input 常为 { payload: { command } } 等形态，顶层提取不到时下钻一层）
+      const top = extractFileName(input) || extractCommand(input) || extractSearchQuery(input);
+      if (top) return top;
+      // 递归提取：命令 > 路径 > 查询 > URL > 关键参数 > prompt 类
+      return (
+        extractDeepValue(input, ['command', 'cmd', 'command_string'], 50) ||
+        extractDeepValue(input, ['path', 'file_path', 'filePath', 'file'], 50) ||
+        extractDeepValue(input, ['query', 'q', 'search', 'keyword', 'pattern'], 50) ||
+        extractDeepValue(input, ['url', 'uri', 'href', 'link'], 50) ||
+        extractDeepValue(input, ['capability', 'action', 'name', 'id'], 40) ||
+        extractDeepValue(input, ['prompt', 'task', 'description', 'goal', 'message'], 50)
+      );
+    }
   }
 }
