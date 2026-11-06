@@ -33,7 +33,9 @@ temp/
 
 # 运行时插件安装目录（pluginDiscovery 走 <DataRoot>/plugins，见 src-tauri/src/services/data_root.rs）。
 # 数据根落在仓库根（dev/隔离环境）时产生；插件源码唯一权威在 Polaris-plugin 仓，此处产物不入库。
-/plugins/
+# 例外：plugins/docs/ 是插件开发规范与规划文档（准入门约），随仓入库。
+/plugins/*
+!/plugins/docs/
 
 # AI 会话工件（ZCode 本地计划/状态，非工程内容）
 .zcode/
