@@ -232,3 +232,21 @@ interactive-component/
 2. 模板内 toast → 卡片旁瞬态横幅（宿主 store 不可 import，[S-4]）；i18n → t 兜底直出（文案即中文原文）
 3. uiTemplates 本批交付契约+注册+校验（[R-12..R-14]）；「卡片即数据」渲染消费与 chatActions 留后续批次
 4. 未做真机双端冒烟（worktree 无运行联调环境）——合并 main 后按 §4 验证矩阵补
+
+### 9.1 真机冒烟记录（2026-11-07，dev 数据根 + junction 安装 + 浏览器自动化）
+
+| 冒烟项 | 结果 | 证据 |
+|---|---|---|
+| 插件安装+发现 | ✅ | junction 进 Polaris-dev/plugins → cap.pluginDiscovery discover 23 含 interactive-component（core/blockRenderers/chatCards entry 齐）→ 前端注册表装载（插件页 21 个安装插件 0 诊断，侧栏出现全部插件面板入口） |
+| render_component 卡片 | ✅ | AI 对话真实工具调用 → server 执行落盘（marker/previewId）→ 卡片 iframe 沙箱渲染 + 表单回传徽标 + 全屏 UI |
+| form 契约登记 | ✅ | `[Component] 组件型 hold 已登记 formId=smoke-form-16 read=full`（组件 mount 自动登记） |
+| 契约提交 | ✅ | 组件内提交 → `[Form] form_submit formId=smoke-form-16 holds 数=1` → 卡片「✅已提交（回执将随下一条消息带给 AI）」 |
+| 回执回流 | ✅ | 下一条消息注入回执 → AI 准确答出提交值 42 |
+| cap 白名单通过 | ✅ | 组件内 cap.kv（已声明）→ `[kv-set-ok] ok=true`（请求到达总线执行） |
+| cap deny 拒绝 | ✅ | 组件内 cap.bash（已声明但敏感能力）→ `ok=false 属敏感能力，已拒绝（deny 清单）` |
+| 伪造 formId 提交 | ✅ | WRONG-FORMID 提交 → 卡片桥忽略，**0 次到达后端**（log 仅正确契约一次 form_submit） |
+| form/ask 块委托 live 渲染 | ⏳ | form 工具调用/hold 注册/form 事件广播均 ✅（log），委托 fallback 在注册修复前正确接住（lookup 链路 ✅）；**live 渲染被环境阻塞**：web 模式 WS 在浏览器标签后台化时节流 → 服务端 60s idle 关闭 → 活动事件丢失（前端有重连但活动窗口内丢了即丢）。非本分支引入（main 同行为）；真人可见标签页操作不受影响 |
+
+冒烟驱动修复（已入库）：`d3416f18`（前端 manifest 镜像缺 core/blockRenderers/uiTemplates + shim 命名导出 + 解构遗漏 + block sessionId）、`576c372b`（replaceInstalled/registerInstalled 漏挂注册——安装插件路径从未注册新贡献点）。
+
+**合并前剩余**：form/ask 委托的真人可见标签页回归（打开 localhost:9828 登录 98279829++，粘贴 form/ask 提示词各一轮，确认字段/选项卡渲染并提交）——自动化环境（IAB 后台节流+WS idle）无法代劳，真人操作不受影响。
