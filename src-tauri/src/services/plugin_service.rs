@@ -952,6 +952,15 @@ impl PluginService {
         })
     }
 
+    /// 读取已安装插件的 manifest（core 守卫用）；失败返回 None（守卫放行，卸载照旧）。
+    fn read_installed_manifest(
+        _app_config_dir: &Path,
+        install_path: &Path,
+    ) -> Option<crate::models::plugin::PluginManifestFile> {
+        let text = std::fs::read_to_string(install_path.join("plugin.json")).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+
     pub fn uninstall_local_plugin(
         app_config_dir: &Path,
         workspace_path: Option<&Path>,
@@ -961,6 +970,18 @@ impl PluginService {
         // 常规路径的 canonicalize 会解析到外部源码目录而被 allowed_roots 拒绝。
         if Self::read_dev_link(app_config_dir, install_path).is_some() {
             return Self::uninstall_dev_link_plugin(app_config_dir, workspace_path, install_path);
+        }
+
+        // 核心通道插件守卫（plugin-ui-contribution-spec [S-9]）：承载宿主核心交互
+        // 渲染（form/ask 块委托）的插件不可卸载——否则 form/ask 渲染失效。
+        if let Some(manifest) = Self::read_installed_manifest(app_config_dir, install_path) {
+            if manifest.core {
+                return Ok(PluginOperationResult {
+                    success: false,
+                    message: Some("核心通道插件不可卸载（承载 form/ask 等宿主核心交互渲染）".to_string()),
+                    error: None,
+                });
+            }
         }
 
         let target = Self::canonicalize_allowed_plugin_dir(

@@ -6,8 +6,7 @@
 import React from 'react';
 import type { ContentBlock } from '@/types';
 import { ContentBlockErrorBoundary } from '../common/ContentBlockErrorBoundary';
-import { AskQuestionCard } from '../tool-calls/AskQuestionCard';
-import { FormCard } from './FormCard';
+import { BlockDelegationRenderer } from './BlockDelegation';
 import { PlanModeBlockRenderer } from '../tool-calls/PlanModeBlockRenderer';
 import { AgentRunBlockRenderer } from '../tool-calls/AgentRunBlockRenderer';
 import { TaskBoardRenderer } from './TaskBoardRenderer';
@@ -100,14 +99,17 @@ export function renderContentBlock(
         block.previewId
       );
     case 'question':
+      // v2 块委托（spec [R-9]）：语义层（ask oneshot/审计）留宿主，渲染委托
+      // 交互组件插件 ask-card；未命中/失败走宿主兜底卡（[R-10]）
       return wrapWithErrorBoundary(
-        <AskQuestionCard block={block} />,
+        <BlockDelegationRenderer blockType="question" block={block as never} />,
         block.id
       );
     case 'form':
-      // 表单工具（schema 驱动面板）：form 拉起事件 → FormCard，提交走 form_submit
+      // v2 块委托（spec [R-9]）：form_core/form_submit 管线留宿主，渲染委托
+      // 交互组件插件 form-card；未命中/失败走宿主兜底卡（[R-10]）
       return wrapWithErrorBoundary(
-        <FormCard block={block} />,
+        <BlockDelegationRenderer blockType="form" block={block as never} />,
         block.id
       );
     case 'plan_mode':
