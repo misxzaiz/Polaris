@@ -70,6 +70,8 @@ class PluginRegistry {
       this.manifests.set(manifest.id, registered)
       registerPluginDefaultUi(registered.id, registered.enabledByDefault)
       this.registerPanel(registered)
+      this.registerBlockRenderers(registered)
+      this.registerUiTemplates(registered)
       this.registerChatCards(registered)
       this.registerEngines(registered)
     }
@@ -100,6 +102,8 @@ class PluginRegistry {
       this.manifests.set(manifest.id, registered)
       registerPluginDefaultUi(registered.id, registered.enabledByDefault)
       this.registerPanel(registered)
+      this.registerBlockRenderers(registered)
+      this.registerUiTemplates(registered)
       this.registerChatCards(registered)
       engineConfigs.push(registered)
     }
