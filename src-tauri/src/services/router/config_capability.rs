@@ -436,22 +436,49 @@ fn merge_section_value(config: &Config, section: &str, patch_val: &Value) -> Res
             let patch_obj = patch_val
                 .as_object()
                 .ok_or_else(|| format!("section {} 的值必须是对象", section))?;
-            for (k, _) in patch_obj {
+            // 掩码回写豁免（masked no-op，plans/config-patch-masked-noop-spec.md）：
+            // 读路径对敏感字段打掩码（web.token → "****"+末4位，apply_masks 无来源
+            // 例外），前端整对象回写会把掩码值原样带回（设置页 WebTab 实证：开关/
+            // 端口保存被 token 拖死）。值 == 现值掩码形态 ⇒「未修改」：跳过白名单
+            // 校验且不进合并——放行会把掩码字符串写进 config 烧掉真值（鉴权损坏），
+            // 拒绝则一个未改动字段拖死整个 patch。与 Remote 哨兵还原
+            // （restore_remote_sentinels）语义对齐：掩码回写 = 保持现值。
+            // 未命中的敏感字段（新 token 值）维持白名单拒绝，真实写入走未来独立动作。
+            let current_obj = current_section.as_object();
+            let is_masked_no_op = |k: &str, v: &Value| -> bool {
+                if !is_sensitive_field(section, k) {
+                    return false;
+                }
+                let Some(pv) = v.as_str() else {
+                    return false;
+                };
+                let cur = current_obj
+                    .and_then(|m| m.get(k))
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("");
+                mask_value(cur) == pv
+            };
+            let mut effective = serde_json::Map::new();
+            for (k, v) in patch_obj {
+                if is_masked_no_op(k, v) {
+                    continue;
+                }
                 if !section_schema.fields.contains(&k.as_str()) {
                     return Err(format!(
                         "section {} 不允许字段: {}（白名单: {:?}）",
                         section, k, section_schema.fields
                     ));
                 }
+                effective.insert(k.clone(), v.clone());
             }
-            // 深层合并：当前值为基底，patch 覆盖
+            // 深层合并：当前值为基底，patch 覆盖（掩码 no-op 字段已剔除，真值不动）
             let mut merged = current_section;
-            if merged.is_object() && patch_val.is_object() {
-                for (k, v) in patch_obj {
+            if merged.is_object() {
+                for (k, v) in effective {
                     merged
                         .as_object_mut()
                         .unwrap()
-                        .insert(k.clone(), v.clone());
+                        .insert(k, v);
                 }
             }
             // BoolSet 补默认值（缺失字段补全，保证完整对象写回）
@@ -878,5 +905,75 @@ mod tests {
         assert_eq!(keys[0], "sk-pool-a");
         assert_eq!(keys[1], "sk-pool-b");
         assert_eq!(keys[2], "sk-added-remote");
+    }
+
+    // ===================================================================
+    // 掩码回写豁免（masked no-op，plans/config-patch-masked-noop-spec.md §3）
+    // ===================================================================
+
+    fn config_with_web_token(token: &str) -> Config {
+        let mut c = Config::default();
+        c.web = crate::models::config::WebConfig {
+            enabled: true,
+            host: "127.0.0.1".into(),
+            port: 9830,
+            token: Some(token.into()),
+        };
+        c
+    }
+
+    #[test]
+    fn masked_token_writeback_is_noop_not_rejected() {
+        // 设置页实证形态：读掩码 → 改 enabled → 整对象回写（掩码 token 展开带上）
+        let config = config_with_web_token("real-token-29++");
+        let patch_val = serde_json::json!({
+            "enabled": false,
+            "host": "127.0.0.1",
+            "port": 9830,
+            "token": mask_value("real-token-29++"),
+        });
+        let merged = merge_section_value(&config, "web", &patch_val)
+            .expect("掩码回写不应拒绝整个 patch（否则开关/端口全关不了）");
+        assert_eq!(merged["enabled"], false, "合法字段应生效");
+        assert_eq!(merged["token"], "real-token-29++", "掩码 no-op 不落盘，真值保留");
+    }
+
+    #[test]
+    fn masked_token_partial_patch_keeps_rest() {
+        // 最小 patch：只改 enabled，token 为展开带上的掩码；未提及字段保持现值
+        let config = config_with_web_token("abcd1234efgh");
+        let patch_val = serde_json::json!({ "enabled": false, "token": "****efgh" });
+        let merged = merge_section_value(&config, "web", &patch_val).expect("掩码回写不应拒绝");
+        assert_eq!(merged["enabled"], false);
+        assert_eq!(merged["token"], "abcd1234efgh", "真值保留");
+        assert_eq!(merged["host"], "127.0.0.1", "未提及字段取现值为基底");
+    }
+
+    #[test]
+    fn masked_token_with_empty_current_is_noop() {
+        // 现值空 → 掩码为 "****"；回写 "****" 同样视为未修改
+        let config = config_with_web_token("");
+        let patch_val = serde_json::json!({ "enabled": false, "token": "****" });
+        let merged = merge_section_value(&config, "web", &patch_val).expect("空现值掩码回写不应拒绝");
+        assert_eq!(merged["token"], "", "掩码不落盘，空值保持");
+    }
+
+    #[test]
+    fn new_token_value_still_rejected_by_whitelist() {
+        // 掩码豁免不开洞：token 真实写入仍被白名单拒绝（走未来独立动作）
+        let config = config_with_web_token("real-token-29++");
+        let patch_val = serde_json::json!({ "enabled": false, "token": "brand-new-token" });
+        let err = merge_section_value(&config, "web", &patch_val)
+            .expect_err("新 token 值必须仍被白名单拒绝");
+        assert!(err.contains("不允许字段") && err.contains("token"), "错误应指明 token: {err}");
+    }
+
+    #[test]
+    fn illegal_non_sensitive_field_still_rejected() {
+        let config = config_with_web_token("real-token-29++");
+        let patch_val = serde_json::json!({ "enabled": false, "foo": 1 });
+        let err = merge_section_value(&config, "web", &patch_val)
+            .expect_err("非法非敏感字段维持拒绝");
+        assert!(err.contains("foo"), "错误应指明字段: {err}");
     }
 }
