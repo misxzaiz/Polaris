@@ -31,6 +31,8 @@ export interface FormHostBridge {
   skipForm: (formId: string) => Promise<unknown>
   /** ask 问答应答（= answer_question；oneshot 一次性消费在服务端） */
   answerQuestion: (callId: string, answer: unknown) => Promise<unknown>
+  /** 表单结构存为模板（= form_template_save；只存结构不存填写值） */
+  saveFormTemplate: (formId: string, templateName?: string) => Promise<{ name?: string }>
 }
 
 export function registerFormHost(): void {
@@ -71,6 +73,12 @@ export function registerFormHost(): void {
     skipForm: (formId) => aiChatDispatch({ action: 'form_skip', formId }),
     answerQuestion: (callId, answer) =>
       aiChatDispatch({ action: 'answer_question', callId, answer }),
+    saveFormTemplate: (formId, templateName) =>
+      aiChatDispatch({
+        action: 'form_template_save',
+        formId,
+        ...(templateName ? { templateName } : {}),
+      }) as Promise<{ name?: string }>,
   }
   ;(window as unknown as Record<string, unknown>).__POLARIS_HOST_FORM__ = bridge
 }

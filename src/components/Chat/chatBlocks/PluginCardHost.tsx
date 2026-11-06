@@ -187,6 +187,7 @@ export function PluginCardHost({ block, onSendToChat }: PluginCardHostProps) {
     status: block.status,
     data: block.data,
     response: block.response,
+    sessionId: block.sessionId || undefined,
     onSendToChat,
     respond,
   }
