@@ -1234,6 +1234,13 @@ impl AIEngine for PluginEngineRunner {
         )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
 
+        // 会话级 effort 通用注入（2026-11-06）：POLARIS_SESSION_EFFORT 是引擎无关的
+        // 通用名——插件引擎（如 zcode-bridge 的 ZCODE_REASONING_LEVEL 桥接）按需读取。
+        // 不写入 env_overrides（避免污染 Profile custom_env 语义），spawn 前直接注入。
+        if let Some(effort) = options.effort.as_deref().filter(|e| !e.is_empty()) {
+            cmd.env("POLARIS_SESSION_EFFORT", effort);
+        }
+
         tracing::info!("[PluginEngine:{}] 执行命令: {} {}", engine_id, self.config.cli.command, self.config.cli.args.as_ref().map(|a| a.join(" ")).unwrap_or_default());
 
         let child = cmd.spawn()
@@ -1310,6 +1317,11 @@ impl AIEngine for PluginEngineRunner {
             options.append_system_prompt.as_deref(),
         )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
+
+        // 续聊同注入会话级 effort（与首轮一致，见 1237 行注释）
+        if let Some(effort) = options.effort.as_deref().filter(|e| !e.is_empty()) {
+            cmd.env("POLARIS_SESSION_EFFORT", effort);
+        }
 
         let child = cmd.spawn()
             .map_err(|e| AppError::ProcessError(format!("继续 {} 会话失败: {}", self.config.cli.command, e)))?;
