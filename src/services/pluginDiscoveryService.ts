@@ -32,6 +32,7 @@ import {
   unknownManifestTopLevelFields,
 } from '@/plugin-system/schema'
 import { createLogger } from '@/utils/logger'
+import type { PluginBlockRendererContribution, PluginUiTemplateContribution } from '@/plugin-system/types'
 
 const log = createLogger('PluginDiscovery')
 
@@ -306,6 +307,69 @@ function normalizeChatCards(
 }
 
 /**
+ * 归一化 blockRenderers 贡献点（plugin-ui-contribution-spec [R-8]）。
+ * blockType 白名单与同类型先到先得在 blockRendererRegistry.register 内校验；
+ * 此处只做形状归一化（blockType/entry 非空字符串）。
+ */
+function normalizeBlockRenderers(
+  value: unknown,
+  errors: string[]
+): PluginBlockRendererContribution[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) {
+    errors.push('contributes.blockRenderers must be an array')
+    return []
+  }
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push('contributes.blockRenderers[' + index + '] must be an object')
+      return []
+    }
+    const blockType = asString(item.blockType)
+    const entry = asString(item.entry)
+    if (!blockType || !entry) {
+      errors.push('contributes.blockRenderers[' + index + '] is invalid (blockType/entry required) and was ignored')
+      return []
+    }
+    return [{ blockType, entry }]
+  })
+}
+
+/**
+ * 归一化 uiTemplates 贡献点（spec [R-12..R-14]）。命名空间/保留名校验在
+ * uiTemplateRegistry.register；此处只做形状归一化（id/title 非空 + entry/html 二选一）。
+ */
+function normalizeUiTemplates(
+  value: unknown,
+  errors: string[]
+): PluginUiTemplateContribution[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) {
+    errors.push('contributes.uiTemplates must be an array')
+    return []
+  }
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push('contributes.uiTemplates[' + index + '] must be an object')
+      return []
+    }
+    const id = asString(item.id)
+    const title = asString(item.title)
+    const entry = asString(item.entry)
+    const html = typeof item.html === 'string' ? item.html : undefined
+    if (!id || !title || (!!entry === !!html)) {
+      errors.push('contributes.uiTemplates[' + index + '] is invalid (id/title required; entry 与 html 二选一) and was ignored')
+      return []
+    }
+    const out: PluginUiTemplateContribution = { id, title }
+    if (isRecord(item.schema)) out.schema = item.schema
+    if (entry) out.entry = entry
+    if (html) out.html = html
+    return [out]
+  })
+}
+
+/**
  * 归一化 toolProviders 贡献点。
  *
  * 安全校验：mcpServerId 必须属于本插件声明的 mcpServers[].id，否则丢弃该 Provider
@@ -543,6 +607,7 @@ export function validateDiscoveredPlugin(raw: unknown): {
       description: asString(raw.description),
       builtin: false,
       enabledByDefault: raw.enabledByDefault === true,
+      core: raw.core === true,
       contributes: {
         views: normalizeViews(contributes.views, errors),
         mcpServers,
@@ -551,6 +616,8 @@ export function validateDiscoveredPlugin(raw: unknown): {
         engines: normalizeEngines(contributes.engines, errors),
         toolProviders: normalizeToolProviders(contributes.toolProviders, ownMcpServerIds, errors),
         styles: normalizeStyles(contributes.styles, errors),
+        blockRenderers: normalizeBlockRenderers(contributes.blockRenderers, errors),
+        uiTemplates: normalizeUiTemplates(contributes.uiTemplates, errors),
       },
       permissions: normalizePermissions(raw.permissions),
       origin: normalizeOrigin(raw.origin),

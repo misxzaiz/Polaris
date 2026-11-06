@@ -8,7 +8,6 @@
 //! ## 独立 MCP server（直接处理请求）
 //! ```shell
 //! polaris-mcp requirements <config_dir> [workspace_path]
-//! polaris-mcp prd-preview <config_dir> [workspace_path]
 //! polaris-mcp agnes <config_dir> [workspace_path]
 //! polaris-mcp ph <config_dir> [workspace_path]
 //! polaris-mcp computer <config_dir> [workspace_path]
@@ -29,7 +28,6 @@ use polaris_lib::services::{
     browser_mcp_server::{run_browser_mcp_server, BrowserMcpConfig},
     dispatch_mcp_server::{run_dispatch_mcp_server, DispatchMcpConfig},
     personal_hub_mcp_server::run_ph_mcp_server,
-    prd_preview_mcp_server::run_prd_preview_mcp_server,
     requirements_mcp_server::run_requirements_mcp_server,
     scheduler_mcp_server::run_scheduler_mcp_server,
 };
@@ -53,7 +51,7 @@ fn main_impl() -> Result<()> {
     let subcommand = args.get(1).ok_or_else(|| {
         AppError::ValidationError(
             "缺少子命令。用法：polaris-mcp <subcommand> [args...]\n\
-             可用子命令：requirements, prd-preview, agnes, ph, computer, bus, scheduler, ask, browser, dispatch"
+             可用子命令：requirements, agnes, ph, computer, bus, scheduler, ask, browser, dispatch"
                 .to_string(),
         )
     })?;
@@ -65,10 +63,6 @@ fn main_impl() -> Result<()> {
         "requirements" => {
             let (config_dir, workspace_path) = parse_config_dir_args(sub_args, "requirements")?;
             run_requirements_mcp_server(&config_dir, workspace_path)
-        }
-        "prd-preview" => {
-            let (config_dir, workspace_path) = parse_config_dir_args(sub_args, "prd-preview")?;
-            run_prd_preview_mcp_server(&config_dir, workspace_path)
         }
         "agnes" => {
             let (config_dir, workspace_path) = parse_config_dir_args(sub_args, "agnes")?;
@@ -121,7 +115,7 @@ fn main_impl() -> Result<()> {
         }
 
         other => Err(AppError::ValidationError(format!(
-            "未知子命令：{other}。可用子命令：requirements, prd-preview, agnes, ph, computer, scheduler, ask, browser, dispatch"
+            "未知子命令：{other}。可用子命令：requirements, agnes, ph, computer, scheduler, ask, browser, dispatch"
         ))),
     }
 }

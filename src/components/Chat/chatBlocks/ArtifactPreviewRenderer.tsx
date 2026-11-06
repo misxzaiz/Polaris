@@ -104,10 +104,23 @@ function MoreMenuItem({ icon: Icon, label, onClick }: { icon: typeof Copy; label
 export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   block,
   versions,
+  onFrameMessage,
+  declaredCapTargets,
 }: {
   block: ArtifactPreviewBlock;
   /** 同 requirementId 的全部版本（升序、含本块）；≥2 版时状态条显示版本 pills */
   versions?: ArtifactPreviewBlock[];
+  /**
+   * 附加的 iframe 消息钩子（v2 交互组件）：宿主 cap 桥之外，卡片（如交互组件
+   * 的表单回传）可挂自己的消息处理。已过 event.source 绑定校验后才调用；
+   * 必须传稳定引用（建议 useCallback），否则监听器反复摘挂。
+   */
+  onFrameMessage?: (data: unknown) => void;
+  /**
+   * 组件声明的 cap 目标白名单（spec [S-8]：AI 经 marker.caps 声明，卡片传入）。
+   * 提供时：cap 桥先过 deny 清单再过声明白名单；未提供时沿用静态 allowlist 语义。
+   */
+  declaredCapTargets?: ReadonlySet<string>;
 }) {
   const [showSource, setShowSource] = useState(false);
   const [copied, setCopied] = useState<'html' | 'path' | null>(null);
@@ -303,6 +316,11 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   }, [moreOpen]);
 
   // HTML 卡片 Cap 桥：监听卡片 iframe 的 postMessage 请求并转发 RouterBus。
+  // onFrameMessage 经 ref 透传（props 变化不重挂监听；source 绑定校验先行）。
+  const onFrameMessageRef = useRef(onFrameMessage);
+  onFrameMessageRef.current = onFrameMessage;
+  const declaredCapTargetsRef = useRef(declaredCapTargets);
+  declaredCapTargetsRef.current = declaredCapTargets;
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const source = event.source
@@ -310,8 +328,9 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
       if (!source || !frameWin || source !== frameWin) return
       const data = event.data
       if (!data || typeof data !== 'object') return
+      onFrameMessageRef.current?.(data)
 
-      void forwardCardCapRequest(data, invoke).then((reply) => {
+      void forwardCardCapRequest(data, invoke, { declaredTargets: declaredCapTargetsRef.current }).then((reply) => {
         if (!reply) return
         try {
           frameWin.postMessage(reply, '*')

@@ -73,6 +73,10 @@ pub struct DiscoveredPluginManifest {
     pub description: Option<String>,
     pub builtin: bool,
     pub enabled_by_default: bool,
+    /// 核心通道插件（plugin-ui-contribution-spec [S-9]）：承载宿主核心交互渲染
+    /// （如 form/ask 块委托）。不可卸载；禁用入口对其核心模板不生效。
+    #[serde(default)]
+    pub core: bool,
     #[serde(default)]
     pub contributes: PluginManifestContributes,
     #[serde(default)]
@@ -192,6 +196,39 @@ pub struct PluginManifestContributes {
     /// 插件声明的方言适配器（通用插件格式兼容扩展点，见 PluginAdapterManifestContribution）
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapters: Vec<PluginAdapterManifestContribution>,
+    /// 块委托渲染（plugin-ui-contribution-spec [R-8]）：渲染层委托给插件，
+    /// 语义层（form_core/ask oneshot/审计）留宿主。blockType 白名单由前端 registry 校验
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub block_renderers: Vec<PluginBlockRendererManifestContribution>,
+    /// 第三方 UI 模板注册（spec [R-12..R-15]）：id 必须以插件 id 为命名空间；
+    /// 内置模板名（ask-card/form-card/artifact-card/chart-card）保留不可覆盖
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ui_templates: Vec<PluginUiTemplateManifestContribution>,
+}
+
+/// 块委托渲染贡献点（manifest 声明面；加载与白名单校验在前端 blockRendererRegistry）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginBlockRendererManifestContribution {
+    /// 宿主开放委托的块类型（form/question）
+    pub block_type: String,
+    /// 渲染组件 bundle 相对路径
+    pub entry: String,
+}
+
+/// 第三方 UI 模板贡献点（entry 与 html 二选一；entry=组件 bundle，html=静态模板）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginUiTemplateManifestContribution {
+    /// `<pluginId>/<tplId>` 命名空间（保留名校验在前端 registry）
+    pub id: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
 }
 
 /// 插件配置项 schema（manifest.contributes.configSchema）
@@ -601,6 +638,10 @@ pub(crate) struct PluginManifestFile {
     pub description: Option<String>,
     #[serde(default)]
     pub enabled_by_default: bool,
+    /// 核心通道插件（plugin-ui-contribution-spec [S-9]）：不可卸载、禁用入口对
+    /// 其核心模板不生效。deny_unknown_fields 下必须显式声明。
+    #[serde(default)]
+    pub core: bool,
     /// manifest schema 版本声明：缺省视为当前版本（兼容存量 manifested 商城插件），
     /// 显式声明不支持的版本由 validate_manifest_fields fail fast
     #[serde(default)]
@@ -643,6 +684,7 @@ impl PluginManifestFile {
             description: self.description,
             builtin: false,
             enabled_by_default: self.enabled_by_default,
+            core: self.core,
             contributes: self.contributes,
             permissions: self.permissions,
             origin: self.origin,

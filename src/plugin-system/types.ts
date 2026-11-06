@@ -396,6 +396,11 @@ export interface PolarisPluginManifest {
   description?: string
   builtin: boolean
   enabledByDefault: boolean
+  /**
+   * 核心通道插件（plugin-ui-contribution-spec [S-9]）：承载宿主核心交互渲染
+   * （如 form/ask 委托）。不可卸载；禁用入口对其核心模板不生效。
+   */
+  core?: boolean
   /** 标记为废弃待移除（true=通用，string=具体说明） */
   deprecated?: boolean | string
   contributes: {
@@ -411,6 +416,16 @@ export interface PolarisPluginManifest {
     /** 插件提供的 skill（P4）：<pluginDir>/skills/<id>/SKILL.md，同步到 DataRoot */
     skills?: PluginSkillContribution[]
     styles?: PluginStyleContribution[]
+    /**
+     * 块委托渲染（plugin-ui-contribution-spec [R-8..R-11]）：接管宿主块类型的
+     * 渲染层（form/question）。blockType 白名单由宿主维护；语义层仍在宿主。
+     */
+    blockRenderers?: PluginBlockRendererContribution[]
+    /**
+     * 第三方 UI 模板注册（spec [R-12..R-15]）：id 以插件 id 为命名空间；
+     * entry（组件 bundle）与 html（静态模板）二选一；内置模板名为保留名。
+     */
+    uiTemplates?: PluginUiTemplateContribution[]
     /** 插件配置项 schema。声明后设置页自动渲染配置表单。 */
     configSchema?: PluginConfigFieldSchema[]
   }
@@ -467,6 +482,8 @@ export interface PluginChatCardProps {
   data: unknown
   /** interaction 模式已提交的应答（历史恢复时回显） */
   response?: unknown
+  /** 归属会话 id（v2 交互组件：表单契约登记 component_register 需要；additive 可选） */
+  sessionId?: string
   /** 注入下一轮聊天消息（展示型可用） */
   onSendToChat?: (message: string) => void | Promise<void>
   /** 提交应答（仅 interaction 且 status === 'pending' 时提供） */
@@ -475,4 +492,32 @@ export interface PluginChatCardProps {
 
 export type PluginChatCardComponent = ComponentType<PluginChatCardProps>
 
+/**
+ * 第三方 UI 模板贡献点（spec [R-12..R-14]）。
+ * id 必须 `<pluginId>/<tplId>` 命名空间；entry/html 二选一。
+ */
+export interface PluginUiTemplateContribution {
+  /** 模板 id（`<pluginId>/<tplId>`） */
+  id: string
+  title: string
+  /** 参数 schema（可选，供 AI/面板引用时校验） */
+  schema?: Record<string, unknown>
+  /** 组件 bundle 相对路径（与 html 二选一） */
+  entry?: string
+  /** 静态 HTML 模板（占位符插值，禁脚本——脚本类需求走自由组件） */
+  html?: string
+}
+
 export type PluginChatCardLoader = () => Promise<{ default: PluginChatCardComponent }>
+
+/**
+ * 块委托渲染贡献点（plugin-ui-contribution-spec [R-8]）。
+ * blockType 必须在宿主开放白名单内（BLOCK_RENDERER_TYPES，首期 form/question）；
+ * entry 相对插件目录，组件签名 ({ block }) => JSX。
+ */
+export interface PluginBlockRendererContribution {
+  /** 宿主开放委托的块类型（白名单校验在 registry） */
+  blockType: string
+  /** 渲染组件 bundle 相对路径 */
+  entry: string
+}

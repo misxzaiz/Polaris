@@ -639,6 +639,8 @@ export function handleAIEvent(
             cardKey: resolved.key,
             mode: 'result',
             status: 'ready',
+            // v2 交互组件：表单契约登记（component_register）需要归属会话
+            sessionId: get().sessionId,
             data: parseCardData(event.result, cardBlockInput),
             createdAt: new Date().toISOString(),
           }

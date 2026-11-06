@@ -46,6 +46,7 @@ import { dedupeMessagesById, normalizeRecoveredMessages } from './dedupMessages'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useConfigStore } from '../configStore'
 import { useMarqueeStore } from '../marqueeStore'
+import { takeComponentReceipts as drainComponentReceipts } from '@/services/formHostRegistration'
 
 const log = createLogger('ConversationStore')
 
@@ -2414,11 +2415,23 @@ export function createConversationStore(
           // 派发任务完成报告同理（结果回流：主 AI 无需用户转述即知晓后台任务结果）。
           const pendingBriefing = get().pendingBriefing
           const dispatchReportText = formatPendingDispatchReports(sessionId)
+          // v2 交互组件回执回流：组件表单提交（非阻塞工具）的回执在下一轮注入
+          // （formHostRegistration 组件回执队列；已按 read 模式服务端脱敏）。
+          const componentReceipts = drainComponentReceipts(sessionId)
+          const componentReceiptText = componentReceipts.length
+            ? i18n.t('chat:component.receiptPreamble', {
+                defaultValue:
+                  '用户刚在对话中的交互组件里提交了表单，以下是服务端回执（已按读取模式脱敏），请据此继续：\n{{receipts}}',
+                receipts: componentReceipts.join('\n\n'),
+                interpolation: { escapeValue: false },
+              })
+            : ''
           const oneTimeParts = [
             pendingBriefing
               ? i18n.t('chat:compactHandoff.contextPreamble', { briefing: pendingBriefing })
               : '',
             dispatchReportText,
+            componentReceiptText,
             sendOptions?.oneTimeSystemPrompt ?? '',
           ].filter(Boolean)
           const appendPrompt = oneTimeParts.length > 0

@@ -1,5 +1,5 @@
 /**
- * react import 重写器（代码上下文感知）
+ * 插件模块 import 重写器（代码上下文感知）
  *
  * 为什么不能用裸正则全局替换：插件 bundle 的字符串/模板字面量里可能内嵌代码
  * 模板（如 plugin-forge 的脚手架模板含 react import），盲替换会把模板文本也
@@ -8,11 +8,15 @@
  *
  * 最小词法扫描：跳过字符串字面量（'' "" ``）、模板字面量的 ${} 嵌套、行/块
  * 注释、正则字面量（含引号的正则如 /"/g 若不识别，会把后续配对整个错位），
- * 只在代码上下文匹配并重写：
- *   from "react" / from 'react' / from "react/jsx-runtime" / 同形 require()
+ * 只在代码上下文匹配并重写。
  *
  * 正则 vs 除法的判定用经典启发式：看前一个有效 token——关键字或运算符后是
  * 正则；标识符/数字/`)`/`]`/引号后是除法。对 esbuild 产物足够。
+ *
+ * 规则集（rewriteImports）：
+ * - react / react/jsx-runtime → 宿主 React shim（既有行为，rewriteReactImports）
+ * - polaris-host/<name> → 宿主桥 shim（plugin-ui-contribution-spec [S-1]/[S-3]，
+ *   插件经桥消费宿主通用核心，禁止 import 宿主内部路径）
  */
 
 /** 这些关键字后面跟 `/` 是正则字面量（而非除法） */
@@ -83,14 +87,21 @@ function skipRegexLiteral(code: string, start: number): number {
   return start + 1
 }
 
-const FROM_RE = /^from\s*(['"])react(\/jsx-runtime)?\1/
-const REQUIRE_RE = /^require\(\s*(['"])react(\/jsx-runtime)?\1\s*\)/
+/** 单条重写规则：from '<spec>' 或 require('<spec>') → shim 引用 */
+export interface ImportRewriteRule {
+  /** 匹配 from '<spec>'；与 requireRe 二选一（分开声明，替换文本形态不同） */
+  fromRe?: RegExp
+  /** 匹配 require('<spec>') */
+  requireRe?: RegExp
+  /** m 为命中正则的 exec 结果；返回完整替换文本（覆盖匹配跨度） */
+  replace: (m: RegExpExecArray) => string
+}
 
 /**
- * 重写代码上下文中的 react / react/jsx-runtime 引用为 shimUrl。
+ * 代码上下文感知的重写主循环：逐位置尝试 rules，命中即整段替换。
  * 字符串、模板字面量、注释、正则字面量内的同名文本原样保留。
  */
-export function rewriteReactImports(code: string, shimUrl: string): string {
+export function rewriteImports(code: string, rules: ImportRewriteRule[]): string {
   let out = ''
   let i = 0
   const n = code.length
@@ -122,21 +133,84 @@ export function rewriteReactImports(code: string, shimUrl: string): string {
       i = end
       continue
     }
-    const rest = code.slice(i, i + 80)
-    const fm = FROM_RE.exec(rest)
-    if (fm) {
-      out += `from ${fm[1]}${shimUrl}${fm[1]}`
-      i += fm[0].length
-      continue
+    const rest = code.slice(i, i + 120)
+    let matched = false
+    for (const rule of rules) {
+      const fm = rule.fromRe?.exec(rest)
+      if (fm) {
+        out += rule.replace(fm)
+        i += fm[0].length
+        matched = true
+        break
+      }
+      const rm = rule.requireRe?.exec(rest)
+      if (rm) {
+        out += rule.replace(rm)
+        i += rm[0].length
+        matched = true
+        break
+      }
     }
-    const rm = REQUIRE_RE.exec(rest)
-    if (rm) {
-      out += `require(${rm[1]}${shimUrl}${rm[1]})`
-      i += rm[0].length
-      continue
-    }
+    if (matched) continue
     out += ch
     i++
   }
   return out
+}
+
+const REACT_FROM_RE = /^from\s*(['"])react(\/jsx-runtime)?\1/
+const REACT_REQUIRE_RE = /^require\(\s*(['"])react(\/jsx-runtime)?\1\s*\)/
+const HOST_FROM_RE = /^from\s*(['"])polaris-host\/([A-Za-z0-9_-]+)\1/
+const HOST_REQUIRE_RE = /^require\(\s*(['"])polaris-host\/([A-Za-z0-9_-]+)\1\s*\)/
+
+/** quote 引号：m[1] */
+function quoteOf(m: RegExpExecArray): string {
+  return m[1]
+}
+
+/**
+ * 重写代码上下文中的 react / react/jsx-runtime 引用为 shimUrl。
+ * 字符串、模板字面量、注释、正则字面量内的同名文本原样保留。
+ * （兼容签名：等价 rewriteImports 的 react 单规则形态）
+ */
+export function rewriteReactImports(code: string, shimUrl: string): string {
+  return rewriteImports(code, [
+    { fromRe: REACT_FROM_RE, replace: (m) => `from ${quoteOf(m)}${shimUrl}${quoteOf(m)}` },
+    { requireRe: REACT_REQUIRE_RE, replace: (m) => `require(${quoteOf(m)}${shimUrl}${quoteOf(m)})` },
+  ])
+}
+
+/**
+ * 重写 react 与 polaris-host/<name> 引用（plugin-ui-contribution-spec [S-1]）。
+ * - hostShims[name] = shim blob URL：已注册的宿主桥
+ * - onUnknownHost(name)：未注册桥的兜底（通常返回报错 stub 的 blob URL，
+ *   让插件在 import 阶段拿到明确错误而非裸 SyntaxError）
+ */
+export function rewritePluginImports(
+  code: string,
+  opts: { reactShimUrl: string; hostShims: Record<string, string>; onUnknownHost?: (name: string) => string },
+): string {
+  const rules: ImportRewriteRule[] = [
+    { fromRe: REACT_FROM_RE, replace: (m) => `from ${quoteOf(m)}${opts.reactShimUrl}${quoteOf(m)}` },
+    { requireRe: REACT_REQUIRE_RE, replace: (m) => `require(${quoteOf(m)}${opts.reactShimUrl}${quoteOf(m)})` },
+    {
+      fromRe: HOST_FROM_RE,
+      replace: (m) => {
+        const name = m[2]
+        const url = opts.hostShims[name] ?? opts.onUnknownHost?.(name)
+        if (!url) return m[0] // 无兜底：保留原样（import 阶段自然失败）
+        return `from ${quoteOf(m)}${url}${quoteOf(m)}`
+      },
+    },
+    {
+      requireRe: HOST_REQUIRE_RE,
+      replace: (m) => {
+        const name = m[2]
+        const url = opts.hostShims[name] ?? opts.onUnknownHost?.(name)
+        if (!url) return m[0]
+        return `require(${quoteOf(m)}${url}${quoteOf(m)})`
+      },
+    },
+  ]
+  return rewriteImports(code, rules)
 }

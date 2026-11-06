@@ -33,7 +33,6 @@ pub mod bus_mcp_server;
 pub mod dispatch_mcp_server;
 pub mod nexus_verdict;
 pub mod nexus_pipeline;
-pub mod prd_preview_mcp_server;
 pub mod scheduler;
 pub mod scheduler_daemon;
 pub mod scheduler_mcp_server;

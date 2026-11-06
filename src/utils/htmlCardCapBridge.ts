@@ -13,6 +13,30 @@ export const CARD_CAP_PROTOCOL = 1
 /** 白名单：卡片内脚本可调用的 cap 目标。只读/低风险优先，扩展需审慎。 */
 export const CARD_CAP_ALLOWLIST = new Set(['cap.todo', 'cap.kv'])
 
+/**
+ * 硬编码 deny 清单（plugin-ui-contribution-spec [S-8]）：写类/敏感能力——
+ * 即使被（AI 经 marker）声明也不放行；deny 判定先于 allowlist。
+ * 扩展本清单须修订 spec 并评审（不是提示词约束，是服务端强制）。
+ */
+export const CARD_CAP_DENYLIST = new Set([
+  'cap.bash',
+  'cap.fs',
+  'cap.self.inspect',
+  'cap.self.mutate',
+  'cap.registry',
+  'cap.config',
+  'cap.git',
+  'cap.app.autolaunch',
+  'cap.app.update',
+  'cap.pluginDiscovery',
+  'cap.pluginServiceManager',
+  'cap.hook',
+  'cap.mcp',
+  'cap.voice',
+  'cap.stream.echo',
+  'cap.data_root',
+])
+
 /** 卡片 → 宿主请求（postMessage data） */
 export interface CardCapRequest {
   __polarisCap?: unknown
@@ -44,6 +68,7 @@ export type RouterInvoke = (
 export async function forwardCardCapRequest(
   data: CardCapRequest,
   invoke: RouterInvoke,
+  opts?: { declaredTargets?: ReadonlySet<string> },
 ): Promise<CardCapResponse | null> {
   if (data.__polarisCap !== CARD_CAP_PROTOCOL) return null
   if (typeof data.id !== 'string' || !data.id) return null
@@ -51,6 +76,26 @@ export async function forwardCardCapRequest(
   const target = typeof data.target === 'string' ? data.target : ''
   const payload = data.payload && typeof data.payload === 'object' ? data.payload : {}
 
+  // [S-8] 三重门控：① deny 清单（硬编码，先于一切）② 静态 allowlist
+  // ③ 组件声明白名单（AI 经 marker 声明、宿主登记；未提供 opts 时沿用旧语义）
+  if (CARD_CAP_DENYLIST.has(target)) {
+    return {
+      __polarisCap: CARD_CAP_PROTOCOL,
+      id: data.id,
+      ok: false,
+      result: null,
+      error: `卡片 Cap 桥：目标 ${target || '(空)'} 属敏感能力，已拒绝（deny 清单）`,
+    }
+  }
+  if (opts?.declaredTargets && !opts.declaredTargets.has(target)) {
+    return {
+      __polarisCap: CARD_CAP_PROTOCOL,
+      id: data.id,
+      ok: false,
+      result: null,
+      error: `卡片 Cap 桥：目标 ${target || '(空)'} 未在组件声明 caps 中，已拒绝`,
+    }
+  }
   if (!CARD_CAP_ALLOWLIST.has(target)) {
     return {
       __polarisCap: CARD_CAP_PROTOCOL,

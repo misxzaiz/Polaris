@@ -8,7 +8,6 @@ import { computerPluginManifest } from '@/plugins/computer/manifest'
 import { requirementPluginManifest } from '@/plugins/requirement/manifest'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
 import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
-import { prdPreviewPluginManifest } from '@/plugins/prd-preview/manifest'
 import { agnesPluginManifest } from '@/plugins/agnes/manifest'
 import { agentGalleryPluginManifest } from '@/plugins/agent-gallery/manifest'
 import { askPluginManifest } from '@/plugins/ask/manifest'
@@ -131,7 +130,6 @@ export function registerBuiltinPlugins(): void {
   )
   pluginRegistry.register(todoPluginManifest)
   pluginRegistry.register(requirementPluginManifest)
-  pluginRegistry.register(prdPreviewPluginManifest)
   pluginRegistry.register(computerPluginManifest)
   pluginRegistry.register(personalHubPluginManifest)
   pluginRegistry.register(agnesPluginManifest)
@@ -166,17 +164,7 @@ export function registerBuiltinPlugins(): void {
     10,
   )
   // builtin 插件聊天卡片 loader 手动注册（无 installPath）
-  // PRD 预览：mcp__polaris-prd-preview__preview_html / read_preview
-  chatCardRegistry.registerBuiltin(
-    'polaris.prd-preview',
-    {
-      id: 'preview-card',
-      mcpServerId: 'polaris-prd-preview',
-      tools: ['preview_html', 'read_preview'],
-      mode: 'result',
-    },
-    () => import('@/plugins/prd-preview/PrdPreviewCard').then((m) => ({ default: m.PrdPreviewCard })),
-  )
+  // （v2 交互组件）PRD 预览壳已退役至插件仓 interactive-component（chatCards entry 形态）
   // Agnes 多模态：mcp__polaris-agnes__generate_image / generate_video / query_video
   chatCardRegistry.registerBuiltin(
     'polaris.agnes',

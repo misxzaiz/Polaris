@@ -10,7 +10,6 @@ use crate::services::plugin_state_service::PluginStateService;
 const MCP_CONFIG_RELATIVE_PATH: &str = ".polaris/claude/mcp.json";
 const MCP_BIN_NAME: &str = "polaris-mcp";
 const REQUIREMENTS_MCP_SERVER_NAME: &str = "polaris-requirements";
-const PRD_PREVIEW_MCP_SERVER_NAME: &str = "polaris-prd-preview";
 const COMPUTER_MCP_SERVER_NAME: &str = "polaris-computer";
 const ASK_MCP_SERVER_NAME: &str = "polaris-ask";
 const DISPATCH_MCP_SERVER_NAME: &str = "polaris-dispatch";
@@ -20,7 +19,6 @@ const PH_MCP_SERVER_NAME: &str = "polaris-ph";
 const BUS_MCP_SERVER_NAME: &str = "polaris-bus";
 const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
 const REQUIREMENTS_PLUGIN_ID: &str = "polaris.requirements";
-const PRD_PREVIEW_PLUGIN_ID: &str = "polaris.prd-preview";
 const COMPUTER_PLUGIN_ID: &str = "polaris.computer";
 const ASK_PLUGIN_ID: &str = "polaris.ask";
 const DISPATCH_PLUGIN_ID: &str = "polaris.dispatch";
@@ -150,10 +148,6 @@ pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
             mcp_server_names: &[REQUIREMENTS_MCP_SERVER_NAME],
         },
         BuiltinPluginMcpManifest {
-            plugin_id: PRD_PREVIEW_PLUGIN_ID,
-            mcp_server_names: &[PRD_PREVIEW_MCP_SERVER_NAME],
-        },
-        BuiltinPluginMcpManifest {
             plugin_id: COMPUTER_PLUGIN_ID,
             mcp_server_names: &[COMPUTER_MCP_SERVER_NAME],
         },
@@ -200,15 +194,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             COMPUTER_MCP_SERVER_NAME,
             "POLARIS_COMPUTER_MCP_PATH",
-            McpServerArgsMode::ConfigDirAndWorkspace,
-            false,
-        ),
-    );
-    registry.register_plugin_server(
-        PRD_PREVIEW_PLUGIN_ID,
-        PluginMcpServerContribution::builtin(
-            PRD_PREVIEW_MCP_SERVER_NAME,
-            "POLARIS_PRD_PREVIEW_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
         ),
@@ -888,7 +873,6 @@ fn capability_to_builtin_servers(capability: &str) -> Vec<&'static str> {
         "ask" => vec![ASK_MCP_SERVER_NAME],
         "dispatch" => vec![DISPATCH_MCP_SERVER_NAME],
         "requirements" => vec![REQUIREMENTS_MCP_SERVER_NAME],
-        "prd-preview" => vec![PRD_PREVIEW_MCP_SERVER_NAME],
         "agnes" => vec![AGNES_MCP_SERVER_NAME],
         "personal-hub" => vec![PH_MCP_SERVER_NAME],
         // 硬编码工具能力（虚拟 server，无内置同名 MCP server）
@@ -1290,6 +1274,7 @@ mod tests {
             description: None,
             builtin: false,
             enabled_by_default: true,
+            core: false,
             contributes: PluginManifestContributes {
                 views: Vec::new(),
                 adapters: Vec::new(),
