@@ -21,6 +21,12 @@ codegen-units = 16
 [profile.dev.package."*"]
 # 依赖库使用较高优化级别，减少调试时的噪音
 opt-level = 2
+# 依赖库不生成调试信息（2026-11-07 构建性能治理）：
+# 根因：target/debug/deps 实测 5.5G，大头是依赖 rlib 内嵌的行号调试信息
+# （如 windows-sys 单份 rlib 126M，锁文件里 6 个大版本 × 13 个指纹家族共 20 份）。
+# 依赖内部无需断点/单步，去 debug 显著缩 rlib 体积并提速依赖编译；
+# 自身代码（polaris_lib）仍走 [profile.dev] 的 debug=1，断点调试不受影响。
+debug = false
 # 依赖库使用更多 codegen units 以加快编译
 codegen-units = 16
 
