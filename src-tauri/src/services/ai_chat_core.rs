@@ -2418,6 +2418,14 @@ pub async fn answer_question(
         pending.remove(&call_id);
     }
 
+    // 2.5 交互中继回传（插件 form/ask 工具接管场景）：登记过回调的交互，
+    // 把应答 POST 回插件 server——其挂起的 tools/call 拿到应答返回。
+    crate::services::interaction_relay::interaction_notify(
+            &call_id,
+            &serde_json::to_string(&answer).unwrap_or_default(),
+            false,
+        );
+
     // 3. emit `question_answered`，前端把卡片切到 answered
     let first = answer.answers.first().cloned().unwrap_or_default();
     let event = serde_json::json!({

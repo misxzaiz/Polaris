@@ -241,7 +241,7 @@ impl ToolRegistry {
                         "[SimpleAI] 工具 {} 被 toolProvider 覆盖，路由到 {}",
                         name, mcp_name
                     );
-                    return mcp_call_raced(pool, &mcp_name, args, ctx.abort_rx).await;
+                    return mcp_call_raced(pool, &mcp_name, args, ctx, ctx.abort_rx).await;
                 }
             }
         }
@@ -251,7 +251,7 @@ impl ToolRegistry {
             None => {
                 if let Some(pool) = &self.mcp_pool {
                     if super::mcp::McpClientPool::parse_tool_name(name).is_some() {
-                        return mcp_call_raced(pool, name, args, ctx.abort_rx).await;
+                        return mcp_call_raced(pool, name, args, ctx, ctx.abort_rx).await;
                     }
                 }
                 ToolOutcome::fail(format!("Unknown tool: {}", name))
@@ -279,10 +279,25 @@ async fn mcp_call_raced(
     pool: &super::mcp::McpClientPool,
     mcp_name: &str,
     args: &Value,
+    ctx: &ToolContext<'_>,
     abort_rx: &watch::Receiver<bool>,
 ) -> ToolOutcome {
+    // 交互中继隐参（插件交互工具 v2）：给所有插件 MCP 调用注入引擎会话 id，
+    // 插件 server（form/ask/render_component 等）用它经宿主中继反查前端会话——
+    // 插件自己拿不到会话身份（spawn env 为空、tools/call 无上下文），这是
+    // 「宿主提供基础支持」的最小注入面。_ 前缀标记：不出现在工具 schema。
+    let args = if let Some(obj) = args.as_object() {
+        let mut m = obj.clone();
+        m.insert(
+            "_polarisSessionId".to_string(),
+            Value::String(ctx.session_id.to_string()),
+        );
+        Value::Object(m)
+    } else {
+        args.clone()
+    };
     tokio::select! {
-        outcome = pool.call(mcp_name, args) => outcome,
+        outcome = pool.call(mcp_name, &args) => outcome,
         _ = abort_signal(abort_rx) => ToolOutcome::fail("工具调用已被用户中断".to_string()),
     }
 }

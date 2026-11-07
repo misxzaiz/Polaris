@@ -137,7 +137,7 @@ fn broadcast_to_frontend(frontend_id: &str, payload: Value) {
 // ─── begin / submit-notify 端点实现（HTTP 桥 + Tauri command 双入口） ───────
 
 /// 插件拉起交互：广播事件 + 登记 callback
-pub fn interaction_begin(args: &Value) -> Result<Value> {
+pub fn interaction_begin(state: &crate::state::AppState, args: &Value) -> Result<Value> {
     let conversation_id = str_field(args, "conversationId")?;
     let kind = str_field(args, "kind")?; // "form" | "ask"
     let decl = args.get("decl").cloned().unwrap_or(Value::Null);
@@ -150,6 +150,7 @@ pub fn interaction_begin(args: &Value) -> Result<Value> {
         )))?;
 
     let interaction_id = format!("ic-{}", uuid::Uuid::new_v4());
+    let component_id = format!("relay-{}", interaction_id);
     let payload_type = if kind == "form" { "form" } else { "question" };
 
     // 广播事件：contextId 用前端会话 id（路由缺陷修复核心）
@@ -161,6 +162,32 @@ pub fn interaction_begin(args: &Value) -> Result<Value> {
         return Err(AppError::ValidationError("decl 必须是对象".into()));
     }
     broadcast_to_frontend(&frontend_id, payload);
+
+    // 语义层登记（spec [R-1]：信任边界留宿主）——form 走 form_core hold、
+    // ask 走 pending question，提交/应答经既有管线回喂 AI
+    match kind.as_str() {
+        "form" => {
+            let fields = decl.get("fields").cloned().unwrap_or(json!([]));
+            let read = decl.get("read").and_then(|v| v.as_str()).unwrap_or("full");
+            let title = decl.get("title").and_then(|v| v.as_str()).unwrap_or("交互面板");
+            let hold = crate::services::form_flow::build_component_hold(
+                decl.get("formId").and_then(|v| v.as_str()).unwrap_or(&interaction_id),
+                &conversation_id,
+                &component_id,
+                read,
+                title,
+                &[], // secretKeys 由 form_core 在回执时按 decl 处理
+            );
+            if let Ok(mut holds) = state.form_holds.lock() {
+                holds.insert(hold.form_id.clone(), hold);
+            }
+        }
+        "ask" => {
+            // ask 问答：广播 question 事件（questions 由插件 decl 携带），
+            // 应答走 answer_question 既有管线
+        }
+        _ => {}
+    }
 
     // 登记回调
     let entry = RelayEntry {
