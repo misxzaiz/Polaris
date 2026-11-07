@@ -22,6 +22,7 @@ import { ThinkingOrb } from '../common/ThinkingOrb';
 import { ChatNavigator } from '../session/ChatNavigator';
 import { DynamicIsland } from '../dynamic-island';
 import { ArtifactVersionsProvider, buildArtifactVersionsMap } from '../chatBlocks/artifactVersions';
+import { ChatSessionContext } from '../chatBlocks/chatSessionContext';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE, ISLAND_HEADER_SPACER_STYLE } from '../chatUtils/constants';
 import { useMessageAutoScroll, BOTTOM_ANCHOR_EPSILON_PX } from './useMessageAutoScroll';
 import { ScrollToBottomButton } from '../common/ScrollToBottomButton';
@@ -268,6 +269,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
 
   return (
     <ChatScrollContext.Provider value={{ suspendFollow }}>
+      <ChatSessionContext.Provider value={sessionId}>
       <ArtifactVersionsProvider value={artifactVersions}>
         <div className="h-full w-full relative">
         {/* 灵动岛：顶部居中浮动进度指示器，per-session（多窗口各自独立） */}
@@ -328,6 +330,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
 
         </div>
       </ArtifactVersionsProvider>
+      </ChatSessionContext.Provider>
     </ChatScrollContext.Provider>
   );
 });

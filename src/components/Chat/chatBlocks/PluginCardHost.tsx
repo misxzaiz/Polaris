@@ -16,6 +16,7 @@ import { chatCardRegistry } from '@/plugin-system/chatCardRegistry'
 import type { PluginChatCardComponent, PluginChatCardProps } from '@/plugin-system/types'
 import type { PluginCardBlock } from '@/types'
 import { copyToClipboard } from '@/utils/clipboard'
+import { useChatSessionId } from './chatSessionContext'
 import { createLogger } from '@/utils/logger'
 import { respondPluginCard } from '@/services/tauri/chatService'
 
@@ -132,6 +133,8 @@ export function PluginCardHost({ block, onSendToChat }: PluginCardHostProps) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadKey, setLoadKey] = useState(0)
+  // 会话兜底（hook 顺序纪律：无条件调用）：块缺 sessionId（历史恢复旧块）时回执路由仍可命中
+  const ctxSessionId = useChatSessionId()
 
   // 注册表加载 key：Code Mode 载体块（toolName="execute"）必须用解析出的 cardKey
   // （eventHandler 创建块时由 resolveWithKey 写入），历史块缺失时回落 toolName。
@@ -187,7 +190,7 @@ export function PluginCardHost({ block, onSendToChat }: PluginCardHostProps) {
     status: block.status,
     data: block.data,
     response: block.response,
-    sessionId: block.sessionId || undefined,
+    sessionId: block.sessionId || ctxSessionId || undefined,
     onSendToChat,
     respond,
   }

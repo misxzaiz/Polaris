@@ -33,7 +33,7 @@ const HOST_BRIDGE_MEMBERS: Record<HostBridgeName, readonly string[]> = {
     'openArtifactSource',
   ],
   form: ['registerComponent', 'submitForm', 'skipForm', 'answerQuestion', 'saveFormTemplate'],
-  cap: ['dispatch'],
+  cap: ['forwardCap'],
 }
 
 /**
@@ -118,6 +118,21 @@ export function ensureArtifactHostRegistered(): Promise<void> {
 export const bridgeImporters = {
   artifact: () => import('../components/Chat/chatBlocks/artifactHostRegistration'),
   form: () => import('../services/formHostRegistration'),
+  cap: () => import('../services/capHostRegistration'),
+}
+
+let capRegistration: Promise<void> | null = null
+
+/** 确保 window.__POLARIS_HOST_CAP__ 已注册（组件 cap 调用门控执行点，按需加载） */
+export function ensureCapHostRegistered(): Promise<void> {
+  capRegistration ??= (async () => {
+    const mod = await bridgeImporters.cap()
+    mod.registerCapHost()
+  })().catch((err) => {
+    capRegistration = null
+    throw err
+  })
+  return capRegistration
 }
 
 let formRegistration: Promise<void> | null = null
@@ -138,6 +153,7 @@ export function ensureFormHostRegistered(): Promise<void> {
 export function resetHostBridgesForTest(): void {
   artifactRegistration = null
   formRegistration = null
+  capRegistration = null
   for (const url of shimUrlCache.values()) URL.revokeObjectURL(url)
   shimUrlCache.clear()
 }
@@ -151,6 +167,7 @@ export async function ensureBridgesReady(code: string): Promise<void> {
   for (const m of code.matchAll(/polaris-host\/([A-Za-z0-9_-]+)/g)) names.add(m[1])
   if (names.has('artifact')) await ensureArtifactHostRegistered()
   if (names.has('form')) await ensureFormHostRegistered()
+  if (names.has('cap')) await ensureCapHostRegistered()
 }
 
 /**
