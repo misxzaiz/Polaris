@@ -13,7 +13,6 @@ import type {
 } from './types'
 import { pluginPanelRegistry } from './panelRegistry'
 import { chatCardRegistry } from './chatCardRegistry'
-import { blockRendererRegistry } from './blockRendererRegistry'
 import { uiTemplateRegistry } from './uiTemplateRegistry'
 import { loadModuleFromFile, resolvePluginEntryPath } from './pluginModuleLoader'
 import { invoke } from '@/services/transport'
@@ -33,15 +32,6 @@ function createChatCardLoader(pluginInstallPath: string, entry: string): PluginC
   return () => loadModuleFromFile(fullPath) as Promise<{ default: React.ComponentType<any> }>
 }
 
-/** 块委托渲染 loader（与 chatCard 同机制：磁盘文件 + react/host 桥 shim 重写） */
-function createBlockRendererLoader(
-  pluginInstallPath: string,
-  entry: string
-): () => Promise<{ default: React.ComponentType<{ block: unknown }> }> {
-  const fullPath = resolvePluginEntryPath(pluginInstallPath, entry)
-  return () => loadModuleFromFile(fullPath) as Promise<{ default: React.ComponentType<{ block: unknown }> }>
-}
-
 class PluginRegistry {
   private manifests = new Map<string, PolarisPluginManifest>()
   /** engineId → pluginId 映射（用于引擎设置页定位来源插件） */
@@ -53,7 +43,6 @@ class PluginRegistry {
     // 单一权威源修复见 plans/plugin-visibility-plan.md）
     registerPluginDefaultUi(manifest.id, manifest.enabledByDefault)
     this.registerPanel(manifest)
-    this.registerBlockRenderers(manifest)
     this.registerUiTemplates(manifest)
     this.registerChatCards(manifest)
     this.registerEngines(manifest)
@@ -70,7 +59,6 @@ class PluginRegistry {
       this.manifests.set(manifest.id, registered)
       registerPluginDefaultUi(registered.id, registered.enabledByDefault)
       this.registerPanel(registered)
-      this.registerBlockRenderers(registered)
       this.registerUiTemplates(registered)
       this.registerChatCards(registered)
       this.registerEngines(registered)
@@ -102,7 +90,6 @@ class PluginRegistry {
       this.manifests.set(manifest.id, registered)
       registerPluginDefaultUi(registered.id, registered.enabledByDefault)
       this.registerPanel(registered)
-      this.registerBlockRenderers(registered)
       this.registerUiTemplates(registered)
       this.registerChatCards(registered)
       engineConfigs.push(registered)
@@ -126,20 +113,6 @@ class PluginRegistry {
         view.panelType,
         manifest.id,
         createPanelLoader(manifest.installPath, panel.entry)
-      )
-    }
-  }
-
-  private registerBlockRenderers(manifest: PolarisPluginManifest): void {
-    const list = manifest.contributes.blockRenderers
-    if (!list || list.length === 0) return
-    // 本贡献点仅面向安装插件（内置壳无 installPath，不迁移到此形态）
-    if (!manifest.installPath) return
-    for (const item of list) {
-      blockRendererRegistry.register(
-        manifest.id,
-        item,
-        createBlockRendererLoader(manifest.installPath, item.entry)
       )
     }
   }

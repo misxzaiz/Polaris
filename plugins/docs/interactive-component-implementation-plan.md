@@ -286,3 +286,41 @@ form/ask 工具注册），使 AI 只能调插件版本。
 1. P3：移除内置 ask server 的 form/ask 工具注册（保留 Claude 原生问答路径）
 2. P4：真机验证（form/ask 委托渲染 + 原始样式 + 回执回流 + 多会话路由）
 3. 通过后 push 两仓 main
+
+---
+
+## 10. 决策记录：ask/form 块渲染回归宿主，块委托机制拆除（2026-11-08）
+
+**用户拍板**：ask/form 不再迁移到插件（「好麻烦啊这两个，先不要跟着迁移」）。
+
+**根因（真机实锤）**：块委托整体失败于 react shim 导出受限——插件 ask-card.tsx 使用
+`useReducer`，而宿主 `pluginModuleLoader.ensureReactShim` 只导出 useState/useEffect/
+useCallback/useMemo/useRef/memo/createElement 等。blob 模块加载在 import 阶段整体抛错
+（`does not provide an export named 'useReducer'`），连带组件卡（同 bundle）一起不可用
+→ form/question/组件三通道全灭。块委托要求插件 bundle 与宿主 shim 导出面严格对齐，
+这一约束对 AI 生成/维护的插件代码过于脆弱，撤销该路线。
+
+**宿主侧（本仓）**：
+- revert c0abb73e(P1) + d950398a(P2)：interaction_relay.rs、ipc begin/cancel 端点、
+  form_submit 回执 POST、mcp_call_raced `_polarisSessionId` 注入全部移除（零调用方）。
+- 前端还原 `FormCard.tsx` + `AskQuestionCard.tsx` 原生渲染（4fe59b14^1 原样取回），
+  chatBlocks/index.tsx 两个 case 回归原生；删除 BlockDelegation.tsx /
+  blockRendererRegistry.ts；types/registry/pluginDiscoveryService/models(plugin.rs)
+  移除 blockRenderers 贡献点。`core` 标志与 `uiTemplates` 贡献点保留（与本回退无关）。
+- 语义层（form_core / ask oneshot / form_submit / answer_question / 审计）从未离开
+  宿主，本次只还原渲染面。
+
+**插件侧（Polaris-plugin/interactive-component v1.1.0）**：
+- server.js 还原四工具（render_component / preview_html / read_preview / list_previews），
+  form + ask_user_question 阻塞工具移除（连同 makeCallbackServer 中继路径）。
+- src/blocks（form-card/ask-card/types）删除；plugin.json 去掉 blockRenderers 贡献。
+- card.tsx 重写为自绘实现（不再依赖宿主 ArtifactPreviewRenderer）：紧凑工具条 +
+  展开/收起 + 源码按钮 + 白底画布 iframe；form 契约（registerComponent/submitForm）
+  与 cap 桥（forwardCap，三重门控宿主侧执行）保留；只用 shim 已导出 hooks。
+
+**验证**：宿主 tsc 0 错 / 相关 vitest 24/24 / cargo check 0 错 / web-only 门控通过；
+插件 esbuild 重打包 11.1kb（无 useReducer）/ 测试 4/4（含 tools/list 四工具金标）。
+
+**遗留**：组件内 cap 调用协议（__polarisCap=1）在自绘卡内直连 polaris-host/cap.forwardCap，
+deny/allowlist/声明三重门控不变；如未来重启块委托迁移，须先解决 shim 导出面
+（要么 shim 补全 React 全量 hooks，要么插件 bundle 内联 React——再议）。

@@ -417,11 +417,6 @@ export interface PolarisPluginManifest {
     skills?: PluginSkillContribution[]
     styles?: PluginStyleContribution[]
     /**
-     * 块委托渲染（plugin-ui-contribution-spec [R-8..R-11]）：接管宿主块类型的
-     * 渲染层（form/question）。blockType 白名单由宿主维护；语义层仍在宿主。
-     */
-    blockRenderers?: PluginBlockRendererContribution[]
-    /**
      * 第三方 UI 模板注册（spec [R-12..R-15]）：id 以插件 id 为命名空间；
      * entry（组件 bundle）与 html（静态模板）二选一；内置模板名为保留名。
      */
@@ -510,14 +505,3 @@ export interface PluginUiTemplateContribution {
 
 export type PluginChatCardLoader = () => Promise<{ default: PluginChatCardComponent }>
 
-/**
- * 块委托渲染贡献点（plugin-ui-contribution-spec [R-8]）。
- * blockType 必须在宿主开放白名单内（BLOCK_RENDERER_TYPES，首期 form/question）；
- * entry 相对插件目录，组件签名 ({ block }) => JSX。
- */
-export interface PluginBlockRendererContribution {
-  /** 宿主开放委托的块类型（白名单校验在 registry） */
-  blockType: string
-  /** 渲染组件 bundle 相对路径 */
-  entry: string
-}

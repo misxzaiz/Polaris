@@ -32,7 +32,7 @@ import {
   unknownManifestTopLevelFields,
 } from '@/plugin-system/schema'
 import { createLogger } from '@/utils/logger'
-import type { PluginBlockRendererContribution, PluginUiTemplateContribution } from '@/plugin-system/types'
+import type { PluginUiTemplateContribution } from '@/plugin-system/types'
 
 const log = createLogger('PluginDiscovery')
 
@@ -303,35 +303,6 @@ function normalizeChatCards(
       tools,
       mode: mode as PluginChatCardContribution['mode'],
     }]
-  })
-}
-
-/**
- * 归一化 blockRenderers 贡献点（plugin-ui-contribution-spec [R-8]）。
- * blockType 白名单与同类型先到先得在 blockRendererRegistry.register 内校验；
- * 此处只做形状归一化（blockType/entry 非空字符串）。
- */
-function normalizeBlockRenderers(
-  value: unknown,
-  errors: string[]
-): PluginBlockRendererContribution[] {
-  if (value === undefined || value === null) return []
-  if (!Array.isArray(value)) {
-    errors.push('contributes.blockRenderers must be an array')
-    return []
-  }
-  return value.flatMap((item, index) => {
-    if (!isRecord(item)) {
-      errors.push('contributes.blockRenderers[' + index + '] must be an object')
-      return []
-    }
-    const blockType = asString(item.blockType)
-    const entry = asString(item.entry)
-    if (!blockType || !entry) {
-      errors.push('contributes.blockRenderers[' + index + '] is invalid (blockType/entry required) and was ignored')
-      return []
-    }
-    return [{ blockType, entry }]
   })
 }
 
@@ -616,7 +587,6 @@ export function validateDiscoveredPlugin(raw: unknown): {
         engines: normalizeEngines(contributes.engines, errors),
         toolProviders: normalizeToolProviders(contributes.toolProviders, ownMcpServerIds, errors),
         styles: normalizeStyles(contributes.styles, errors),
-        blockRenderers: normalizeBlockRenderers(contributes.blockRenderers, errors),
         uiTemplates: normalizeUiTemplates(contributes.uiTemplates, errors),
       },
       permissions: normalizePermissions(raw.permissions),

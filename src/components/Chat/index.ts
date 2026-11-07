@@ -40,6 +40,7 @@ export { AgentRunBlockRenderer } from './tool-calls/AgentRunBlockRenderer';
 export { PlanModeBlockRenderer } from './tool-calls/PlanModeBlockRenderer';
 export { AssaultResultCard } from './tool-calls/AssaultResultCard';
 export { PermissionRequestRenderer } from './tool-calls/PermissionRequestRenderer';
+export { AskQuestionCard } from './tool-calls/AskQuestionCard';
 
 // 消息渲染
 export { renderChatMessage } from './messages/renderChatMessage';

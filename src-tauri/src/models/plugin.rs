@@ -196,25 +196,12 @@ pub struct PluginManifestContributes {
     /// 插件声明的方言适配器（通用插件格式兼容扩展点，见 PluginAdapterManifestContribution）
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapters: Vec<PluginAdapterManifestContribution>,
-    /// 块委托渲染（plugin-ui-contribution-spec [R-8]）：渲染层委托给插件，
-    /// 语义层（form_core/ask oneshot/审计）留宿主。blockType 白名单由前端 registry 校验
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub block_renderers: Vec<PluginBlockRendererManifestContribution>,
     /// 第三方 UI 模板注册（spec [R-12..R-15]）：id 必须以插件 id 为命名空间；
     /// 内置模板名（ask-card/form-card/artifact-card/chart-card）保留不可覆盖
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ui_templates: Vec<PluginUiTemplateManifestContribution>,
 }
 
-/// 块委托渲染贡献点（manifest 声明面；加载与白名单校验在前端 blockRendererRegistry）
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PluginBlockRendererManifestContribution {
-    /// 宿主开放委托的块类型（form/question）
-    pub block_type: String,
-    /// 渲染组件 bundle 相对路径
-    pub entry: String,
-}
 
 /// 第三方 UI 模板贡献点（entry 与 html 二选一；entry=组件 bundle，html=静态模板）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

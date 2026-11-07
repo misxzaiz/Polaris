@@ -6,7 +6,8 @@
 import React from 'react';
 import type { ContentBlock } from '@/types';
 import { ContentBlockErrorBoundary } from '../common/ContentBlockErrorBoundary';
-import { BlockDelegationRenderer } from './BlockDelegation';
+import { AskQuestionCard } from '../tool-calls/AskQuestionCard';
+import { FormCard } from './FormCard';
 import { PlanModeBlockRenderer } from '../tool-calls/PlanModeBlockRenderer';
 import { AgentRunBlockRenderer } from '../tool-calls/AgentRunBlockRenderer';
 import { TaskBoardRenderer } from './TaskBoardRenderer';
@@ -99,17 +100,19 @@ export function renderContentBlock(
         block.previewId
       );
     case 'question':
-      // v2 块委托（spec [R-9]）：语义层（ask oneshot/审计）留宿主，渲染委托
-      // 交互组件插件 ask-card；未命中/失败走宿主兜底卡（[R-10]）
+      // 问答块：宿主原生渲染（AskQuestionCard）。曾短期委托交互组件插件渲染
+      // （块委托试验），因插件 bundle 加载链路脆弱（react shim 导出受限导致
+      // blob 模块整体加载失败）于 2026-11-08 回退宿主原生；语义层 ask 管线
+      // 始终在宿主，此处只还原渲染面。
       return wrapWithErrorBoundary(
-        <BlockDelegationRenderer blockType="question" block={block as never} />,
+        <AskQuestionCard block={block} />,
         block.id
       );
     case 'form':
-      // v2 块委托（spec [R-9]）：form_core/form_submit 管线留宿主，渲染委托
-      // 交互组件插件 form-card；未命中/失败走宿主兜底卡（[R-10]）
+      // 表单工具（schema 驱动面板）：form 拉起事件 → FormCard，提交走 form_submit。
+      // 同 question：块委托试验已回退，渲染回归宿主原生。
       return wrapWithErrorBoundary(
-        <BlockDelegationRenderer blockType="form" block={block as never} />,
+        <FormCard block={block} />,
         block.id
       );
     case 'plan_mode':

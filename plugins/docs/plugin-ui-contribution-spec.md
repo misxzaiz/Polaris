@@ -41,7 +41,13 @@ uiTemplates→templateId 命名空间），禁止跨归属渲染（如渲染他�
 [R-6] 已安装插件（非内置壳）**必须**声明 `card.entry`（bundle 路径）；内置壳形态逐步退役，不再新增。
 [R-7] `card.tools` 按工具名精确匹配；工具下线**必须**保留卡片匹配别名或迁移声明（见 §5 兼容规则）。
 
-### 2.3 `contributes.blockRenderers`（新增——块委托渲染）
+### 2.3 `contributes.blockRenderers`（**已撤销 2026-11-08**——块委托渲染）
+
+> ⚠️ **本贡献点已整体撤销**：真机实锤插件 bundle 与宿主 react shim 导出面对齐过于
+> 脆弱（ask-card 用 useReducer → blob 模块整体加载失败 → form/question/组件三通道
+> 全灭），form/ask 块渲染回归宿主原生（FormCard/AskQuestionCard）。宿主与插件仓
+> 相关实现均已拆除，以下 [R-8..R-11] 仅作历史记录，勿据此实施。详见
+> interactive-component-implementation-plan.md §10。
 
 ```jsonc
 "blockRenderers": [{ "blockType": "form" | "question", "entry": "./dist/blocks/form-card.js" }]

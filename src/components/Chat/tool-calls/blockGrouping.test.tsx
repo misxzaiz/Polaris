@@ -7,40 +7,9 @@
  * - 任何 ≥1 块的组都渲染为折叠组；非流式零可见块（仅汇总条）；
  *   流式默认展开；点击汇总条可展开/收起。
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react';
-
-vi.mock('@/plugin-system/blockRendererRegistry', () => ({
-  blockRendererRegistry: { lookup: (t: string) => stubRegistration(t), list: () => [] },
-  BLOCK_RENDERER_TYPES: ['form', 'question'],
-}));
-
-// v2 块委托：注册表 mock——stub 模板复刻原卡片 DOM 标记（role=form / success 条 /
-// askq-title-*），让 memo comparator 与分组断言继续在 DOM 层成立（真实模板渲染
-// 等价性由插件仓测试覆盖）。
-function stubRegistration(blockType: string) {
-  return {
-    pluginId: 'test-plugin',
-    blockType,
-    loader: async () => ({
-      default: (props: { block: Record<string, unknown> }) => {
-        const b = props.block as Record<string, unknown>;
-        if (blockType === 'form') {
-          const submitted = b.status === 'submitted' || b.status === 'skipped';
-          if (!submitted) {
-            return React.createElement('div', { role: 'form', 'data-form-status': String(b.status) });
-          }
-          return React.createElement('div', {
-            className: b.ok ? 'bg-success-faint/40 border-success/20' : 'bg-error-faint/40 border-error/20',
-          }, String(b.receipt ?? ''));
-        }
-        return React.createElement('div', { role: 'group', 'aria-labelledby': `askq-title-${String(b.id)}` }, String(b.status));
-      },
-    }),
-  };
-}
-
+import { render, fireEvent } from '@testing-library/react';
 import { identifyCollapsibleBlockGroups, renderBlocksWithGrouping } from './blockGrouping';
 import type {
   ArtifactPreviewBlock,
@@ -138,14 +107,14 @@ describe('renderBlocksWithGrouping', () => {
     expect(container.textContent).toContain('先看下文件');
   });
 
-  it('面板穿插：一条汇总条 + 面板原序渲染在组外侧', async () => {
+  it('面板穿插：一条汇总条 + 面板原序渲染在组外侧', () => {
     const { container } = render(
       <div>{renderBlocksWithGrouping([tool('Read'), form(), tool('Grep')], false)}</div>
     );
     const bars = container.querySelectorAll('button[aria-expanded]');
     expect(bars).toHaveLength(1);
-    // form 面板不被折叠吞掉（块委托模板渲染出 role=form；异步加载 → waitFor）
-    await waitFor(() => expect(container.querySelector('[role="form"]')).toBeTruthy());
+    // form 面板不被折叠吞掉（FormCard 渲染出 role=form）
+    expect(container.querySelector('[role="form"]')).toBeTruthy();
   });
 
   it('流式：无汇总条包装，过程块直接平铺可见', () => {

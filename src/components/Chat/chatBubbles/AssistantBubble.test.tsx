@@ -9,51 +9,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { AssistantBubble } from './AssistantBubble';
 import type { AssistantChatMessage, FormBlock, QuestionBlock } from '@/types';
-import { vi } from 'vitest';
-
-vi.mock('@/plugin-system/blockRendererRegistry', () => ({
-  blockRendererRegistry: { lookup: (t: string) => stubRegistration(t), list: () => [] },
-  BLOCK_RENDERER_TYPES: ['form', 'question'],
-}));
-
-// v2 块委托：注册表 mock——stub 模板复刻原卡片 DOM 标记（role=form / success 条 /
-// askq-title-*），让 memo comparator 与分组断言继续在 DOM 层成立（真实模板渲染
-// 等价性由插件仓测试覆盖）。
-function stubRegistration(blockType: string) {
-  return {
-    pluginId: 'test-plugin',
-    blockType,
-    loader: async () => ({
-      default: (props: { block: Record<string, unknown> }) => {
-        const b = props.block as Record<string, unknown>;
-        if (blockType === 'form') {
-          const submitted = b.status === 'submitted' || b.status === 'skipped';
-          if (!submitted) {
-            return React.createElement('div', { role: 'form', 'data-form-status': String(b.status) });
-          }
-          return React.createElement('div', {
-            className: b.ok ? 'bg-success-faint/40 border-success/20' : 'bg-error-faint/40 border-error/20',
-          }, String(b.receipt ?? ''));
-        }
-        const answered = b.status === 'answered';
-        return React.createElement(
-          'div',
-          { role: 'group', 'aria-labelledby': `askq-title-${String(b.id)}` },
-          React.createElement(
-            'div',
-            { className: answered ? 'bg-success-faint' : '' },
-            `question.answeredCount: ${(b.answers as unknown[] | undefined)?.length ?? 0}`,
-          ),
-          JSON.stringify(b.answers ?? []),
-        );
-      },
-    }),
-  };
-}
-
 
 /** 构造一条含 form 块的 assistant 消息 */
 function makeAssistantMessage(
@@ -121,13 +79,13 @@ function readFormStatus(container: HTMLElement): {
 describe('AssistantBubble memo comparator', () => {
   // 非流式消息的正文直出路径（过程块折叠为汇总条，form/plugin_card 等面板块原序直出），
   // 本组测试关注 memo comparator 放行逻辑，通过 DOM 变化观察。
-  it('非流式消息 blocks 引用变化时重渲染（form 块从 pending → submitted 上屏）', async () => {
+  it('非流式消息 blocks 引用变化时重渲染（form 块从 pending → submitted 上屏）', () => {
     const { container, rerender } = render(
       <AssistantBubble message={makeAssistantMessage([makeFormBlock('pending')])} />
     );
 
-    // pending 态：可交互表单面板存在（委托模板异步加载 → waitFor 首帧），无 success 条
-    await waitFor(() => expect(readFormStatus(container).pendingForm).toBe(true));
+    // pending 态：可交互表单面板存在，无 success 条
+    expect(readFormStatus(container).pendingForm).toBe(true);
     expect(readFormStatus(container).submitted).toBe(false);
 
     // 模拟 form-answered：blocks 引用变化，form 块转为 submitted
@@ -136,17 +94,17 @@ describe('AssistantBubble memo comparator', () => {
     );
 
     // 修复后应重渲染：表单面板消失，success 条出现
-    await waitFor(() => expect(readFormStatus(container).submitted).toBe(true));
     expect(readFormStatus(container).pendingForm).toBe(false);
+    expect(readFormStatus(container).submitted).toBe(true);
   });
 
-  it('非流式消息 blocks 引用相同时不重渲染（DOM 不变）', async () => {
+  it('非流式消息 blocks 引用相同时不重渲染（DOM 不变）', () => {
     const message = makeAssistantMessage([makeFormBlock('pending')]);
     const { container, rerender } = render(
       <AssistantBubble message={message} />
     );
 
-    await waitFor(() => expect(readFormStatus(container).pendingForm).toBe(true));
+    expect(readFormStatus(container).pendingForm).toBe(true);
 
     // 同引用重新渲染
     rerender(<AssistantBubble message={message} />);
@@ -156,17 +114,16 @@ describe('AssistantBubble memo comparator', () => {
     expect(readFormStatus(container).submitted).toBe(false);
   });
 
-  it('流式消息 question 块 status 变化时重渲染（提交答案后立即切已答态）', async () => {
+  it('流式消息 question 块 status 变化时重渲染（提交答案后立即切已答态）', () => {
     // 构造 pending 态 question 块，isStreaming=true（AI 等待答案期间）
     const pendingMsg = makeAssistantMessage([makeQuestionBlock('pending')]) as AssistantChatMessage & { isStreaming: boolean };
     pendingMsg.isStreaming = true;
 
     const { container, rerender } = render(<AssistantBubble message={pendingMsg} />);
 
-    // pending 态：存在问答委托卡（未答态，有"提交"按钮；委托异步加载 → waitFor）
-    await waitFor(() =>
-      expect(container.querySelector('[role="group"][aria-labelledby^="askq-title-"]')).toBeTruthy(),
-    );
+    // pending 态：存在 AskQuestionCard（未答态，有"提交"按钮）
+    const pendingCard = container.querySelector('[role="group"][aria-labelledby^="askq-title-"]');
+    expect(pendingCard).toBeTruthy();
 
     // 模拟提交答案：updateQuestionBlock → 新 blocks 引用 + question status='answered'
     const answeredMsg = makeAssistantMessage([makeQuestionBlock('answered')]) as AssistantChatMessage & { isStreaming: boolean };
@@ -183,14 +140,13 @@ describe('AssistantBubble memo comparator', () => {
     expect(container.textContent).toContain('yes');
   });
 
-  it('流式消息 question 块 status 相同时不重渲染（DOM 不变）', async () => {
+  it('流式消息 question 块 status 相同时不重渲染（DOM 不变）', () => {
     const pendingMsg = makeAssistantMessage([makeQuestionBlock('pending')]) as AssistantChatMessage & { isStreaming: boolean };
     pendingMsg.isStreaming = true;
 
     const { container, rerender } = render(<AssistantBubble message={pendingMsg} />);
-    await waitFor(() =>
-      expect(container.querySelector('[role="group"][aria-labelledby^="askq-title-"]')).toBeTruthy(),
-    );
+    const before = container.querySelector('[role="group"][aria-labelledby^="askq-title-"]');
+    expect(before).toBeTruthy();
 
     // 同引用重新渲染（status 不变）
     rerender(<AssistantBubble message={pendingMsg} />);
