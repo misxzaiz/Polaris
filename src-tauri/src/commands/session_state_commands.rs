@@ -39,7 +39,7 @@ fn state_db_path() -> std::path::PathBuf {
 }
 
 /// 获取（或懒初始化）状态库实例
-pub(crate) fn db() -> Result<Arc<SessionStateDb>> {
+fn db() -> Result<Arc<SessionStateDb>> {
     let mut guard = SESSION_STATE_DB
         .lock()
         .map_err(|e| crate::error::AppError::StateError(format!("锁会话状态库失败: {}", e)))?;

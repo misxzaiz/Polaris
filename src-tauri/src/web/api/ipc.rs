@@ -350,10 +350,6 @@ pub async fn handle_ipc_bridge(
         }
 
         // ── Contract Router: 统一转发总线（契约第三步 P2）───────────────
-        // ── 交互中继（插件 form/ask 工具的宿主基础支持） ─────────────────────
-        "interaction_begin" => dispatch_interaction_begin(&state, &args),
-        "interaction_cancel" => dispatch_interaction_cancel(&state, &args),
-
         "router_dispatch" => dispatch_router_dispatch(&state, &args).await,
         "respond_permission_request" => dispatch_respond_permission_request(&state, &args).await,
         "router_dispatch_stream" => dispatch_router_dispatch_stream(&state, &args).await,
@@ -2855,22 +2851,6 @@ fn dispatch_session_reconcile(args: &Value) -> Result<Json<Value>, WebError> {
     )
     .map_err(|e| WebError::Internal(format!("session_reconcile 失败: {}", e)))?;
     Ok(Json(serde_json::to_value(r).unwrap()))
-}
-
-/// 插件交互拉起（form/ask）：广播事件到前端会话 + 登记插件回调
-fn dispatch_interaction_begin(state: &crate::state::AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let r = crate::services::interaction_relay::interaction_begin(state, args)
-        .map_err(|e| WebError::BadRequest(format!("interaction_begin 失败: {}", e.to_message())))?;
-    Ok(Json(r))
-}
-
-/// 插件交互取消（超时/跳过收尾）
-fn dispatch_interaction_cancel(state: &crate::state::AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = args.get("interactionId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    // cancel = 主动取走 entry 并通知插件 skipped
-    crate::services::interaction_relay::interaction_notify(&id, "用户已取消", true)
-        .map_err(|e| WebError::Internal(format!("interaction_cancel 失败: {}", e.to_message())))?;
-    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 fn dispatch_session_register(args: &Value) -> Result<Json<Value>, WebError> {
