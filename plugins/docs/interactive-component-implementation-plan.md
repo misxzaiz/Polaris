@@ -265,3 +265,24 @@ interactive-component/
 **wait:true 实现路径**（零新机制）：插件 server 本地开回调端口（ask_mcp_server「阻塞等主进程回包」同款模式）→ component_register 登记 hold + 挂起点 → form_submit 回执既喂挂起的工具调用也走卡片事件。超时纪律沿用 FORM_WAIT_TIMEOUT_SECS(600s) + 迟到「表单已失效」。
 
 **效果**：自由组件补上「审批门/确认门」类场景（AI 等你操作完再继续），非阻塞保持「先渲染后补数据」场景——由 AI 按需在 marker 里选 wait。
+
+### 9.3 P1/P2 实施后遗留问题（2026-11-07 真机复验发现）
+
+**双工具共存问题**：内置 ask server 的 form/ask 工具与插件的 form/ask 工具**同时暴露给 AI**。
+AI 调了内置版 → 旧 contextId 路由缺陷 → 面板不渲染。修复 = P3（移除内置 ask server 的
+form/ask 工具注册），使 AI 只能调插件版本。
+
+**新发现——内置 ask server spawn 不稳定**：log 反复出现"无法定位 polaris-mcp"导致
+`polaris-ask` server 跳过（spawn 失败），但其工具曾在会话早期成功注册过 → 后续仍被调用。
+此为**存量基础设施问题**（polaris_mcp 二进制定位机制），与本分支无关但加剧了调试复杂度。
+
+**当前 git 状态**：
+- 主仓 main：8fad28b5→c0abb73e(P1)→d950398a(P2)→54ef04f9(阻塞定案)→4fe59b14(合并)→8d451b67(cap shim 修复)→未 push
+- 插件仓 main：337bc68(样式修复)→334b934(模板CSS)→21ceb70(form/ask 阻塞工具)→337bc68→未 push
+- 插件 server 已实现 form/ask_user_question 阻塞工具 + render_component + preview/read/list
+- 宿主已有 interaction_relay（begin/notify/sweep）+ mcp_call_raced _polarisSessionId 注入
+
+**下一步（新会话）**：
+1. P3：移除内置 ask server 的 form/ask 工具注册（保留 Claude 原生问答路径）
+2. P4：真机验证（form/ask 委托渲染 + 原始样式 + 回执回流 + 多会话路由）
+3. 通过后 push 两仓 main
