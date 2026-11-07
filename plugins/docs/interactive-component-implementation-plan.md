@@ -250,3 +250,18 @@ interactive-component/
 冒烟驱动修复（已入库）：`d3416f18`（前端 manifest 镜像缺 core/blockRenderers/uiTemplates + shim 命名导出 + 解构遗漏 + block sessionId）、`576c372b`（replaceInstalled/registerInstalled 漏挂注册——安装插件路径从未注册新贡献点）。
 
 **合并前剩余**：form/ask 委托的真人可见标签页回归（打开 localhost:9828 登录 98279829++，粘贴 form/ask 提示词各一轮，确认字段/选项卡渲染并提交）——自动化环境（IAB 后台节流+WS idle）无法代劳，真人操作不受影响。
+
+### 9.2 阻塞语义定案（2026-11-07 用户拍板）
+
+**阻塞与否由 AI 调用时选择，默认值按工具语义固定**：
+
+| 工具 | 默认 | AI 可覆盖 | 回执到达 |
+|---|---|---|---|
+| ask_user_question | 阻塞 | 否（工具语义即等待） | oneshot 同回合 |
+| form | 阻塞 | 否（collect/dispatch 都等提交） | oneshot 同回合 |
+| render_component 无 form | 非阻塞 | 否（纯展示无回执面） | — |
+| render_component + form 契约 | 非阻塞 | **✅ wait:true → 阻塞** | 默认：下一条消息注入 · wait:true：同回合 |
+
+**wait:true 实现路径**（零新机制）：插件 server 本地开回调端口（ask_mcp_server「阻塞等主进程回包」同款模式）→ component_register 登记 hold + 挂起点 → form_submit 回执既喂挂起的工具调用也走卡片事件。超时纪律沿用 FORM_WAIT_TIMEOUT_SECS(600s) + 迟到「表单已失效」。
+
+**效果**：自由组件补上「审批门/确认门」类场景（AI 等你操作完再继续），非阻塞保持「先渲染后补数据」场景——由 AI 按需在 marker 里选 wait。
