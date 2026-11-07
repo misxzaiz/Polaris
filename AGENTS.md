@@ -40,6 +40,11 @@
 > **本地已落地**（对照 ZG）：`typecheck` script（2026-10-10）。
 > **本地缺**（对照 ZG）：`clippy`/`knip`/`husky` 脚本门槛——`clippy` 存量 warning 治理见「Clippy 治理」节；`knip`/`husky` 是后续工作项。
 
+> **构建入口纪律（2026-11-07 target 膨胀治理）**：
+> - dev 一律走 `pnpm tauri:dev:web`（或 `pnpm tauri:dev`）；**禁跑裸 `cargo build`**——全 target 构建会把 1.5G staticlib / cdylib 一并重编（二者仅移动端消费，dev 循环只走 rlib）。
+> - 验证只用固定命令：`cargo check` / `cargo clippy --lib` / web-only 门禁。不同 feature/参数组合会在 `target/` 各留一套指纹产物（实测 windows-sys 6 个大版本 × 13 个指纹家族、polaris bin 9 个指纹家族），入口收敛后不再增殖。
+> - rustc 工具链升级后旧产物全部失效但 cargo 不回收——**升级完先 `cargo clean`**（或 `cargo sweep`）再继续开发，否则 target 只增不减。
+
 ---
 
 ## 二、核心原则（先立规范，再写代码）
