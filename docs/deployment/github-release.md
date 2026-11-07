@@ -171,6 +171,61 @@ git push origin vx.x.x
 
 ---
 
+## v11.2.5 构建记录
+
+**构建时间**: 2026-11-07 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v11.2.5
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_11.2.5_x64-setup.exe` | 28.4 MB | Windows x64 | NSIS 安装程序 |
+| `polaris_11.2.5_x64_en-US.msi` | 37.6 MB | Windows x64 | MSI 安装程序 |
+| `polaris_11.2.5_amd64.deb` | 44.7 MB | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-11.2.5-1.x86_64.rpm` | 44.7 MB | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_11.2.5_amd64.AppImage` | 118.9 MB | Linux x64 | 便携版（双击运行） |
+| `polaris-web-11.2.5-win-x64.zip` | 15.4 MB | Windows x64 | Web 独立服务 |
+| `polaris-web-11.2.5-linux-x86_64.tar.gz` | 16.4 MB | Linux x64 | Web 独立服务 |
+| `polaris-web-11.2.5-macos-arm64.tar.gz` | 14.8 MB | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-11.2.5.apk` | 20.6 MB | Android arm64-v8a | Android APK |
+| `latest.json` | 6 KB | - | 自动更新元数据 |
+
+> 所有桌面端安装包（`.exe` / `.msi` / `.deb` / `.rpm` / `.AppImage`）均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `true`，本版本**支持 Tauri 自动更新**——已生成 `latest.json` 与各安装包的 `.sig` 签名文件。updater 端点指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将拉取本版本元数据。
+
+### 三工作流耗时
+
+Release APK 7m34s / Release Web 13m38s / Release（桌面）31m51s，一次通过零重跑。
+
+### 变更内容
+
+本版本自 v11.2.4 起共 19 个提交，主线为**交互组件插件 v1.0.0 与交互中继**：
+
+#### 交互组件与交互中继（plugin-ui）
+- feat(plugin-ui): 宿主桥与组件表单契约（A+B 批）
+- refactor(prd): PRD 预览域退役至交互组件插件（D1）
+- feat(chat): 块委托渲染注册表 + form/ask 渲染退役（D+D2 批）
+- feat(plugin-ui): uiTemplates 贡献点 + cap 桥三重门控（E 批）
+- merge: 交互组件插件 v1.0.0 与宿主 UI 贡献规范落地（feat/interactive-component）
+- feat(plugin-ui): 交互中继 P1——插件交互工具的宿主基础支持
+- feat(plugin-ui): 交互中继 P2——插件 server 接管 form/ask 工具 + 会话隐参注入
+- fix(plugin-ui): 真机冒烟暴露的四处缺陷修正
+- fix(plugin-ui): replaceInstalled/registerInstalled 漏挂 blockRenderers/uiTemplates 注册
+- fix(plugin-ui): cap 桥 shim 成员名与插件卡导入对齐（forwardCap）
+
+#### 工程治理与文档
+- perf(build): dev 依赖产物去调试信息——deps rlib 缩身提速重编
+- docs(agents): 增构建入口纪律——禁裸 cargo build、验证只走固定命令、rustc 升级先 clean
+- docs(plans): polaris_lib workspace 拆分立项 spec（待评审）
+- docs(plugins): 阻塞语义定案——wait 由 AI 按需声明，默认值按工具语义固定
+- docs(plugins): 交互组件实施记录 / 真机冒烟记录（8 通过/1 环境阻塞）/ P1/P2 遗留问题与下一步计划
+
+---
+
 ## v11.2.0 构建记录
 
 **构建时间**: 2026-11-04 (UTC)
