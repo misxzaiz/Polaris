@@ -29,6 +29,7 @@ import { TokenStatsTab } from './tabs/TokenStatsTab';
 import { createLogger } from '@/utils/logger';
 import { applyWebServer, getConfig } from '@/services/tauri/configService';
 import { currentMode } from '@/services/transport';
+import { useContainerWidth } from '@/hooks';
 import type { Config, ConfigPatch } from '@/types';
 
 const log = createLogger('SettingsPage');
@@ -71,6 +72,13 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [webStatusRefreshKey, setWebStatusRefreshKey] = useState(0);
   const snippetTabRef = useRef<PromptSnippetTabRef>(null);
+
+  // 布局方向由容器实测宽驱动，不走 CSS 媒体查询。
+  // 根因：WebView2 在分数缩放(125%)+全屏切换下媒体查询评估会陈旧/部分失效，
+  // 导致同一断点的 sm: 规则混合生效，设置页偶发翻成上下堆叠（见 plans/settings-layout-width-driven.md）。
+  // ResizeObserver 读真实布局盒宽，不经过该评估路径，天然免疫；且真变窄时仍得到正确的响应式行为。
+  const { ref: bodyRef, width: bodyWidth } = useContainerWidth<HTMLDivElement>(window.innerWidth);
+  const wideLayout = bodyWidth >= 640;
 
   // 同步远程配置到本地：仅在首次加载时执行，避免保存后 useEffect 覆盖 localConfig
   // 保存操作由 handleSaveCurrentTab 直接管理 localConfig 和 baseConfigRef
@@ -223,9 +231,10 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
       </div>
 
       {/* 主体内容 */}
-      <div className="flex min-h-0 flex-col sm:flex-row flex-1 overflow-hidden">
+      <div ref={bodyRef} className={`flex min-h-0 ${wideLayout ? 'flex-row' : 'flex-col'} flex-1 overflow-hidden`}>
         {/* 左侧导航 */}
         <SettingsSidebar
+          wide={wideLayout}
           activeTab={activeTab}
           onTabChange={setActiveTab}
           searchQuery={searchQuery}

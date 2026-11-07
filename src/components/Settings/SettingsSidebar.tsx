@@ -38,6 +38,12 @@ export interface SettingsNavItem {
 }
 
 interface SettingsSidebarProps {
+  /**
+   * 是否宽布局（横排导航在左）。由 SettingsPage 按容器实测宽计算后传入，
+   * 不再用 CSS 媒体查询自判——WebView2 分数缩放下媒体查询会陈旧/部分失效
+   * （见 plans/settings-layout-width-driven.md）。
+   */
+  wide: boolean;
   activeTab: SettingsTabId;
   onTabChange: (tab: SettingsTabId) => void;
   searchQuery: string;
@@ -65,7 +71,7 @@ const NAV_ITEMS: SettingsNavItem[] = [
 /** 桌面端专属 Tab ID */
 const DESKTOP_ONLY_TABS: SettingsTabId[] = ['app-update', 'web'];
 
-export function SettingsSidebar({ activeTab, onTabChange, searchQuery, onSearchChange }: SettingsSidebarProps) {
+export function SettingsSidebar({ wide, activeTab, onTabChange, searchQuery, onSearchChange }: SettingsSidebarProps) {
   const { t } = useTranslation('settings');
   const isDesktop = isTauri();
   const navItems = useMemo(
@@ -74,9 +80,16 @@ export function SettingsSidebar({ activeTab, onTabChange, searchQuery, onSearchC
   );
 
   return (
-    <div data-theme-panel className="sm:w-56 sm:flex-shrink-0 sm:border-r sm:border-b-0 border-b border-border-subtle bg-background-elevated flex sm:flex-col">
-      {/* 搜索框 — 小屏隐藏，大屏显示 */}
-      <div className="hidden sm:block p-3 border-b border-border-subtle">
+    <div
+      data-theme-panel
+      className={
+        wide
+          ? 'w-56 flex-shrink-0 border-r border-border-subtle bg-background-elevated flex flex-col'
+          : 'border-b border-border-subtle bg-background-elevated flex'
+      }
+    >
+      {/* 搜索框 — 窄布局隐藏，宽布局显示 */}
+      <div className={`${wide ? 'block' : 'hidden'} p-3 border-b border-border-subtle`}>
         <div className="relative">
           <input
             type="text"
@@ -91,15 +104,17 @@ export function SettingsSidebar({ activeTab, onTabChange, searchQuery, onSearchC
         </div>
       </div>
 
-      {/* 导航列表 — 小屏水平滚动，大屏垂直列表 */}
-      <nav className="flex sm:flex-col overflow-x-auto sm:overflow-y-auto sm:flex-1 py-0 sm:py-2">
+      {/* 导航列表 — 窄布局水平滚动横条，宽布局垂直列表 */}
+      <nav className={`flex ${wide ? 'flex-col flex-1 overflow-y-auto py-2' : 'overflow-x-auto py-0'}`}>
         {navItems.map((item) => (
           <button
             key={item.id}
             onClick={() => onTabChange(item.id)}
-            className={`flex-shrink-0 flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors sm:w-full ${
+            className={`flex-shrink-0 ${wide ? 'w-full' : ''} flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
               activeTab === item.id
-                ? 'bg-primary/10 text-primary border-b-2 sm:border-b-0 sm:border-r-2 border-primary'
+                ? wide
+                  ? 'bg-primary/10 text-primary border-r-2 border-primary'
+                  : 'bg-primary/10 text-primary border-b-2 border-primary'
                 : 'text-text-secondary hover:bg-surface hover:text-text-primary'
             }`}
           >
