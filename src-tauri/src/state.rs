@@ -373,6 +373,8 @@ pub fn create_app_state(
     // 与历史 StaticPermission 等价）+ FileAuditSink 审计落盘（tamper-evident 哈希链）。
     let state_context_store: Arc<Mutex<ContextMemoryStore>> = Arc::new(Mutex::new(ContextMemoryStore::new()));
     let event_broadcast = crate::web::EventBroadcaster::new(256);
+    // 交互中继注入广播通道（插件 form/ask 拉起事件经此到前端）
+    crate::services::interaction_relay::set_broadcaster(std::sync::Arc::new(event_broadcast.clone()));
     // 插件服务管理器：router block 的 cap.pluginDiscovery 需要注入，AppState 构造也需要
     // （plugin_uninstall_with_cleanup 会先停 PluginServiceManager 服务）；提前创建一次共享。
     // P1-1（2026-10-24 审计）：注入宿主保留端口（web 服务 + ask_listener 池），

@@ -536,6 +536,14 @@ impl Capability for AiChatCapability {
                             form_answered_event,
                         ));
 
+                        // 交互中继回传（插件 form 工具接管场景）：登记过回调的交互，
+                        // 把回执 POST 回插件 server——其挂起的 tools/call 拿到回执返回。
+                        crate::services::interaction_relay::interaction_notify(
+                            &hold.form_id,
+                            &receipt,
+                            false,
+                        );
+
                         // 把回执喂给挂起的 form 工具调用（handle_form_frame 等一个 oneshot）：
                         // 用户提交完成 → 引擎的 tool_result 拿到 receipt，AI 在同一回合继续跑。
                         if let Some(entry) = s.take_form_answer_sender(&hold.form_id) {

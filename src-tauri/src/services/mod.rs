@@ -44,6 +44,7 @@ pub mod ai_chat_core;
 pub mod context_core;
 pub mod form_core;
 pub mod form_flow;
+pub mod interaction_relay;
 pub mod form_template;
 pub mod ai_history_core;
 pub mod router;
