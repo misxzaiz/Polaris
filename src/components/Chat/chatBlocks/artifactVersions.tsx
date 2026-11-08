@@ -96,7 +96,9 @@ export function buildArtifactVersionsMap(messages: ChatMessage[]): Map<string, A
     }
   }
   for (const list of map.values()) {
-    list.sort((a, b) => (a.version ?? 0) - (b.version ?? 0) || a.previewId.localeCompare(b.previewId));
+    // previewId 空串兜底：历史块/异构数据缺 previewId 时 localeCompare 会抛
+    // TypeError（在会话级 provider 里炸整个消息视图，比块级错误更重）
+    list.sort((a, b) => (a.version ?? 0) - (b.version ?? 0) || (a.previewId ?? '').localeCompare(b.previewId ?? ''));
   }
   return map;
 }
