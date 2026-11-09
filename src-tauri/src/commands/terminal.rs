@@ -69,11 +69,21 @@ pub struct TerminalExitEvent {
 ///
 /// 桌面端通过 Tauri event system 通知 WebView；Web 模式通过 broadcast channel
 /// 转发到 WebSocket。事件 payload 保持和前端现有类型一致。
+///
+/// `Dual` 变体（cap.terminal 全局出口用）：桌面构建下浏览器客户端（Remote 面板
+/// /tauri:dev:web 前端）只听得见 WS、Tauri webview 只听得见 emit——双通道同发
+/// 各取所需（同 lib.rs plugin.service.status 双通道先例）；未知 sessionId 的
+/// 订阅方按既有纪律过滤，无害。
 #[derive(Clone)]
 pub enum TerminalEventSink {
     #[cfg(all(feature = "tauri-app", not(target_os = "android")))]
     Tauri(AppHandle),
     Web(crate::web::EventBroadcaster),
+    #[cfg(all(feature = "tauri-app", not(target_os = "android")))]
+    Dual {
+        tauri: AppHandle,
+        web: crate::web::EventBroadcaster,
+    },
 }
 
 impl TerminalEventSink {
@@ -89,6 +99,15 @@ impl TerminalEventSink {
                     "payload": event,
                 });
                 let _ = tx.send(payload.to_string());
+            }
+            #[cfg(all(feature = "tauri-app", not(target_os = "android")))]
+            TerminalEventSink::Dual { tauri, web } => {
+                let _ = tauri.emit("terminal:output", event.clone());
+                let payload = serde_json::json!({
+                    "event": "terminal:output",
+                    "payload": event,
+                });
+                let _ = web.send(payload.to_string());
             }
         }
     }
@@ -106,8 +125,42 @@ impl TerminalEventSink {
                 });
                 let _ = tx.send(payload.to_string());
             }
+            #[cfg(all(feature = "tauri-app", not(target_os = "android")))]
+            TerminalEventSink::Dual { tauri, web } => {
+                let _ = tauri.emit("terminal:exit", event.clone());
+                let payload = serde_json::json!({
+                    "event": "terminal:exit",
+                    "payload": event,
+                });
+                let _ = web.send(payload.to_string());
+            }
         }
     }
+}
+
+// ============================================================================
+// cap.terminal 全局事件出口（plans/terminal-plugin-spec.md §四）
+//
+// 旧命令层按调用方逐会话传 sink（Tauri 命令传 Tauri / Web IPC 传 Web）；
+// RouterBus 能力没有调用方上下文可传，故由两个进程入口在启动时注入一次：
+// 桌面 lib.rs setup 注入 Dual（Tauri webview + WS 各取所需），web-only
+// run_web_server 注入 Web。未注入时 cap.terminal create 显式报错。
+// ============================================================================
+
+static TERMINAL_EVENT_SINK: std::sync::OnceLock<TerminalEventSink> = std::sync::OnceLock::new();
+
+/// 注入全局终端事件出口（幂等：重复注入后者被忽略并返回 Err 承载原值）。
+/// 显式 std Result：本文件顶部 `use crate::error::Result` 是 AppError 别名，
+/// 单参别名写 `Result<(), TerminalEventSink>` 会被解析成 `Result<((), T), AppError>`。
+pub fn set_global_terminal_sink(
+    sink: TerminalEventSink,
+) -> std::result::Result<(), TerminalEventSink> {
+    TERMINAL_EVENT_SINK.set(sink)
+}
+
+/// cap.terminal create 取事件出口用
+pub fn global_terminal_sink() -> Option<TerminalEventSink> {
+    TERMINAL_EVENT_SINK.get().cloned()
 }
 
 /// 终端会话管理器
@@ -596,22 +649,13 @@ pub fn terminal_get(
     manager.get_session(&session_id)
 }
 
-/// 在外部系统终端中运行命令
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn terminal_open_in_external(
+/// 在外部系统终端中运行命令（桌面实现核心；旧命令与 cap.terminal open_in_external 共用）
+#[cfg(all(feature = "tauri-app", not(target_os = "android")))]
+pub fn open_in_external_impl(
     command: String,
     cwd: Option<String>,
     env: Option<HashMap<String, String>>,
 ) -> Result<()> {
-    // 根因：外部系统终端（cmd / gnome-terminal 等）是桌面概念，android 上
-    // 无外部终端可拉起，直接返回错误
-    #[cfg(target_os = "android")]
-    {
-        let _ = (&command, &cwd, &env);
-        return Err(AppError::ProcessError("外部终端仅在桌面端可用".to_string()));
-    }
-    #[cfg(not(target_os = "android"))]
     {
     use std::process::Command;
 
@@ -711,5 +755,26 @@ pub fn terminal_open_in_external(
     }
 
     Ok(())
+    }
+}
+
+/// 在外部系统终端中运行命令
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn terminal_open_in_external(
+    command: String,
+    cwd: Option<String>,
+    env: Option<HashMap<String, String>>,
+) -> Result<()> {
+    // 根因：外部系统终端（cmd / gnome-terminal 等）是桌面概念，android 上
+    // 无外部终端可拉起，直接返回错误
+    #[cfg(target_os = "android")]
+    {
+        let _ = (&command, &cwd, &env);
+        return Err(AppError::ProcessError("外部终端仅在桌面端可用".to_string()));
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        open_in_external_impl(command, cwd, env)
     }
 }

@@ -628,6 +628,16 @@ pub fn run() {
             let state = app.state::<AppState>();
             let _ = state.app_handle.set(app.handle().clone());
 
+            // cap.terminal 全局事件出口（plans/terminal-plugin-spec.md §四）：
+            // 桌面 = Dual 双通道（Tauri webview 走 emit、浏览器客户端走 WS），
+            // 与 plugin.service.status 双通道先例同构。旧命令 per-session sink 不受影响。
+            let _ = crate::commands::terminal::set_global_terminal_sink(
+                crate::commands::terminal::TerminalEventSink::Dual {
+                    tauri: app.handle().clone(),
+                    web: state.event_broadcast.clone(),
+                },
+            );
+
             // ── 第七步阶段 A2：cap.ai.chat 注册（AI 会话唯一入口）─────────────
             // 业务核需要 &AppState；此处以 clone_for_web 的 Arc 持有
             // （全部业务字段与本源 Arc 共享）。幂等：独立 Web 模式重复注册无害。
@@ -650,6 +660,12 @@ pub fn run() {
                 // 广播 plugin_card 事件复用既有 eventHandler 渲染/回填。
                 let _ = state.router.register_handle(Box::new(
                     crate::services::router::UiRenderCapability::with_state(chat_state.clone()),
+                ));
+                // cap.terminal —— 终端 PTY 能力（插件终端面板 terminal-desk 的驱动
+                // 通道；过渡期旧 terminal_* 命令并行双轨，见 plans/terminal-plugin-spec.md）。
+                // 与 cap.ai.chat 同装配点：需要 Arc<AppState>（terminal_manager 持有）。
+                let _ = state.router.register_handle(Box::new(
+                    crate::services::router::TerminalCapability::with_state(chat_state.clone()),
                 ));
                 let _ = state
                     .router
@@ -1566,6 +1582,10 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let host = cli_host
         .unwrap_or_else(|| config.web.host.clone());
     let state = Arc::new(app_state);
+    // cap.terminal 全局事件出口：web-only 构建无 Tauri emit，WS 广播单通道
+    let _ = crate::commands::terminal::set_global_terminal_sink(
+        crate::commands::terminal::TerminalEventSink::Web(state.event_broadcast.clone()),
+    );
     // 第七步阶段 A2：cap.ai.chat / cap.stream.echo 注册（独立 Web 模式）
     let _ = state
         .router
@@ -1585,6 +1605,12 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let _ = state
         .router
         .register_handle(Box::new(crate::services::router::UiRenderCapability::with_state(
+            state.clone(),
+        )));
+    // cap.terminal —— 终端 PTY 能力（独立 Web 模式；插件终端面板驱动通道）
+    let _ = state
+        .router
+        .register_handle(Box::new(crate::services::router::TerminalCapability::with_state(
             state.clone(),
         )));
     let web_server = web::server::WebServer::new(state.clone());

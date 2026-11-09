@@ -23,7 +23,8 @@ pub async fn terminal_discover_scripts(workspace_path: String) -> Result<Vec<Dis
     discover_scripts_in_workspace(Path::new(&workspace_path))
 }
 
-fn discover_scripts_in_workspace(workspace_path: &Path) -> Result<Vec<DiscoveredTerminalScript>> {
+/// pub(crate)（cap.terminal discover_scripts 复用）：扫描工作区可运行脚本
+pub fn discover_scripts_in_workspace(workspace_path: &Path) -> Result<Vec<DiscoveredTerminalScript>> {
     if !workspace_path.exists() || !workspace_path.is_dir() {
         return Err(AppError::InvalidPath("工作区路径不存在或不是目录".to_string()));
     }
