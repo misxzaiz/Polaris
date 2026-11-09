@@ -50,7 +50,7 @@ describe('pluginStore', () => {
   // ==========================================================================
 
   describe('manifest visibility defaults', () => {
-    const hiddenPlugin = 'polaris.agnes'
+    const hiddenPlugin = 'polaris.example-hidden'
 
     beforeEach(() => {
       clearPluginDefaultUi(pluginId)

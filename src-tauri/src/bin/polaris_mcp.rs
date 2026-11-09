@@ -8,7 +8,7 @@
 //! ## 独立 MCP server（直接处理请求）
 //! ```shell
 //! polaris-mcp requirements <config_dir> [workspace_path]
-//! polaris-mcp agnes <config_dir> [workspace_path]
+//! polaris-mcp ph <config_dir> [workspace_path]（同类 ConfigDirAndWorkspace 形态示例）
 //! polaris-mcp ph <config_dir> [workspace_path]
 //! polaris-mcp computer <config_dir> [workspace_path]
 //! ```
@@ -22,7 +22,6 @@
 use std::path::PathBuf;
 
 use polaris_lib::services::{
-    agnes_mcp_server::run_agnes_mcp_server,
     ask_mcp_server::{run_ask_mcp_server, AskMcpConfig},
     browser_mcp_server::{run_browser_mcp_server, BrowserMcpConfig},
     personal_hub_mcp_server::run_ph_mcp_server,
@@ -48,7 +47,7 @@ fn main_impl() -> Result<()> {
     let subcommand = args.get(1).ok_or_else(|| {
         AppError::ValidationError(
             "缺少子命令。用法：polaris-mcp <subcommand> [args...]\n\
-             可用子命令：agnes, ph, computer, bus, scheduler, ask, browser"
+             可用子命令：ph, computer, bus, scheduler, ask, browser"
                 .to_string(),
         )
     })?;
@@ -57,9 +56,6 @@ fn main_impl() -> Result<()> {
 
     match subcommand.as_str() {
         // ── 独立 MCP server（ConfigDirAndWorkspace 模式） ──────────
-        "agnes" => {
-            let (config_dir, workspace_path) = parse_config_dir_args(sub_args, "agnes")?;
-            run_agnes_mcp_server(&config_dir, workspace_path)
         }
         "ph" => {
             let (config_dir, workspace_path) = parse_config_dir_args(sub_args, "ph")?;
@@ -99,7 +95,7 @@ fn main_impl() -> Result<()> {
             })
         }
         other => Err(AppError::ValidationError(format!(
-            "未知子命令：{other}。可用子命令：agnes, ph, computer, bus, scheduler, ask, browser"
+            "未知子命令：{other}。可用子命令：ph, computer, bus, scheduler, ask, browser"
         ))),
 }
 

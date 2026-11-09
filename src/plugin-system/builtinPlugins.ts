@@ -6,7 +6,6 @@ import { fileExplorerToolbarSlot } from './fileExplorerToolbarSlot'
 import { GitStatusIndicator } from '@/components/FileExplorer/GitStatusIndicator'
 import { computerPluginManifest } from '@/plugins/computer/manifest'
 import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
-import { agnesPluginManifest } from '@/plugins/agnes/manifest'
 import { askPluginManifest } from '@/plugins/ask/manifest'
 import { browserPluginManifest } from '@/plugins/browser/manifest'
 import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
@@ -126,7 +125,6 @@ export function registerBuiltinPlugins(): void {
   )
   pluginRegistry.register(computerPluginManifest)
   pluginRegistry.register(personalHubPluginManifest)
-  pluginRegistry.register(agnesPluginManifest)
   pluginRegistry.register(askPluginManifest)
   pluginRegistry.register(browserPluginManifest)
   pluginRegistry.register(schedulerPluginManifest)
@@ -135,9 +133,6 @@ export function registerBuiltinPlugins(): void {
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
     import('@/components/PersonalHub/PersonalHubPanel').then((m) => ({ default: m.PersonalHubPanel })),
-  )
-  pluginPanelRegistry.register('agnes', 'polaris.agnes', () =>
-    import('@/plugins/agnes/AgnesPanel').then((m) => ({ default: m.default })),
   )
   pluginPanelRegistry.register('scheduler', 'polaris.scheduler', () =>
     import('@/components/Scheduler/SchedulerPanel').then((m) => ({ default: m.default })),
@@ -153,17 +148,6 @@ export function registerBuiltinPlugins(): void {
     10,
   )
   // builtin 插件聊天卡片 loader 手动注册（无 installPath）
-  // Agnes 多模态：mcp__polaris-agnes__generate_image / generate_video / query_video
-  chatCardRegistry.registerBuiltin(
-    'polaris.agnes',
-    {
-      id: 'media-card',
-      mcpServerId: 'polaris-agnes',
-      tools: ['generate_image', 'generate_video', 'query_video'],
-      mode: 'result',
-    },
-    () => import('@/plugins/agnes/AgnesMediaCard').then((m) => ({ default: m.AgnesMediaCard })),
-  )
   // cap.ui.render 帧统一渲染器（question/form/confirm/template/custom）
   // 后端 cap.ui.render 发帧 toolName 默认即 'ui.render'，精确 key 命中。
   // 见 plans/ui-template-runtime-v1.md §4（含 UI 模板运行时注册能力）。

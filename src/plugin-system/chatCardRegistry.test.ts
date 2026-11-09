@@ -79,8 +79,8 @@ return r;`
   })
 
   it('多命中时优先 return 语句所指调用（execute 返回值与其卡片 data 同源）', () => {
-    register('polaris-agnes', ['query_video'])
-    const code = `await tools["polaris-agnes"].query_video({ videoId: "v" });
+    register('example-agnes', ['query_video'])
+    const code = `await tools["example-agnes"].query_video({ videoId: "v" });
 return await tools["polaris-interactive"].read_preview({ previewId: "p1" });`
     const entry = chatCardRegistry.resolve('execute', { code })
     expect(entry).toBeDefined()
@@ -88,9 +88,9 @@ return await tools["polaris-interactive"].read_preview({ previewId: "p1" });`
   })
 
   it('多命中且 return 无对齐 → 首个命中兜底', () => {
-    register('polaris-agnes', ['query_video'])
-    const code = `const a = await tools["polaris-agnes"].query_video({});
+    register('example-agnes', ['query_video'])
+    const code = `const a = await tools["example-agnes"].query_video({});
 const b = await tools["polaris-interactive"].read_preview({});`
-    expect(chatCardRegistry.resolve('execute', { code })?.mcpServerId).toBe('polaris-agnes')
+    expect(chatCardRegistry.resolve('execute', { code })?.mcpServerId).toBe('example-agnes')
   })
 })

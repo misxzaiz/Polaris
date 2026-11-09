@@ -26,11 +26,6 @@ describe('plugin MCP contributions', () => {
         transport: 'stdio',
       }),
     ]))
-
-    // 废弃插件（agnes，enabledByDefault=false）默认不启用
-    expect(servers).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'polaris-agnes' }),
-    ]))
   })
 
   it('filters Computer MCP when its plugin is disabled (关闭即不注入)', () => {
