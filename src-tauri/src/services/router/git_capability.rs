@@ -8,7 +8,7 @@
 //!   payload 其余字段 = 原命令参数（camelCase **原样透传**，master-plan 裁决 3：
 //!   casing 维持现状，P2 起新协议才定标）。
 //! - 唯一入口：PR-2b 起本能力直调 `services::git::GitService`（业务核），旧命令层
-//!   `commands/git.rs` 已整域摘除（对齐 todo_capability 范式，不留双轨）。camelCase
+//!   `commands/git.rs` 已整域摘除（capability 单入口范式，不留双轨）。camelCase
 //!   参数提取与旧命令签名一一对应，保证「能力返回 JSON ≡ 旧命令 Ok(T) 序列化」。
 //! - `Reply` 错误通道仅 `Result<Value, String>`（router/mod.rs 契约），错误串格式
 //!   `message (details)`，对齐前端 `parseGitError` 的呈现习惯。结构化错误载荷 P2a 扩。

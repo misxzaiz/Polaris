@@ -90,7 +90,7 @@ describe('注入块', () => {
     const block = buildCapDigestBlock(CAPS)
     expect(block).toContain('[cap 能力速查 · 3 项')
     expect(block).toContain('- cap.todo（待办）：待办事项 CRUD')
-    expect(block).toContain('cap.stream.echo（流式回显）（流式，同步 cap_dispatch 不可调）')
+    expect(block).toContain('cap.stream.echo（流式回显）（流式，同步总线转发不可调）')
   })
 
   it('详情块含 describe JSON；无 describe 时给 cap_list 指引', () => {

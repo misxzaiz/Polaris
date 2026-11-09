@@ -687,7 +687,7 @@ mod tests {
         let params = json!({
             "name": FORM_TOOL_NAME,
             "arguments": {
-                "target": "cap.todo",
+                "target": "cap.kv",
                 "action": "create",
                 "fields": [{ "name": "content", "type": "string" }]
             }

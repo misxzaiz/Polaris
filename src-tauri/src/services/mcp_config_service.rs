@@ -440,7 +440,7 @@ impl WorkspaceMcpConfigService {
     ///
     /// 内置 MCP 的 `builtin` 标记为 true，SimpleAI 分支据此跳过 `aiToolAccess`
     /// 门控（内置默认信任）；外部插件由 SimpleAI 分支另行检查 `aiToolAccess`。
-    /// `plugin_id` 携带真实归属插件（如 `polaris.computer`），供 cap.mcp 管理面聚合。
+    /// `plugin_id` 携带真实归属插件（如 `polaris.scheduler`），供 cap.mcp 管理面聚合。
     /// 全部已注册 server 名（内置 + 外部插件，未做禁用过滤）。
     ///
     /// 供会话级白名单（config.json `mcp.sessionDefaults`，spec §四 C-P0）
@@ -492,7 +492,7 @@ impl WorkspaceMcpConfigService {
                 self.ask_route_session_id.as_deref(),
             );
             servers.push(ResolvedExternalMcpServer {
-                // 内置 MCP 用真实归属插件 ID（如 polaris.computer），供 cap.mcp 管理面按插件聚合；
+                // 内置 MCP 用真实归属插件 ID（如 polaris.scheduler），供 cap.mcp 管理面按插件聚合；
                 // 无归属的兜底 `polaris.builtin`（仅测试构造会走到）。launcher 用 `builtin: true` 跳过 aiToolAccess。
                 plugin_id: binary
                     .plugin_id
@@ -526,7 +526,7 @@ impl WorkspaceMcpConfigService {
 
         // 工具能力覆盖：插件声明的 toolProvider 替换同 capability 的内置 server。
         // 例如插件声明 capability: "computer" + mcpServerId: "my-computer"，
-        // 则找到内置 "polaris-computer" 移除，并从 external_servers 中取出
+        // 则找到同 capability 的内置 server 移除，并从 external_servers 中取出
         // mcpServerId == "my-computer" 的条目（改名为 polaris-computer）注入。
         apply_tool_provider_overrides(&mut servers, &self.external_servers, &self.tool_providers);
 
