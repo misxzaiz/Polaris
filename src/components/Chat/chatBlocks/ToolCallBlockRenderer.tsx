@@ -24,9 +24,8 @@ import { InlineDiffView } from './InlineDiffView';
 import { JsonTreeView } from '../../Common/JsonTreeView';
 import { isEditTool, isWriteTool } from '@/utils/diffExtractor';
 import { STATUS_CONFIG } from '../chatUtils/constants';
-import { isTodoWriteTool, isGrepTool, parseTodoInput } from '../chatUtils/helpers';
+import { isGrepTool } from '../chatUtils/helpers';
 import { GrepOutputRenderer } from './GrepOutputRenderer';
-import { TodoWriteInputRenderer } from './TodoWriteRenderer';
 import { PatchDiffRenderer } from './PatchDiffRenderer';
 import { CodePreviewView } from './CodePreviewView';
 import { highlightCode } from '@/utils/syntaxHighlight';
@@ -155,14 +154,6 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({
     return null;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable i18n function
   }, [block.output, block.name, block.status]);
-
-  // 解析 TodoWrite 数据
-  const todoData = useMemo(() => {
-    if (isTodoWriteTool(block)) {
-      return parseTodoInput(block.input);
-    }
-    return null;
-  }, [block]);
 
   // 解析 Grep 数据
   const grepData = useMemo(() => {
@@ -472,7 +463,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                 </svg>
-                {todoData ? t('tool.taskList') : t('tool.inputParams')}
+                {t('tool.inputParams')}
                 {isBashTool && fullCommand && (
                   <button
                     onClick={handleCopyCommand}
@@ -497,9 +488,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({
                   </button>
                 )}
               </div>
-              {todoData ? (
-                <TodoWriteInputRenderer data={todoData} />
-              ) : isBashTool && fullCommand ? (
+              {isBashTool && fullCommand ? (
                 <pre className="text-xs font-mono bg-background-surface rounded p-2.5 overflow-x-auto">
                   <code dangerouslySetInnerHTML={{ __html: highlightCode(fullCommand, 'bash') }} />
                 </pre>

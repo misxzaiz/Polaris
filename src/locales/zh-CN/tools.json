@@ -38,7 +38,6 @@
     "taskStop": "终止任务",
     "agent": "代理",
     "skill": "技能",
-    "todoList": "任务列表",
     "workflow": "工作流",
     "analyze": "分析",
     "codeAnalysis": "代码分析",
@@ -98,11 +97,8 @@
     "files": "个文件",
     "matches": "个匹配",
     "results": "个结果",
-    "todos": "个待办",
     "newFile": "新文件",
     "completed": "已完成",
-    "fetchCompleted": "请求完成",
-    "todosUpdated": "已更新 {{count}} 个待办",
-    "todoUpdated": "待办已更新"
+    "fetchCompleted": "请求完成"
   }
 }
