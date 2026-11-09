@@ -20,6 +20,8 @@ import { X, Maximize2, Minimize2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useViewStore, LeftPanelType } from '@/stores/viewStore'
 import { pluginPanelRegistry } from '@/plugin-system/panelRegistry'
+import { pluginRegistry } from '@/plugin-system/registry'
+import { isPluginUiEnabled, usePluginStore } from '@/stores/pluginStore'
 import { PluginPanelHost } from '../Plugins/PluginPanelHost'
 import { ResizeHandle } from '../Common'
 
@@ -256,7 +258,27 @@ export function LeftPanelContent({
   // Hook 必须在条件之外调用
   const storePanelType = useViewStore((state) => state.leftPanelType)
   const storeActiveType = useViewStore((state) => state.activeLeftPanelType)
+  const pluginStates = usePluginStore((state) => state.pluginStates)
   const type = currentType ?? storePanelType
+
+  // shadow 接管消费端（P3-T1 闭环，plans/terminal-plugin-spec.md §六）：
+  // 插件视图声明 slot:'<viewId>' + slotMode:'shadow' 且插件已启用时，目标内建席位
+  // 改渲染插件面板（tab strip 不变）；插件禁用/卸载即回内建（天然回滚）。
+  // 目标消失（内建拆除）时该插件视图恢复独立 tab/面板——接管声明自愈为独立模式。
+  const shadowByBuiltinType = new Map<string, { ownType: string; target: string }>()
+  {
+    const contributions = pluginRegistry.listViewContributions('activityBar')
+    for (const view of contributions) {
+      if (view.slotMode !== 'shadow' || !view.slot) continue
+      if (!isPluginUiEnabled(pluginStates, view.pluginId)) continue
+      const target = contributions.find((t) => t.id === view.slot)
+      if (target && target.panelType in builtinPanels) {
+        shadowByBuiltinType.set(target.panelType, { ownType: view.panelType, target: target.panelType })
+      }
+    }
+  }
+  const shadowOwnToTarget = new Map<string, string>()
+  for (const s of shadowByBuiltinType.values()) shadowOwnToTarget.set(s.ownType, s.target)
 
   // 内建面板查表（新增内建面板在此加一行即可）
   const builtinPanels: Record<string, ReactNode> = {
@@ -277,9 +299,11 @@ export function LeftPanelContent({
 
   // 激活面板：优先外部传入的 activePanelType（tab strip 已归一化），
   // 其次取 store 记忆的激活类型（切换/关闭不丢），兜底用当前打开的类型。
-  const active = activePanelType
+  // shadow 接管下，激活插件自有 panelType 时重定向到其接管的内建席位（内容单渲染）。
+  const rawActive = activePanelType
     ?? (storeActiveType in builtinPanels || pluginPanelRegistry.has(storeActiveType) ? storeActiveType : type)
     ?? (type in builtinPanels || pluginPanelRegistry.has(type) ? type : 'none')
+  const active = (rawActive !== 'none' ? shadowOwnToTarget.get(rawActive) : undefined) ?? rawActive
 
   // 懒挂载集合：已访问过的面板常驻，未访问过的不渲染。
   // 用 ref 而非 state：挂载集合只增不减，不需要触发重渲染（激活切换已由 store 驱动）。
@@ -309,8 +333,11 @@ export function LeftPanelContent({
     if (seen.has(p)) continue // 内建与插件重复类型只渲染一次
     seen.add(p)
     if (!mounted.has(p)) continue // 懒挂载
+    // shadow 接管下，插件自有 panelType 不独立渲染（其内容挂在被接管的内建席位下）
+    if (shadowOwnToTarget.has(p)) continue
     const isActive = p === active
     const isBuiltin = p in builtinPanels
+    const shadow = isBuiltin ? shadowByBuiltinType.get(p) : undefined
     panels.push(
       <div
         key={p}
@@ -318,7 +345,13 @@ export function LeftPanelContent({
         data-panel-coordinate-domain
         style={{ isolation: 'isolate', contain: 'paint' }}
       >
-        {isBuiltin ? builtinPanels[p] : <PluginPanelHost panelType={p} onSendToChat={onSendToChat} />}
+        {shadow ? (
+          <PluginPanelHost panelType={shadow.ownType} onSendToChat={onSendToChat} />
+        ) : isBuiltin ? (
+          builtinPanels[p]
+        ) : (
+          <PluginPanelHost panelType={p} onSendToChat={onSendToChat} />
+        )}
       </div>
     )
   }

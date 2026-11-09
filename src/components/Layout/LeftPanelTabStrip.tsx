@@ -55,9 +55,18 @@ export function LeftPanelTabStrip({ activePanelType }: LeftPanelTabStripProps) {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; panelType: LeftPanelType; isPinned: boolean } | null>(null)
 
   // 全部可用面板（注册表序），过滤被插件禁用者。与 ActivityBar 同源。
+  // shadow 接管视图（P3-T1，plans/terminal-plugin-spec.md §六）不显示独立 tab——
+  // 其内容挂在被接管席位下；目标内建拆除后 slot 找不到目标，本视图自动恢复独立 tab。
+  const shadowOwnPanelTypes = new Set(
+    pluginRegistry
+      .listViewContributions('activityBar')
+      .filter((v) => v.slotMode === 'shadow' && v.slot)
+      .filter((v) => pluginRegistry.listViewContributions('activityBar').some((t) => t.id === v.slot))
+      .map((v) => v.panelType),
+  )
   const availablePanels = pluginRegistry
     .listViewContributions('activityBar')
-    .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
+    .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId) && !shadowOwnPanelTypes.has(view.panelType))
     .map((view) => ({
       panelType: view.panelType as LeftPanelType,
       pluginId: view.pluginId,
