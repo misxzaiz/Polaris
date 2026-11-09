@@ -17,7 +17,6 @@
 //! ```shell
 //! polaris-mcp ask --polaris-port <PORT> --polaris-token <TOKEN> [--polaris-session <ID>]
 //! polaris-mcp browser --polaris-port <PORT> --polaris-token <TOKEN> [--polaris-session <ID>]
-//! polaris-mcp dispatch --polaris-port <PORT> --polaris-token <TOKEN> [--polaris-session <ID>]
 //! ```
 
 use std::path::PathBuf;
@@ -26,7 +25,6 @@ use polaris_lib::services::{
     agnes_mcp_server::run_agnes_mcp_server,
     ask_mcp_server::{run_ask_mcp_server, AskMcpConfig},
     browser_mcp_server::{run_browser_mcp_server, BrowserMcpConfig},
-    dispatch_mcp_server::{run_dispatch_mcp_server, DispatchMcpConfig},
     personal_hub_mcp_server::run_ph_mcp_server,
     scheduler_mcp_server::run_scheduler_mcp_server,
 };
@@ -50,7 +48,7 @@ fn main_impl() -> Result<()> {
     let subcommand = args.get(1).ok_or_else(|| {
         AppError::ValidationError(
             "缺少子命令。用法：polaris-mcp <subcommand> [args...]\n\
-             可用子命令：agnes, ph, computer, bus, scheduler, ask, browser, dispatch"
+             可用子命令：agnes, ph, computer, bus, scheduler, ask, browser"
                 .to_string(),
         )
     })?;
@@ -100,19 +98,9 @@ fn main_impl() -> Result<()> {
                 session_id: cfg.session_id,
             })
         }
-        "dispatch" => {
-            let cfg = parse_ask_listener_args(sub_args, "dispatch")?;
-            run_dispatch_mcp_server(DispatchMcpConfig {
-                port: cfg.port,
-                token: cfg.token,
-                session_id: cfg.session_id,
-            })
-        }
-
         other => Err(AppError::ValidationError(format!(
-            "未知子命令：{other}。可用子命令：agnes, ph, computer, bus, scheduler, ask, browser, dispatch"
+            "未知子命令：{other}。可用子命令：agnes, ph, computer, bus, scheduler, ask, browser"
         ))),
-    }
 }
 
 // ── 辅助函数 ─────────────────────────────────────────────────────────────
@@ -195,7 +183,7 @@ fn parse_ask_listener_args(args: &[String], subcommand: &str) -> Result<AskMcpCo
     let port = port.ok_or_else(|| AppError::ValidationError("缺少 --polaris-port".into()))?;
     let token = token.ok_or_else(|| AppError::ValidationError("缺少 --polaris-token".into()))?;
 
-    // 复用 AskMcpConfig（字段名相同，传给 browser/dispatch 也 OK）
+    // 复用 AskMcpConfig（字段名相同，传给 browser 也 OK）
     Ok(AskMcpConfig {
         port,
         token,

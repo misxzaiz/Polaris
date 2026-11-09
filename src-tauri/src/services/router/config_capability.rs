@@ -48,7 +48,7 @@
 //! `cap.config` 不在 `PolicyPermission` 内置 deny 里（远程**读**是 Web/移动端
 //! 连接与驱动刚需），**写动作**（`patch` / `reset_cli`）也对全部来源放行：
 //! - `Source::Bootstrap`（桌面主窗口 IPC）
-//! - `Source::Plugin`（MCP 桥 `polaris-dispatch` 等，`ask_listener` 注入）
+//! - `Source::Plugin`（MCP 桥 `polaris-ask`/`polaris-browser` 等，`ask_listener` 注入）
 //! - `Source::Remote`（Web/移动端 HTTP，token 已由传输层鉴权 + 脱敏）
 //!
 //! 安全说明：远程写不再按来源拒绝，鉴权完全依赖传输层 token；配置白名单

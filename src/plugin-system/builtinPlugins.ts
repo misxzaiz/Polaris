@@ -8,7 +8,6 @@ import { computerPluginManifest } from '@/plugins/computer/manifest'
 import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
 import { agnesPluginManifest } from '@/plugins/agnes/manifest'
 import { askPluginManifest } from '@/plugins/ask/manifest'
-import { dispatchPluginManifest } from '@/plugins/dispatch/manifest'
 import { browserPluginManifest } from '@/plugins/browser/manifest'
 import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
 import { contractsPluginManifest } from '@/plugins/contracts/manifest'
@@ -129,13 +128,11 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(personalHubPluginManifest)
   pluginRegistry.register(agnesPluginManifest)
   pluginRegistry.register(askPluginManifest)
-  pluginRegistry.register(dispatchPluginManifest)
   pluginRegistry.register(browserPluginManifest)
   pluginRegistry.register(schedulerPluginManifest)
   pluginRegistry.register(contractsPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
-  )
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
     import('@/components/PersonalHub/PersonalHubPanel').then((m) => ({ default: m.PersonalHubPanel })),
   )

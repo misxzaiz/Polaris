@@ -25,7 +25,7 @@ use models::config::{Config, HealthStatus};
 use services::config_store::ConfigStore;
 use services::logger::Logger;
 #[cfg(feature = "tauri-app")]
-use commands::dispatch::{dispatch_report_status, dispatch_create_task, dispatch_list_tasks, dispatch_delete_task};
+use commands::dispatch::{dispatch_report_status, dispatch_create_task};
 #[cfg(feature = "tauri-app")]
 use commands::{
     get_directory_info, get_home_dir, get_server_config, set_server_config,
@@ -1084,8 +1084,6 @@ pub fn run() {
             // 派发任务（dispatch_task MCP）状态回报
             dispatch_report_status,
             dispatch_create_task,
-            dispatch_list_tasks,
-            dispatch_delete_task,
             // 工作区相关
             validate_workspace_path,
             get_directory_info,

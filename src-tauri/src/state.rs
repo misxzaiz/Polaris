@@ -415,8 +415,8 @@ pub fn create_app_state(
             .permissions
             .clone();
         // ui_control_enabled 一并载入：关闭（默认）时策略层追加 Plugin 源对 cap.ui*/
-        // cap.self.mutate* 的 deny，补齐 polaris-dispatch(cap_dispatch) 旁路——
-        // 前端挂载门只摘 polaris-bus（见 conversationStoreUtils.getDisabledPluginMcpServers）。
+        // cap.self.mutate* 的 deny，补齐前端挂载门的盲区——
+        // 挂载门只摘 polaris-bus（见 conversationStoreUtils.getDisabledPluginMcpServers）。
         let ui_control_enabled = config_store_arc
             .lock()
             .unwrap()

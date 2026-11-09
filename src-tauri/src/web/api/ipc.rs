@@ -69,15 +69,9 @@ pub async fn handle_ipc_bridge(
 
         // ── Snippets ───────────────────────────────────────────────────────
 
-        // ── Dispatched tasks (dispatch_task MCP) ───────────────────────────
+        // ── Dispatched tasks（/dispatch 命令路径） ──────────────────────────
         "dispatch_report_status" => dispatch_report_dispatch_status(&state, &args),
         "dispatch_create_task" => dispatch_create_dispatch_task(&state, &args),
-        "dispatch_list_tasks" => {
-            let tasks = state.list_dispatched_tasks();
-            serde_json::to_value(tasks)
-                .map(Json)
-                .map_err(|e| WebError::Internal(format!("序列化派发任务失败: {}", e)))
-        }
         // ── 专家/专家团(自定义 + 用户自建,内置 corpus 已移除) ─────────
         "agent_corpus_rosters" => crate::commands::agent_corpus::corpus_rosters_inner()
             .map_err(bad_request)
@@ -163,14 +157,6 @@ pub async fn handle_ipc_bridge(
         )
         .map_err(WebError::BadRequest)
         .and_then(to_json),
-
-        "dispatch_delete_task" => {
-            let dispatch_id = require_string(&args, "dispatchId")?;
-            if !state.delete_dispatched_task(&dispatch_id) {
-                return Err(WebError::BadRequest(format!("未找到派发任务: {}", dispatch_id)));
-            }
-            Ok(Json(Value::Null))
-        }
 
         // ── Scheduler: Task CRUD ───────────────────────────────────────────
         "scheduler_list_tasks" => dispatch_scheduler_list_tasks(&state, &args),

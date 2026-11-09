@@ -236,8 +236,8 @@ export function applyUiChatAction(action: string, payload: Record<string, unknow
  * 解析 bus_dispatch 的 args，命中 cap.ui / cap.self 时应用。
  *
  * uiControlEnabled 门控（2026-10-25 治理收紧）：关闭（默认）时不消费——
- * 前端挂载门（conversationStoreUtils）只摘 polaris-bus，挡不住 polaris-dispatch
- * 的 cap_dispatch；且消费发生在 tool_call_start（不等工具结果），后端策略 deny
+ * 前端挂载门（conversationStoreUtils）只摘 polaris-bus，其余 Plugin 源通道
+ * 不受其约束；且消费发生在 tool_call_start（不等工具结果），后端策略 deny
  * 也拦不住本端 DOM 生效，故消费口必须复查开关。
  *
  * @returns 是否命中（true = 已消费）

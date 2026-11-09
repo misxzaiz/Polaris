@@ -162,7 +162,7 @@ mod tests {
         PermissionRequest {
             capability: CapabilityId("cap.pluginServiceManager".into()),
             resource: "cap.pluginServiceManager".into(),
-            source: Source::Plugin { caller: PluginId("polaris-dispatch".into()) },
+            source: Source::Plugin { caller: PluginId("polaris-bus".into()) },
             action: action.map(String::from),
         }
     }

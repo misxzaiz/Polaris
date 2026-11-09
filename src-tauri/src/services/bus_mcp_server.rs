@@ -244,8 +244,8 @@ impl McpServerHandler for BusMcpHandler {
         let caps = serde_json::json!(dispatchable_capabilities(&self.router));
         json!({
             "tools": [
-                mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 可转发的目标清单；并列出主进程总线全部 cap.* 能力经 polaris-dispatch 的 cap_dispatch/cap_list 工具的触达入口。首次使用请先调用本工具", &[], json!({})),
-                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力（全量放开，无白名单）：target 为本进程已注册的任何 cap.* 能力（含运行时动态注册），完整清单见 target 字段的 enum 与 bus_help 的 dispatchable。常见用途——读写应用键值存储（cap.kv）、发起外部 HTTP 请求（cap.http，通用转发）、在宿主 shell 执行命令（cap.bash，后台任务）、读取文件系统（cap.fs，只读 list/getFileInfo/exists）、控制界面主题配色（cap.ui.theme）、对话渲染配置（cap.ui.chat）与输入区即时调节（cap.ui.input）、AI 改造自身 UI 的具名插槽注入/替换/移除（cap.self.mutate，配合前端 uiSlotStore 消费，见 slotId input-extra/app-badge/message-extra）、自注册新能力（cap.registry）。是否放行由 RouterBus 统一裁决（注册表命中 + PolicyPermission 权限 gate + 审计），本工具不做业务限制。注意：这是数据读写/网络/文件/UI 工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
+                mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 可转发的目标清单。首次使用请先调用本工具", &[], json!({})),
+                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力（全量放开，无白名单）：target 为本进程已注册的任何 cap.* 能力（含运行时动态注册），完整清单见 target 字段的 enum 与 bus_help 的 dispatchable。常见用途——读写应用键值存储（cap.kv）、发起外部 HTTP 请求（cap.http，通用转发）、在宿主 shell 执行命令（cap.bash，后台任务）、读取文件系统（cap.fs，只读 list/getFileInfo/exists）、控制界面主题配色（cap.ui.theme）、对话渲染配置（cap.ui.chat）与输入区即时调节（cap.ui.input）、AI 改造自身 UI 的具名插槽注入/替换/移除（cap.self.mutate，配合前端 uiSlotStore 消费，见 slotId input-extra/app-badge/message-extra）、自注册新能力（cap.registry）。是否放行由 RouterBus 统一裁决（注册表命中 + PolicyPermission 权限 gate + 审计），本工具不做业务限制。注意：这是数据读写/网络/文件/UI 工具，不是任务派发——后台 shell 任务请用 cap.bash", &["target", "payload"], json!({
                     "target": { "type": "string", "enum": caps, "description": "目标 cap.* 能力 id；随注册实时变化，含运行时动态注册的能力" },
                     "payload": { "type": "object", "description": "能力动作参数，协议见 bus_help 的 protocol 段或该能力的 describe" }
                 })),
@@ -681,10 +681,7 @@ fn handle_bus_help_impl(router: &RouterBus, tools: &Value) -> Value {
         })
         .collect();
 
-    let mut usage = derive_usage_examples(&described);
-    // cap_list 是 polaris-dispatch 的工具级自发现入口（无 cap describe 可派生），
-    // 保留一条静态示例指路；主进程总线动作协议一律以 cap_list 返回为准。
-    usage.push(json!({ "tool": "cap_list", "arguments": {} }));
+    let usage = derive_usage_examples(&described);
 
     json!({
         "server": { "name": SERVER_NAME, "version": SERVER_VERSION, "protocol": mcp_server_common::PROTOCOL_VERSION },
@@ -694,11 +691,6 @@ fn handle_bus_help_impl(router: &RouterBus, tools: &Value) -> Value {
             "说明": "dispatchable = 本进程 RouterBus 已注册的全部 cap.* 能力（含运行时动态注册），全部可经 bus_dispatch 转发，无白名单。是否放行由 RouterBus 统一裁决：注册表命中 + PolicyPermission 权限 gate + 审计落盘。目标不在列表内会收到『能力未注册』——那是注册缺口的准确反馈，不是限制"
         },
         "modules": modules,
-        "cap_dispatch": {
-            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 亦为全量放开（无白名单，2026-10-23 根因修复后与注册表同源）；modules 仅域→能力导航与策略警示，动作协议一律见 protocol 段（与 cap_list 同源）",
-            "cap_list": "列出主进程总线当前已注册的全部 cap.* 能力（每项含 describe 自描述与 streaming 标记）",
-            "cap_dispatch": { "参数": { "target": "cap.* 能力 id（如 cap.ai.chat / cap.history / cap.bash / cap.http，非穷举——全量以 cap_list 返回为准）", "payload": "{ action, ...动作参数 }（动作协议见 cap_list 返回的 describe；报缺少参数时以错误文案列出的参数键名为准）" } }
-        },
         "protocol": derive_protocol(&described),
         "usage_examples": usage,
     })

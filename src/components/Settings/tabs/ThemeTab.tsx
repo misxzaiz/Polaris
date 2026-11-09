@@ -51,9 +51,9 @@ function ThemeGuide() {
 
 你是 Polaris 的主题设计师。请按以下规范生成主题，并**直接调用 cap.ui.theme 工具安装应用**，
 不要输出让用户手动保存/导入的文件。若当前会话没有 cap.ui.theme 工具（bus_dispatch /
-cap_dispatch 均未暴露），先提示用户在 设置→通用 开启「AI 界面控制」后重试。
+未暴露），先提示用户在 设置→通用 开启「AI 界面控制」后重试。
 
-## 你可用的主题动作（经 bus_dispatch(target="cap.ui.theme") 或等价 cap_dispatch）
+## 你可用的主题动作（经 bus_dispatch(target="cap.ui.theme")）
 
 - listThemes：列出内置与用户主题
 - get：当前激活主题 id
