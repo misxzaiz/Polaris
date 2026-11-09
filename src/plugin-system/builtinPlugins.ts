@@ -4,7 +4,6 @@ import { pluginPanelRegistry } from './panelRegistry'
 import { chatCardRegistry } from './chatCardRegistry'
 import { fileExplorerToolbarSlot } from './fileExplorerToolbarSlot'
 import { GitStatusIndicator } from '@/components/FileExplorer/GitStatusIndicator'
-import { computerPluginManifest } from '@/plugins/computer/manifest'
 import { askPluginManifest } from '@/plugins/ask/manifest'
 import { browserPluginManifest } from '@/plugins/browser/manifest'
 import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
@@ -122,7 +121,6 @@ export function registerBuiltinPlugins(): void {
   void import('./editor').then(({ registerGitEditorExtensions }) =>
     registerGitEditorExtensions(),
   )
-  pluginRegistry.register(computerPluginManifest)
   pluginRegistry.register(askPluginManifest)
   pluginRegistry.register(browserPluginManifest)
   pluginRegistry.register(schedulerPluginManifest)

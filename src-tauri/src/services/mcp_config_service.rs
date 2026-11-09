@@ -9,12 +9,10 @@ use crate::services::plugin_state_service::PluginStateService;
 
 const MCP_CONFIG_RELATIVE_PATH: &str = ".polaris/claude/mcp.json";
 const MCP_BIN_NAME: &str = "polaris-mcp";
-const COMPUTER_MCP_SERVER_NAME: &str = "polaris-computer";
 const ASK_MCP_SERVER_NAME: &str = "polaris-ask";
 const BROWSER_MCP_SERVER_NAME: &str = "polaris-browser";
 const BUS_MCP_SERVER_NAME: &str = "polaris-bus";
 const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
-const COMPUTER_PLUGIN_ID: &str = "polaris.computer";
 const ASK_PLUGIN_ID: &str = "polaris.ask";
 const BROWSER_PLUGIN_ID: &str = "polaris.browser";
 const BUS_PLUGIN_ID: &str = "polaris.bus";
@@ -129,15 +127,6 @@ impl McpServerContributionRegistry {
 
 fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
     let mut registry = McpServerContributionRegistry::new();
-    registry.register_plugin_server(
-        COMPUTER_PLUGIN_ID,
-        PluginMcpServerContribution::builtin(
-            COMPUTER_MCP_SERVER_NAME,
-            "POLARIS_COMPUTER_MCP_PATH",
-            McpServerArgsMode::ConfigDirAndWorkspace,
-            false,
-        ),
-    );
     registry.register_plugin_server(
         ASK_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
@@ -781,7 +770,6 @@ fn is_server_disabled(disabled_server_names: &[String], server_name: &str) -> bo
 fn capability_to_builtin_servers(capability: &str) -> Vec<&'static str> {
     match capability {
         // 内置 MCP server 能力
-        "computer" => vec![COMPUTER_MCP_SERVER_NAME],
         "browser" => vec![BROWSER_MCP_SERVER_NAME],
         "ask" => vec![ASK_MCP_SERVER_NAME],
         // 硬编码工具能力（虚拟 server，无内置同名 MCP server）

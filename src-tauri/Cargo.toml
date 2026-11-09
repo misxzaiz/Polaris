@@ -74,6 +74,11 @@ path = "src/bin/polaris_mcp.rs"
 name = "polaris-web"
 path = "src/bin/polaris_web.rs"
 
+# 电脑操作 MCP server 独立二进制（仅 Windows 有产物；随插件仓 zip 分发）
+[[bin]]
+name = "polaris-computer-mcp"
+path = "src/bin/polaris_computer_mcp.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.0", features = [], optional = true }
 

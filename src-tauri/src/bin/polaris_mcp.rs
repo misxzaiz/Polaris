@@ -7,10 +7,6 @@
 //!
 //! ## 独立 MCP server（直接处理请求）
 //! ```shell
-//! polaris-mcp requirements <config_dir> [workspace_path]
-//! polaris-mcp ph <config_dir> [workspace_path]（同类 ConfigDirAndWorkspace 形态示例）
-//! polaris-mcp ph <config_dir> [workspace_path]
-//! polaris-mcp computer <config_dir> [workspace_path]
 //! ```
 //!
 //! ## Bridge MCP server（通过 TCP 连接主进程）
@@ -28,9 +24,6 @@ use polaris_lib::services::{
 };
 use polaris_lib::{AppError, Result};
 
-// ── 条件编译：computer-mcp 仅 Windows ────────────────────────────────────
-#[cfg(windows)]
-use polaris_lib::services::computer_mcp_server::run_computer_mcp_server;
 
 fn main() {
     if let Err(error) = main_impl() {
@@ -46,7 +39,7 @@ fn main_impl() -> Result<()> {
     let subcommand = args.get(1).ok_or_else(|| {
         AppError::ValidationError(
             "缺少子命令。用法：polaris-mcp <subcommand> [args...]\n\
-             可用子命令：ph, computer, bus, scheduler, ask, browser"
+             可用子命令：bus, scheduler, ask, browser"
                 .to_string(),
         )
     })?;
@@ -54,12 +47,6 @@ fn main_impl() -> Result<()> {
     let sub_args = &args[2..];
 
     match subcommand.as_str() {
-        // ── 独立 MCP server（ConfigDirAndWorkspace 模式） ──────────
-        }
-        }
-        "computer" => {
-            run_computer_mcp(sub_args)
-        }
         // ── Bus MCP server（第七步阶段 E：总线能力 → AI 工具面） ──────────
         "bus" => {
             let config_dir = if sub_args.is_empty() {
@@ -91,8 +78,9 @@ fn main_impl() -> Result<()> {
             })
         }
         other => Err(AppError::ValidationError(format!(
-            "未知子命令：{other}。可用子命令：ph, computer, bus, scheduler, ask, browser"
+            "未知子命令：{other}。可用子命令：bus, scheduler, ask, browser"
         ))),
+    }
 }
 
 // ── 辅助函数 ─────────────────────────────────────────────────────────────
@@ -181,22 +169,6 @@ fn parse_ask_listener_args(args: &[String], subcommand: &str) -> Result<AskMcpCo
         token,
         session_id,
     })
-}
-
-/// 电脑操作 MCP server：仅 Windows 可用
-#[cfg(windows)]
-fn run_computer_mcp(args: &[String]) -> Result<()> {
-    let config_dir = args.first().map(String::as_str).unwrap_or("");
-    let workspace_path = args.get(1).map(String::as_str);
-    run_computer_mcp_server(config_dir, workspace_path)
-}
-
-#[cfg(not(windows))]
-fn run_computer_mcp(_args: &[String]) -> Result<()> {
-    Err(AppError::ProcessError(
-        "polaris-mcp computer 仅支持 Windows（电脑操作依赖 Windows UI Automation 等平台能力）"
-            .to_string(),
-    ))
 }
 
 /// 获取默认配置目录（单参数旧格式兜底）。

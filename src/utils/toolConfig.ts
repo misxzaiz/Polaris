@@ -272,7 +272,6 @@ const NAME_WORD_ZH: Record<string, string> = {
   marketplace: '商城',
   'marketplace-server': '商城',
   'polaris-bus': '总线',
-  'polaris-computer': '电脑',
   'polaris-browser': '浏览器',
   'chrome-devtools': '浏览器',
   'polaris-ask': '询问',

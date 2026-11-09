@@ -648,7 +648,7 @@ pub fn create_app_state(
                 service
                     .resolved_simple_ai_servers(&config_dir.to_string_lossy(), &[])
                     .into_iter()
-                    // 排除无归属兜底（binary 无 plugin_id）；内置插件（polaris.computer 等）与外部插件统一纳入
+                    // 排除无归属兜底（binary 无 plugin_id）；内置插件与外部插件统一纳入
                     .filter(|s| s.plugin_id != "polaris.builtin")
                     .collect::<Vec<_>>()
             })

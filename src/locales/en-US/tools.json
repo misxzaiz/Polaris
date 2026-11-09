@@ -46,7 +46,6 @@
     "applyPatch": "Apply Patch",
     "updatePlan": "Update Plan",
     "browser": "Browser",
-    "computer": "Computer"
   },
   "actions": {
     "editing": "Editing",
