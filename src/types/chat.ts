@@ -110,7 +110,7 @@ export interface PermissionRequest {
  */
 
 /** 内容块类型 - 用于 Assistant 消息的内容分段 */
-export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | QuestionBlock | FormBlock | PlanModeBlock | AgentRunBlock | TaskBoardBlock | ToolGroupBlock | PermissionRequestBlock | PluginCardBlock | ContextCompactBlock;
+export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | QuestionBlock | FormBlock | PlanModeBlock | AgentRunBlock | TaskBoardBlock | ToolGroupBlock | PermissionRequestBlock | PluginCardBlock | ContextCompactBlock;
 
 /** 文本内容块 */
 export interface TextBlock {
@@ -171,41 +171,6 @@ export interface ToolCallBlock {
     oldContent: string;
     newContent: string;
   }[];
-}
-
-/** Artifact 预览内容块 - 用于 MCP 生成的 HTML/原型预览 */
-export interface ArtifactPreviewBlock {
-  type: 'artifact_preview';
-  /** 预览 ID（由 MCP server 返回） */
-  previewId: string;
-  /** 展示标题 */
-  title: string;
-  /** 内容类型，Phase 1 仅支持 HTML */
-  contentType: 'html';
-  /** 自包含 HTML 源码；用于 Web/Tauri 统一 iframe srcDoc 渲染 */
-  html: string;
-  /**
-   * 是否在消息正文直出。默认 false。
-   *
-   * 由 HTML 卡片检测链路设置（eventHandler）：当 AI 回复的「核心产物」是完整
-   * HTML 时设 true，标记该卡片为核心产物。当前渲染路径下 artifact_preview
-   * 均正文直出，此字段暂无行为差异，保留供后续分类消费。仅前端消费：
-   * JSONL 无运行时校验，存普通布尔；外部插件/mcp 产出的 artifact_preview
-   * 缺省 undefined，行为完全不变。
-   */
-  inlineToBody?: boolean;
-  /** 后端保存的源文件路径（可选，仅作引用展示） */
-  sourcePath?: string;
-  /** 预览创建时间（ISO 8601） */
-  createdAt?: string;
-  /** 同一需求下的递增版本号 */
-  version?: number;
-  /** 展示版本名，如 v1、v2、方案 A */
-  versionLabel?: string;
-  /** 关联需求 ID（可选） */
-  requirementId?: string;
-  /** 预览说明或本版本变更摘要（可选） */
-  description?: string;
 }
 
 /** 插件自定义卡片渲染模式 */
@@ -824,11 +789,6 @@ export function isThinkingBlock(block: ContentBlock): block is ThinkingBlock {
 /** 类型守卫：判断是否为工具调用块 */
 export function isToolCallBlock(block: ContentBlock): block is ToolCallBlock {
   return block.type === 'tool_call';
-}
-
-/** 类型守卫：判断是否为 Artifact 预览块 */
-export function isArtifactPreviewBlock(block: ContentBlock): block is ArtifactPreviewBlock {
-  return block.type === 'artifact_preview';
 }
 
 /** 类型守卫：判断是否为问题块 */

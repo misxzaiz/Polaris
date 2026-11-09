@@ -117,7 +117,7 @@ export function extractReadableText(
         const stripped = stripMarkdown(block.content);
         if (stripped) readable.push(stripped);
       }
-      // 其他 block 类型（thinking / tool_call / artifact_preview 等）不参与朗读
+      // 其他 block 类型（thinking / tool_call 等）不参与朗读
     }
     return readable.join('\n\n');
   }

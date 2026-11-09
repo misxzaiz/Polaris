@@ -73,8 +73,8 @@ pub struct DiscoveredPluginManifest {
     pub description: Option<String>,
     pub builtin: bool,
     pub enabled_by_default: bool,
-    /// 核心通道插件（plugin-ui-contribution-spec [S-9]）：承载宿主核心交互渲染
-    /// （如 form/ask 块委托）。不可卸载；禁用入口对其核心模板不生效。
+    /// 核心通道插件（plugin-ui-contribution-spec [S-9]）：承载交互面板基础渲染
+    /// 与历史卡片。不可卸载；禁用入口对其核心模板不生效。
     #[serde(default)]
     pub core: bool,
     #[serde(default)]
@@ -625,8 +625,8 @@ pub(crate) struct PluginManifestFile {
     pub description: Option<String>,
     #[serde(default)]
     pub enabled_by_default: bool,
-    /// 核心通道插件（plugin-ui-contribution-spec [S-9]）：不可卸载、禁用入口对
-    /// 其核心模板不生效。deny_unknown_fields 下必须显式声明。
+    /// 核心通道插件（plugin-ui-contribution-spec [S-9]）：承载交互面板基础渲染，
+    /// 不可卸载、禁用入口对其核心模板不生效。deny_unknown_fields 下必须显式声明。
     #[serde(default)]
     pub core: bool,
     /// manifest schema 版本声明：缺省视为当前版本（兼容存量 manifested 商城插件），

@@ -5,14 +5,12 @@
  * （panelRegistry）与聊天卡片（chatCardRegistry）共用此加载器，保证外部插件
  * 组件与宿主共享同一份 React 实例。
  *
- * 重写规则（plugin-ui-contribution-spec [S-1]/[S-4]，上下文感知见 reactImportRewrite）：
- * - `react` / `react/jsx-runtime` → 宿主 React shim（既有）
- * - `polaris-host/<name>` → 宿主桥 shim（artifact/form/cap；未注册桥 → 报错 stub，
- *   插件在 import 阶段拿到明确错误而非裸 SyntaxError）
+ * 重写规则（上下文感知见 reactImportRewrite）：
+ * - `react` / `react/jsx-runtime` → 宿主 React shim
  */
 
 import { readFileBinaryText } from '@/services/tauri/fileService'
-import { ensureBridgesReady, rewriteForPluginModule } from './hostBridge'
+import { rewriteReactImports } from './reactImportRewrite'
 
 let shimUrl: string | null = null
 
@@ -44,7 +42,7 @@ async function ensureReactShim(): Promise<string> {
 }
 
 /**
- * 从磁盘文件加载一个 ES module。宿主 React 与 polaris-host/* 桥 import 会被重写为 shim。
+ * 从磁盘文件加载一个 ES module。宿主 React import 会被重写为 shim。
  */
 export async function loadModuleFromFile(filePath: string): Promise<Record<string, unknown>> {
   // 面板/卡片 bundle 常含大 vendor（如 exceljs ~950KB），get_file_content 的
@@ -53,12 +51,9 @@ export async function loadModuleFromFile(filePath: string): Promise<Record<strin
   const code = await readFileBinaryText(filePath)
   const reactShimUrl = await ensureReactShim()
 
-  // 插件用到宿主桥时先确保宿主对象注册（artifact 渲染核心按需动态注册，不占启动包）
-  await ensureBridgesReady(code)
-
   // 上下文感知重写：字符串/模板字面量里的代码模板（如 plugin-forge 脚手架）
   // 不能被改写——裸正则会把模板文本也改掉，注入的 blob URL 破坏 bundle 语法
-  const patchedCode = rewriteForPluginModule(code, reactShimUrl)
+  const patchedCode = rewriteReactImports(code, reactShimUrl)
 
   const blob = new Blob([patchedCode], { type: 'application/javascript' })
   const blobUrl = URL.createObjectURL(blob)

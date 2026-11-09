@@ -14,9 +14,7 @@
  * 正则；标识符/数字/`)`/`]`/引号后是除法。对 esbuild 产物足够。
  *
  * 规则集（rewriteImports）：
- * - react / react/jsx-runtime → 宿主 React shim（既有行为，rewriteReactImports）
- * - polaris-host/<name> → 宿主桥 shim（plugin-ui-contribution-spec [S-1]/[S-3]，
- *   插件经桥消费宿主通用核心，禁止 import 宿主内部路径）
+ * - react / react/jsx-runtime → 宿主 React shim（rewriteReactImports）
  */
 
 /** 这些关键字后面跟 `/` 是正则字面量（而非除法） */
@@ -160,8 +158,6 @@ export function rewriteImports(code: string, rules: ImportRewriteRule[]): string
 
 const REACT_FROM_RE = /^from\s*(['"])react(\/jsx-runtime)?\1/
 const REACT_REQUIRE_RE = /^require\(\s*(['"])react(\/jsx-runtime)?\1\s*\)/
-const HOST_FROM_RE = /^from\s*(['"])polaris-host\/([A-Za-z0-9_-]+)\1/
-const HOST_REQUIRE_RE = /^require\(\s*(['"])polaris-host\/([A-Za-z0-9_-]+)\1\s*\)/
 
 /** quote 引号：m[1] */
 function quoteOf(m: RegExpExecArray): string {
@@ -180,37 +176,3 @@ export function rewriteReactImports(code: string, shimUrl: string): string {
   ])
 }
 
-/**
- * 重写 react 与 polaris-host/<name> 引用（plugin-ui-contribution-spec [S-1]）。
- * - hostShims[name] = shim blob URL：已注册的宿主桥
- * - onUnknownHost(name)：未注册桥的兜底（通常返回报错 stub 的 blob URL，
- *   让插件在 import 阶段拿到明确错误而非裸 SyntaxError）
- */
-export function rewritePluginImports(
-  code: string,
-  opts: { reactShimUrl: string; hostShims: Record<string, string>; onUnknownHost?: (name: string) => string },
-): string {
-  const rules: ImportRewriteRule[] = [
-    { fromRe: REACT_FROM_RE, replace: (m) => `from ${quoteOf(m)}${opts.reactShimUrl}${quoteOf(m)}` },
-    { requireRe: REACT_REQUIRE_RE, replace: (m) => `require(${quoteOf(m)}${opts.reactShimUrl}${quoteOf(m)})` },
-    {
-      fromRe: HOST_FROM_RE,
-      replace: (m) => {
-        const name = m[2]
-        const url = opts.hostShims[name] ?? opts.onUnknownHost?.(name)
-        if (!url) return m[0] // 无兜底：保留原样（import 阶段自然失败）
-        return `from ${quoteOf(m)}${url}${quoteOf(m)}`
-      },
-    },
-    {
-      requireRe: HOST_REQUIRE_RE,
-      replace: (m) => {
-        const name = m[2]
-        const url = opts.hostShims[name] ?? opts.onUnknownHost?.(name)
-        if (!url) return m[0]
-        return `require(${quoteOf(m)}${url}${quoteOf(m)})`
-      },
-    },
-  ]
-  return rewriteImports(code, rules)
-}

@@ -38,7 +38,7 @@ const NON_EXTERNAL_PROTOCOLS = new Set(['mailto:', 'tel:']);
  *   mailto:/tel:（系统能直接处理，避免 SPA 内错误导航）、
  *   file:、blob:、data:（本地资源，由各自入口负责，见 spec §五）
  *
- * 注意 blob/data URL 不在此外投：`ArtifactPreviewRenderer`、`UiFrameCard` 的
+ * 注意 blob/data URL 不在此外投：`UiFrameCard` 的
  * 「新窗口查看」有独立 open 分支处理 blob，全局捕获不误拦它们。
  */
 export function shouldOpenExternal(href: string | undefined | null): boolean {

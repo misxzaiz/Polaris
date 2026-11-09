@@ -3,7 +3,7 @@
  *
  * 规则（plans/tool-block-collapse-behavior-fix.md 定稿）：
  * - 连续 thinking/tool_call 相邻成组；仅非空 text 块打断分组；
- *   面板类块（form/plugin_card/artifact_preview 等）不打断（穿透合并）。
+ *   面板类块（form/plugin_card 等）不打断（穿透合并）。
  * - 任何 ≥1 块的组都渲染为折叠组；非流式零可见块（仅汇总条）；
  *   流式默认展开；点击汇总条可展开/收起。
  */
@@ -12,7 +12,6 @@ import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import { identifyCollapsibleBlockGroups, renderBlocksWithGrouping } from './blockGrouping';
 import type {
-  ArtifactPreviewBlock,
   ContentBlock,
   FormBlock,
   TextBlock,
@@ -31,13 +30,6 @@ const tool = (name: string): ToolCallBlock => ({
   startedAt: '2026-10-25T00:00:00.000Z',
 });
 const text = (content: string): TextBlock => ({ type: 'text', content });
-const preview = (): ArtifactPreviewBlock => ({
-  type: 'artifact_preview',
-  previewId: `p-${seq++}`,
-  title: '预览面板',
-  contentType: 'html',
-  html: '<b>panel</b>',
-});
 const form = (): FormBlock => ({
   type: 'form',
   id: `f-${seq++}`,
@@ -72,7 +64,7 @@ describe('identifyCollapsibleBlockGroups', () => {
   });
 
   it('面板类块不打断分组：面板前后过程块穿透合并为一组', () => {
-    const blocks: ContentBlock[] = [tool('Read'), preview(), tool('Grep')];
+    const blocks: ContentBlock[] = [tool('Read'), form(), tool('Grep')];
     const groups = identifyCollapsibleBlockGroups(blocks);
     expect(groups).toHaveLength(1);
     expect(groups[0].indices).toEqual([0, 2]);

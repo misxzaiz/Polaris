@@ -972,13 +972,13 @@ impl PluginService {
             return Self::uninstall_dev_link_plugin(app_config_dir, workspace_path, install_path);
         }
 
-        // 核心通道插件守卫（plugin-ui-contribution-spec [S-9]）：承载宿主核心交互
-        // 渲染（form/ask 块委托）的插件不可卸载——否则 form/ask 渲染失效。
+        // 核心通道插件守卫（plugin-ui-contribution-spec [S-9]）：承载交互面板基础
+        // 渲染与历史卡片的插件不可卸载——否则历史卡片与面板入口失效。
         if let Some(manifest) = Self::read_installed_manifest(app_config_dir, install_path) {
             if manifest.core {
                 return Ok(PluginOperationResult {
                     success: false,
-                    message: Some("核心通道插件不可卸载（承载 form/ask 等宿主核心交互渲染）".to_string()),
+                    message: Some("核心通道插件不可卸载（承载交互面板基础渲染与历史卡片）".to_string()),
                     error: None,
                 });
             }

@@ -15,8 +15,6 @@ import { PermissionRequestRenderer } from '../tool-calls/PermissionRequestRender
 import { TextBlockRenderer } from './TextBlockRenderer';
 import { ThinkingBlockRenderer } from './ThinkingBlockRenderer';
 import { ToolCallBlockRenderer } from './ToolCallBlockRenderer';
-import { ArtifactPreviewRenderer } from './ArtifactPreviewRenderer';
-import { ArtifactVersionGate, useArtifactVersions } from './artifactVersions';
 import { PluginCardHost } from './PluginCardHost';
 import { ContextCompactRenderer } from './ContextCompactRenderer';
 import { DispatchTaskCard } from '../dispatch/DispatchTaskCard';
@@ -30,15 +28,6 @@ const DISPATCH_TOOL_NAME = 'mcp__polaris-dispatch__dispatch_task';
  * 'workflow' 与 'Workflow'。解析器注册表(parseWorkflowResult)自协商三路分发:
  * 攻坚格式→AssaultResultCard,通用 workflow→WorkflowCard,全失败→降级工具块。 */
 const WORKFLOW_TOOL_NAME = 'workflow';
-
-/**
- * artifact_preview 直出路径：从会话级版本组取 pills 数据（无 Provider/单版本时
- * versions 为 undefined，渲染器行为与旧版一致）。
- */
-function ArtifactPreviewWithVersions({ block }: { block: Extract<ContentBlock, { type: 'artifact_preview' }> }) {
-  const versions = useArtifactVersions(block.requirementId);
-  return <ArtifactPreviewRenderer block={block} versions={versions ?? undefined} />;
-}
 
 export function renderContentBlock(
   block: ContentBlock,
@@ -92,13 +81,6 @@ export function renderContentBlock(
         <ToolCallBlockRenderer block={block} isStreaming={isStreaming} />,
         block.id
       );
-    case 'artifact_preview':
-      return wrapWithErrorBoundary(
-        <ArtifactVersionGate block={block}>
-          <ArtifactPreviewWithVersions block={block} />
-        </ArtifactVersionGate>,
-        block.previewId
-      );
     case 'question':
       // 问答块：宿主原生渲染（AskQuestionCard）。曾短期委托交互组件插件渲染
       // （块委托试验），因插件 bundle 加载链路脆弱（react shim 导出受限导致
@@ -137,11 +119,7 @@ export function renderContentBlock(
       );
     case 'plugin_card':
       return wrapWithErrorBoundary(
-        // prd-preview 形态的卡片同样参与版本分组（历史版折叠为摘要行）；
-        // 非 artifact 数据经 normalize 判定后原样透传，行为不变
-        <ArtifactVersionGate block={block}>
-          <PluginCardHost block={block} />
-        </ArtifactVersionGate>,
+        <PluginCardHost block={block} />,
         block.id
       );
     case 'context_compact':

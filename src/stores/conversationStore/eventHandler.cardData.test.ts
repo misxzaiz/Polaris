@@ -5,7 +5,7 @@
  *
  * 背景：Code Mode 下 tool_call_end.result 是 execute 载体工具的 return 值，
  * 无 MCP structuredContent 信封。修复前 { step1_created: artifact } 形态
- * 拿不到 artifact → PrdPreviewCard isPreviewArtifact 失败 → 文本兜底。
+ * 拿不到 artifact → 卡片数据识别失败 → 文本兜底。
  */
 import { describe, it, expect, vi } from 'vitest'
 
@@ -21,7 +21,7 @@ vi.mock('@/plugin-system/chatCardRegistry', () => ({ chatCardRegistry: { get: ()
 import { parseCardData } from './eventHandler'
 
 const artifact = {
-  artifactType: 'polaris.preview',
+  artifactType: 'polaris.interactive',
   previewId: 'p1',
   title: '测试预览',
   contentType: 'html',
@@ -32,7 +32,7 @@ const artifact = {
 const listResult = { previews: [{ title: '列表无关项' }] }
 
 /** Code Mode 载体 blockInput：execute 的 input.code 内嵌 MCP 调用 */
-function codeModeInput(code = 'const r = await tools["polaris-prd-preview"].preview_html({}); return r;') {
+function codeModeInput(code = 'const r = await tools["polaris-interactive"].preview_html({}); return r;') {
   return { code }
 }
 
@@ -88,7 +88,7 @@ describe('parseCardData — Code Mode 拆包', () => {
     expect(parseCardData(result, { input: 'preview_html(...)', code: 123 })).toBe(result)
   })
 
-  it('html+previewId 双字段识别（artifactType 缺失）也命中 — 与 PrdPreviewCard 口径对齐', () => {
+  it('html+previewId 双字段识别（artifactType 缺失）也命中 — 与交互面板口径对齐', () => {
     const untyped = { html: '<b>y</b>', previewId: 'p2' }
     const result = { unwrap: true, step: untyped }
     expect(parseCardData(result, codeModeInput())).toBe(untyped)

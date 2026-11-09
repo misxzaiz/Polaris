@@ -575,7 +575,6 @@ export interface ConversationActions {
   updateToolCallBlockDiff: (toolId: string, diffData: import('../../types/chat').DiffData) => void
   /** apply_patch 补丁数据回填 */
   updateToolCallBlockPatch: (toolId: string, patchData: { type: 'add' | 'update' | 'delete'; filePath: string; movePath?: string; chunkCount: number; addedLines: number; removedLines: number; oldContent: string; newContent: string }[]) => void
-  appendArtifactPreviewBlock: (artifact: import('../../types/chat').ArtifactPreviewBlock) => void
   updateCurrentAssistantMessage: (blocks: ContentBlock[]) => void
 
   // ===== 问题块 =====

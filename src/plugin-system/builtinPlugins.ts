@@ -1,5 +1,4 @@
 import type { PolarisPluginManifest } from './types'
-import React from 'react'
 import { pluginRegistry } from './registry'
 import { pluginPanelRegistry } from './panelRegistry'
 import { chatCardRegistry } from './chatCardRegistry'
@@ -165,28 +164,6 @@ export function registerBuiltinPlugins(): void {
     10,
   )
   // builtin 插件聊天卡片 loader 手动注册（无 installPath）
-  // （v2 交互组件）PRD 预览壳已退役至插件仓 interactive-component（chatCards entry 形态）
-  // ——但工具名 mcp__polaris-prd-preview__preview_html 仍被宿主 eventHandler 识别为 artifact，
-  // PluginCardHost load() 找不到注册会抛错。直接注册薄适配器映射到 ArtifactPreviewRenderer。
-  chatCardRegistry.registerBuiltin(
-    'polaris.prd-preview',
-    {
-      id: 'prd-preview',
-      mcpServerId: 'polaris-prd-preview',
-      tools: ['preview_html', 'read_preview'],
-      mode: 'result',
-    },
-    async () => {
-      const { ArtifactPreviewRenderer } = await import('@/components/Chat/chatBlocks/ArtifactPreviewRenderer')
-      const { buildArtifactBlockFromData } = await import('@/components/Chat/chatBlocks/artifactVersions')
-      function PrdPreviewAdapter(props: { data: unknown }) {
-        const block = buildArtifactBlockFromData(props.data)
-        if (!block) return null
-        return /* @__PURE__ */ React.createElement(ArtifactPreviewRenderer, { block })
-      }
-      return { default: PrdPreviewAdapter }
-    },
-  )
   // Agnes 多模态：mcp__polaris-agnes__generate_image / generate_video / query_video
   chatCardRegistry.registerBuiltin(
     'polaris.agnes',

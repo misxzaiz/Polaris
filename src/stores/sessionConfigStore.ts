@@ -48,7 +48,6 @@ interface SessionConfigState {
   setPermissionMode: (mode: PermissionMode) => void
   setModelProfileId: (profileId: string) => void
   setProfileMode: (mode: ProfileMode) => void
-  setHtmlCardRender: (enabled: boolean) => void
   setConfig: (config: Partial<SessionRuntimeConfig>) => void
   resetConfig: () => void
 }
@@ -106,12 +105,6 @@ export const useSessionConfig = create<SessionConfigState>()(
           return { config: next }
         }),
 
-      /** 设置 HTML 卡片渲染开关（默认关；开启后 AI 输出完整 HTML 自动变卡片） */
-      setHtmlCardRender: (enabled) =>
-        set((state) => ({
-          config: { ...state.config, htmlCardRender: enabled },
-        })),
-
       setConfig: (newConfig) =>
         set((state) => ({
           config: { ...state.config, ...newConfig },
@@ -141,7 +134,6 @@ export const useSessionConfig = create<SessionConfigState>()(
           permissionMode: state.config.permissionMode,
           modelProfileId: state.config.modelProfileId,
           profileMode: state.config.profileMode,
-          htmlCardRender: state.config.htmlCardRender,
         }
       }),
       // 反序列化时清洗废弃值（effort='max' / permissionMode='bypassPermissions'），

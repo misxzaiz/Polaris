@@ -560,7 +560,7 @@ impl WorkspaceMcpConfigService {
     ) -> Vec<ResolvedExternalMcpServer> {
         let mut servers: Vec<ResolvedExternalMcpServer> = Vec::new();
 
-        // 内置 MCP（requirements/scheduler/prd-preview/computer/ask）
+        // 内置 MCP（requirements/scheduler/computer/ask）
         for binary in &self.binaries {
             if is_server_disabled(disabled_server_names, &binary.server_name) {
                 tracing::info!("[MCP] SimpleAI 跳过已禁用内置 MCP: {}", binary.server_name);

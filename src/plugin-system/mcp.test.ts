@@ -21,11 +21,6 @@ describe('plugin MCP contributions', () => {
         transport: 'stdio',
       }),
       expect.objectContaining({
-        id: 'polaris-prd-preview',
-        pluginId: 'polaris.prd-preview',
-        transport: 'stdio',
-      }),
-      expect.objectContaining({
         id: 'polaris-computer',
         pluginId: 'polaris.computer',
         transport: 'stdio',
@@ -131,7 +126,7 @@ describe('plugin MCP contributions', () => {
     expect(listEnabledPluginMcpServers(pluginStates)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: 'polaris-prd-preview',
+          id: 'polaris-computer',
         }),
       ])
     )
@@ -140,7 +135,6 @@ describe('plugin MCP contributions', () => {
   it.each([
     ['polaris.requirements', 'polaris-requirements', 'polaris_requirements_mcp'],
     ['polaris.scheduler', 'polaris-scheduler', 'polaris_scheduler_mcp'],
-    ['polaris.prd-preview', 'polaris-prd-preview', 'polaris_prd_preview_mcp'],
     ['polaris.computer', 'polaris-computer', 'polaris_computer_mcp'],
   ])('keeps %s manifest aligned with the backend MCP registry contract', (
     pluginId,

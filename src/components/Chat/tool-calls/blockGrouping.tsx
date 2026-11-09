@@ -3,7 +3,7 @@
  *
  * 分组规则（plans/tool-block-collapse-behavior-fix.md 定稿）：
  * - 连续 thinking + tool_call 归为一个折叠组；仅非空 text 块打断分组。
- * - 面板类块（plugin_card/question/form/artifact_preview 等）不打断分组：
+ * - 面板类块（plugin_card/question/form 等）不打断分组：
  *   面板前后被「穿透」的过程块合并为一组，面板自身原序渲染在组外侧
  *   （自然浮到其前面折叠条下方），避免面板穿插产生多条折叠条。
  * - 流式期间组默认展开；结束后自动折叠为一条汇总条（零可见块）。

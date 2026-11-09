@@ -289,7 +289,7 @@ const NAME_WORD_ZH: Record<string, string> = {
   'needs': '需求',
   'exec-sandbox': '沙箱',
   'query-plan-lens': '查询',
-  'prd-preview': '预览',
+  'interactive': '交互',
 };
 
 /**
