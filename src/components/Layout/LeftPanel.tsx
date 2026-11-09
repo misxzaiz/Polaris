@@ -257,6 +257,21 @@ export function LeftPanelContent({
   const pluginStates = usePluginStore((state) => state.pluginStates)
   const type = currentType ?? storePanelType
 
+  // 内建面板查表（新增内建面板在此加一行即可）
+  const builtinPanels: Record<string, ReactNode> = {
+    files: filesContent,
+    git: gitContent,
+    browser: browserContent,
+    translate: translateContent,
+    terminal: terminalContent,
+    tools: toolsContent,
+    developer: developerContent,
+    integration: integrationContent,
+    demoPlugin: demoPluginContent,
+    aiConsole: aiConsoleContent,
+    'radio-broadcast': radioBroadcastContent,
+  }
+
   // shadow 接管消费端（P3-T1 闭环，plans/terminal-plugin-spec.md §六）：
   // 插件视图声明 slot:'<viewId>' + slotMode:'shadow' 且插件已启用时，目标内建席位
   // 改渲染插件面板（tab strip 不变）；插件禁用/卸载即回内建（天然回滚）。
@@ -275,21 +290,6 @@ export function LeftPanelContent({
   }
   const shadowOwnToTarget = new Map<string, string>()
   for (const s of shadowByBuiltinType.values()) shadowOwnToTarget.set(s.ownType, s.target)
-
-  // 内建面板查表（新增内建面板在此加一行即可）
-  const builtinPanels: Record<string, ReactNode> = {
-    files: filesContent,
-    git: gitContent,
-    browser: browserContent,
-    translate: translateContent,
-    terminal: terminalContent,
-    tools: toolsContent,
-    developer: developerContent,
-    integration: integrationContent,
-    demoPlugin: demoPluginContent,
-    aiConsole: aiConsoleContent,
-    'radio-broadcast': radioBroadcastContent,
-  }
 
   // 激活面板：优先外部传入的 activePanelType（tab strip 已归一化），
   // 其次取 store 记忆的激活类型（切换/关闭不丢），兜底用当前打开的类型。
