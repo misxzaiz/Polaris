@@ -27,57 +27,10 @@ describe('plugin MCP contributions', () => {
       }),
     ]))
 
-    // requirement 已恢复默认启用（plans/plugin-visibility-plan.md §6 裁决）
-    expect(servers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'polaris-requirements' }),
-    ]))
-
     // 废弃插件（agnes，enabledByDefault=false）默认不启用
     expect(servers).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'polaris-agnes' }),
     ]))
-  })
-
-  it('filters Requirements MCP when its plugin MCP surface is disabled', () => {
-    const pluginStates: PluginStateMap = {
-      'polaris.requirements': {
-        enabled: true,
-        uiEnabled: true,
-        mcpEnabled: false,
-      },
-    }
-
-    expect(listEnabledPluginMcpServers(pluginStates)).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'polaris-requirements',
-        }),
-      ])
-    )
-    expect(listPluginMcpServerStatuses(pluginStates)).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: 'polaris-requirements',
-        enabled: false,
-      }),
-    ]))
-  })
-
-  it('filters Requirements MCP when the whole plugin is disabled', () => {
-    const pluginStates: PluginStateMap = {
-      'polaris.requirements': {
-        enabled: false,
-        uiEnabled: true,
-        mcpEnabled: true,
-      },
-    }
-
-    expect(listEnabledPluginMcpServers(pluginStates)).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'polaris-requirements',
-        }),
-      ])
-    )
   })
 
   it('filters Computer MCP when its plugin is disabled (关闭即不注入)', () => {
@@ -133,7 +86,6 @@ describe('plugin MCP contributions', () => {
   })
 
   it.each([
-    ['polaris.requirements', 'polaris-requirements', 'polaris_requirements_mcp'],
     ['polaris.scheduler', 'polaris-scheduler', 'polaris_scheduler_mcp'],
     ['polaris.computer', 'polaris-computer', 'polaris_computer_mcp'],
   ])('keeps %s manifest aligned with the backend MCP registry contract', (

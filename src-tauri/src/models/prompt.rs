@@ -278,22 +278,12 @@ impl PromptConfig {
 
     /// 创建默认模块
     fn create_default_modules() -> Vec<PromptModule> {
-        vec![
-            PromptModule::new(
-                "module-workspace-info".to_string(),
-                PromptModuleType::WorkspaceInfo,
-                "工作区信息".to_string(),
-                "{{workspace_content}}".to_string(),
-            ),
-            PromptModule::new(
-                "module-requirement-queue".to_string(),
-                PromptModuleType::RequirementQueue,
-                "需求队列".to_string(),
-                r#"需求队列:
-需求队列用于管理和追踪项目需求，支持 AI 自动生成和用户手动创建。
-需求文件路径: {{workspace_path}}/.polaris/requirements/requirements.json"#.to_string(),
-            ),
-        ]
+        vec![PromptModule::new(
+            "module-workspace-info".to_string(),
+            PromptModuleType::WorkspaceInfo,
+            "工作区信息".to_string(),
+            "{{workspace_content}}".to_string(),
+        )]
     }
 
     /// 根据场景获取默认预设 ID

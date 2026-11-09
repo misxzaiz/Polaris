@@ -293,7 +293,7 @@ fn epoch_millis() -> u128 {
 }
 
 fn chrono_now_iso() -> String {
-    // chrono 已是依赖（unified_requirement_repository 用 Utc）
+    // chrono 已是依赖（unified_scheduler_repository 用 Utc）
     chrono::Utc::now().to_rfc3339()
 }
 

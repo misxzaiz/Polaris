@@ -15,6 +15,5 @@ export * from './terminal';
 export * from './terminalScript';
 export * from './attachment';
 export * from './errors';
-export * from './requirement';
 export * from './modelProfile';
 export * from './engineMetadata';

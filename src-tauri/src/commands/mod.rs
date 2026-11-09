@@ -97,7 +97,7 @@ pub mod lsp;
 
 pub mod cli_info;
 #[cfg(feature = "tauri-app")]
-pub use cli_info::{cli_get_agents, cli_get_auth_status, cli_get_version, cli_extract_structured};
+pub use cli_info::{cli_get_agents, cli_get_auth_status, cli_get_version};
 
 pub mod engine_install;
 #[cfg(feature = "tauri-app")]

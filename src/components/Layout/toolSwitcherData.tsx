@@ -24,8 +24,6 @@ function getToolDescription(panelType: string): string | undefined {
       return '选中文本与消息翻译'
     case 'scheduler':
       return '定时任务和执行控制'
-    case 'requirement':
-      return '需求库、生成与追踪'
     case 'personalHub':
       return '个人链接与知识收藏'
     case 'terminal':

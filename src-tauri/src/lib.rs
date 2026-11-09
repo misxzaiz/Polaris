@@ -1285,7 +1285,6 @@ pub fn run() {
             commands::cli_info::cli_check_installed,
             commands::cli_info::cli_find_paths,
             commands::cli_info::cli_get_version_for,
-            commands::cli_info::cli_extract_structured,
             // 引擎安装 / 卸载 / 检测
             commands::engine_install::engine_detect_version,
             commands::engine_install::engine_install,

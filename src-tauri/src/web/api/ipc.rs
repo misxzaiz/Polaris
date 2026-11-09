@@ -292,15 +292,6 @@ pub async fn handle_ipc_bridge(
             dispatch_git_via_bus(&state, cmd, &args).await
         }
 
-        // ── Requirement ───────────────────────────────────────────────────────
-        "list_requirements" => dispatch_list_requirements(&state, &args),
-        "create_requirement" => dispatch_create_requirement(&state, &args),
-        "update_requirement" => dispatch_update_requirement(&state, &args),
-        "delete_requirement" => dispatch_delete_requirement(&state, &args),
-        "save_requirement_prototype" => dispatch_save_requirement_prototype(&state, &args),
-        "read_requirement_prototype" => dispatch_read_requirement_prototype(&state, &args),
-        "get_requirement_workspace_breakdown" => dispatch_requirement_workspace_breakdown(&state, &args),
-
         // ── Scheduler: Run & Protocol ─────────────────────────────────────────
         "scheduler_run_task" => dispatch_scheduler_run_task(&state, &args).await,
         "scheduler_update_run_status" => dispatch_scheduler_update_run_status(&state, &args).await,
@@ -1892,87 +1883,6 @@ fn dispatch_lsp_index_update_file(state: &AppState, args: &Value) -> Result<Json
         json_result!(svc.update_file(std::path::Path::new(&root), std::path::Path::new(&abs_path)))
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Requirement
-// ═══════════════════════════════════════════════════════════════════════════
-
-fn get_req_repo(state: &AppState, args: &Value) -> Result<crate::services::unified_requirement_repository::UnifiedRequirementRepository, WebError> {
-    let config_dir = get_config_dir(state)?;
-    // Frontend wraps args in { params: { workspacePath, ... } }
-    let wp = args.get("workspacePath")
-        .or_else(|| args.get("params").and_then(|p| p.get("workspacePath")))
-        .and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).map(std::path::PathBuf::from);
-    let repo = crate::services::unified_requirement_repository::UnifiedRequirementRepository::new(config_dir, wp);
-    repo.register_workspace().ok();
-    Ok(repo)
-}
-
-/// Extract a string field from args, checking both top-level and nested `params`.
-fn req_string(args: &Value, key: &str) -> Result<String, WebError> {
-    args.get(key).and_then(|v| v.as_str()).map(String::from)
-        .or_else(|| args.get("params").and_then(|p| p.get(key)).and_then(|v| v.as_str()).map(String::from))
-        .ok_or_else(|| WebError::BadRequest(format!("Missing required field: {}", key)))
-}
-
-fn dispatch_list_requirements(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let repo = get_req_repo(state, args)?;
-    let scope = match args.get("scope").and_then(|v| v.as_str()).unwrap_or("workspace") {
-        "all" => crate::models::requirement::QueryScope::All, _ => crate::models::requirement::QueryScope::Workspace,
-    };
-    let mut reqs = repo.list_requirements(scope)?;
-    if let Some(l) = args.get("limit").and_then(|v| v.as_u64()) { reqs.truncate(l as usize); }
-    Ok(Json(serde_json::to_value(reqs).unwrap_or_default()))
-}
-fn dispatch_create_requirement(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let repo = get_req_repo(state, args)?;
-    let title = require_string(args, "title")?;
-    let description = args.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let priority = args.get("priority").and_then(|v| v.as_str())
-        .and_then(|p| serde_json::from_value(serde_json::Value::String(p.to_string())).ok());
-    let tags = args.get("tags").and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>());
-    let cp = crate::models::requirement::RequirementCreateParams {
-        title, description, priority, tags,
-        ..Default::default()
-    };
-    json_result!(repo.create_requirement(cp))
-}
-fn dispatch_update_requirement(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = req_string(args, "id")?;
-    let repo = get_req_repo(state, args)?;
-    let mut u = crate::models::requirement::RequirementUpdateParams::default();
-    // Check both top-level and nested params for all fields
-    if let Ok(v) = req_string(args, "title") { u.title = Some(v); }
-    if let Ok(v) = req_string(args, "description") { u.description = Some(v); }
-    if let Some(v) = args.get("status").or_else(|| args.get("params").and_then(|p| p.get("status"))).and_then(|v| v.as_str()) {
-        u.status = serde_json::from_value(serde_json::Value::String(v.to_string())).ok();
-    }
-    if let Some(v) = args.get("priority").or_else(|| args.get("params").and_then(|p| p.get("priority"))).and_then(|v| v.as_str()) {
-        u.priority = serde_json::from_value(serde_json::Value::String(v.to_string())).ok();
-    }
-    if let Some(v) = args.get("tags").or_else(|| args.get("params").and_then(|p| p.get("tags"))) { u.tags = Some(serde_json::from_value(v.clone()).unwrap_or_default()); }
-    json_result!(repo.update_requirement(&id, u))
-}
-fn dispatch_delete_requirement(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = req_string(args, "id")?;
-    json_result!(get_req_repo(state, args)?.delete_requirement(&id))
-}
-fn dispatch_save_requirement_prototype(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = req_string(args, "id")?;
-    let html = req_string(args, "html")?;
-    json_result!(get_req_repo(state, args)?.save_prototype(&id, &html))
-}
-fn dispatch_read_requirement_prototype(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    // Frontend sends "prototypePath" for the path to read
-    let prototype_path = req_string(args, "prototypePath")?;
-    let repo = get_req_repo(state, args)?;
-    json_result!(repo.read_prototype(&prototype_path))
-}
-fn dispatch_requirement_workspace_breakdown(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    json_result!(get_req_repo(state, args)?.get_workspace_breakdown())
-}
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Terminal

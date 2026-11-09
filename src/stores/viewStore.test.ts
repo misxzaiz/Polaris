@@ -46,18 +46,18 @@ describe('viewStore 左侧面板 tab strip 状态', () => {
 
   describe('openMruTab（从 ⋯ 打开 MRU 追加 tab）', () => {
     it('追加到 MRU 并自动展开/激活', () => {
-      useViewStore.getState().openMruTab('requirement')
+      useViewStore.getState().openMruTab('translate')
       const s = useViewStore.getState()
-      expect(s.leftPanelMru).toEqual(['requirement'])
-      expect(s.leftPanelType).toBe('requirement')
-      expect(s.activeLeftPanelType).toBe('requirement')
+      expect(s.leftPanelMru).toEqual(['translate'])
+      expect(s.leftPanelType).toBe('translate')
+      expect(s.activeLeftPanelType).toBe('translate')
     })
 
     it('重复打开移到末端（MRU 语义）', () => {
-      useViewStore.getState().openMruTab('requirement')
+      useViewStore.getState().openMruTab('translate')
       useViewStore.getState().openMruTab('tools')
-      useViewStore.getState().openMruTab('requirement')
-      expect(useViewStore.getState().leftPanelMru).toEqual(['tools', 'requirement'])
+      useViewStore.getState().openMruTab('translate')
+      expect(useViewStore.getState().leftPanelMru).toEqual(['tools', 'translate'])
     })
 
     it('超过 MAX_TABS=5 时裁剪最旧', () => {
@@ -68,9 +68,9 @@ describe('viewStore 左侧面板 tab strip 状态', () => {
 
   describe('closeMruTab（关闭 MRU tab）', () => {
     it('从 MRU 移除且不触碰 leftPanelType', () => {
-      useViewStore.getState().openMruTab('requirement')
+      useViewStore.getState().openMruTab('translate')
       useViewStore.getState().openMruTab('tools')
-      useViewStore.getState().closeMruTab('requirement')
+      useViewStore.getState().closeMruTab('translate')
       const s = useViewStore.getState()
       expect(s.leftPanelMru).toEqual(['tools'])
       // 关闭非激活 tab：leftPanelType 不变

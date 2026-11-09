@@ -1574,7 +1574,7 @@ mod tests {
             server_name: name.to_string(),
             command: "C:\\polaris\\polaris-mcp.exe".to_string(),
             args: vec![
-                "requirements".to_string(),
+                "scheduler".to_string(),
                 "C:\\config".to_string(),
                 "C:\\ws".to_string(),
             ],
@@ -1585,10 +1585,10 @@ mod tests {
     #[test]
     fn build_opencode_mcp_config_maps_command_and_args() {
         // R-MCP：server 列表 → opencode.json 的 mcp 段（command 数组 = [cmd, ...args]）
-        let servers = vec![sample_server("polaris-requirements")];
+        let servers = vec![sample_server("polaris-scheduler")];
         let config = build_opencode_mcp_config(&servers);
         assert_eq!(config["$schema"], "https://opencode.ai/config.json");
-        let srv = &config["mcp"]["polaris-requirements"];
+        let srv = &config["mcp"]["polaris-scheduler"];
         assert_eq!(srv["type"], "local");
         assert_eq!(srv["enabled"], true);
         let cmd = srv["command"].as_array().expect("command 应为数组");

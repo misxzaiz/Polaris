@@ -218,7 +218,6 @@ type LeftPanelContentProps = {
   gitContent: ReactNode
   browserContent?: ReactNode
   translateContent?: ReactNode
-  requirementContent?: ReactNode
   terminalContent?: ReactNode
   toolsContent?: ReactNode
   developerContent?: ReactNode
@@ -239,7 +238,6 @@ export function LeftPanelContent({
   gitContent,
   browserContent,
   translateContent,
-  requirementContent,
   terminalContent,
   toolsContent,
   developerContent,
@@ -262,7 +260,6 @@ export function LeftPanelContent({
     git: gitContent,
     browser: browserContent,
     translate: translateContent,
-    requirement: requirementContent,
     terminal: terminalContent,
     tools: toolsContent,
     developer: developerContent,
@@ -294,7 +291,7 @@ export function LeftPanelContent({
   // - isolation: isolate（aa27251e 引入）：层叠域——面板内浮层不与兄弟面板/外部互相叠盖，
   //   对外整个面板是一颗原子绘制单元。
   // - contain: paint：坐标域——成为全部 fixed/absolute 后代的 containing block，
-  //   面板内 `fixed inset-0` 弹窗（GitPanel PushDialog/BranchDialogs、Todo/Requirement/
+  //   面板内 `fixed inset-0` 弹窗（GitPanel PushDialog/BranchDialogs、
   //   Terminal 的 Modal 等）自动退化为面板相对定位：遮罩与卡片只覆盖面板矩形，
   //   不再全窗口居中，也不再与右侧聊天区（DOM 序靠后的 relative 内容）争绘制序。
   // - data-panel-coordinate-domain：域墙标记，供面板内跟随鼠标的 fixed 浮层

@@ -14,7 +14,6 @@ import zhCNSystemPrompt from '../locales/zh-CN/systemPrompt.json';
 import zhCNTools from '../locales/zh-CN/tools.json';
 import zhCNDeveloper from '../locales/zh-CN/developer.json';
 import zhCNScheduler from '../locales/zh-CN/scheduler.json';
-import zhCNRequirement from '../locales/zh-CN/requirement.json';
 import zhCNCommands from '../locales/zh-CN/commands.json';
 import zhCNPromptSnippet from '../locales/zh-CN/promptSnippet.json';
 import zhCNExecutionConsole from '../locales/zh-CN/executionConsole.json';
@@ -32,7 +31,6 @@ import enUSSystemPrompt from '../locales/en-US/systemPrompt.json';
 import enUSTools from '../locales/en-US/tools.json';
 import enUSDeveloper from '../locales/en-US/developer.json';
 import enUSScheduler from '../locales/en-US/scheduler.json';
-import enUSRequirement from '../locales/en-US/requirement.json';
 import enUSCommands from '../locales/en-US/commands.json';
 import enUSPromptSnippet from '../locales/en-US/promptSnippet.json';
 import enUSExecutionConsole from '../locales/en-US/executionConsole.json';
@@ -52,7 +50,6 @@ export const resources = {
     tools: zhCNTools,
     developer: zhCNDeveloper,
     scheduler: zhCNScheduler,
-    requirement: zhCNRequirement,
     commands: zhCNCommands,
     promptSnippet: zhCNPromptSnippet,
     executionConsole: zhCNExecutionConsole,
@@ -71,7 +68,6 @@ export const resources = {
     tools: enUSTools,
     developer: enUSDeveloper,
     scheduler: enUSScheduler,
-    requirement: enUSRequirement,
     commands: enUSCommands,
     promptSnippet: enUSPromptSnippet,
     executionConsole: enUSExecutionConsole,
