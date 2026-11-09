@@ -73,10 +73,10 @@
 | 序 | 功能 | 主仓删除（约） | 插件仓新建 | 行数 | 耦合点与路径 |
 |---|---|---|---|---|---|
 | B1-1 | PRD 预览 | `prd_preview_mcp_server.rs` 557 + `plugins/prd-preview` 卡片 | prd-preview 插件（MCP stdio + chatCards） | ~1k | 纯 result 卡片，chatCards 契约现成 |
-| B1-2 | Agnes 多模态 | `commands/agnes.rs` 471 + `agnes_mcp_server.rs` 875 + 面板/卡片 | agnes 插件 | ~2.3k | 同上 |
-| B1-3 | Requirement | `commands/requirement.rs` 420 + `requirements_mcp_server.rs` 646 + `unified_requirement_repository.rs` 624 + RequirementPanel 1888 | requirement 插件（自有存储迁 DataRoot 插件命名空间） | ~3.6k | 存储外迁是关键点 |
-| B1-4 | PersonalHub | `personal_hub_mcp_server.rs` 884 + PersonalHub 1619 | personal-hub 插件 | ~2.5k | |
-| B1-5 | Computer 控制 | `computer_mcp_server.rs` 592 + `computer_control/` 934 | computer 插件 | ~1.5k | 桌面专属能力，Web 端按不可用声明 |
+| ~~B1-2~~ | Agnes 多模态 | ✅ 已完成（2026-11-09 内置插件清理：主仓删码，插件仓 agnes v0.1.2 承接） | agnes 插件 | ~2.3k | 同上 |
+| ~~B1-3~~ | Requirement | ✅ 已完成（2026-11-09：整域移除，needs 插件承接，主仓不留桥接） | — | ~3.6k | 定案改为直接移除 |
+| ~~B1-4~~ | PersonalHub | ✅ 已完成（2026-11-09：插件仓 personal-hub v1.0.0 新建承接，stdio MCP + 面板） | personal-hub 插件 | ~2.5k | |
+| ~~B1-5~~ | Computer 控制 | ✅ 已完成（2026-11-09：MCP server 面摘除，业务核 computer_control 保留给 SimpleAI 引擎；独立 bin polaris-computer-mcp 随插件 zip 分发） | computer 插件 | ~1.5k | 桌面专属能力，Web 端按不可用声明 |
 | B1-6 | Scheduler | `scheduler/` 3229 + `commands/scheduler.rs` 1055 + `scheduler_daemon.rs` 550 + Scheduler 组件 4906 + `schedulerService.ts` 401 | scheduler 插件（插件仓 `sundial` 为同类先例；daemon 以 `contributes.services` 常驻进程形态落地） | ~10.1k | AI 执行任务经 cap 总线回调；sqlite 存储外迁 |
 | B1-7 | Browser | `commands/browser.rs` 4049 + `browser_scripts.rs` 407 + `browser_mcp_server.rs` 977 + Browser 组件 2707 + `browserService.ts` 774 | browser 插件 | ~8.9k | **最难**：webview 实例属宿主（Tauri 桌面）。路径分两步：①核心保留薄 `cap.browser`（webview 控制原语，按 RouterBus 范式收编 commands/browser.rs）；②脚本库/自动化逻辑/面板/MCP 全部外移。TCB 圈选上下文块与 ChatInput 的联动改走 chatCards/contextBlock 公共机制 |
 
@@ -102,7 +102,7 @@ B2 合计 ~17.5k。
 | FileExplorer / Terminal / Editor / Diff | ~9k | 开发环境核心面板，cap.fs / cap.bash 宿主能力的原生 UI |
 | Settings / 主题体系 | ~11k | 宿主管理面 |
 | `ai/` + `ai-runtime` + proxy | ~35k | AI 运行时与供应商网关，AGENTS.md 已定核心 |
-| ask / dispatch 插件壳 | — | ask_listener 是 interaction 卡片伴生通道、dispatch 是任务派发中枢，均宿主基础设施。壳保留，但应在 manifest 注释标明「核心通道，不外移」，消除双轨歧义 |
+| ask / dispatch 插件壳 | — | ask 保留（interaction 卡片伴生通道）；dispatch 已于 2026-11-09 移除（A+B 档，/dispatch 与 /nexus 基础设施保留）——见 plans/builtin-plugin-cleanup-analysis.md |
 | lsp_index | 3.2k | 编辑器核心配套，feature 门控，无独立发布诉求 |
 
 ---
@@ -141,7 +141,7 @@ B2 合计 ~17.5k。
 
 **整体（全部批次完成后）**：
 - [ ] 主仓前后端合计出仓 ≥ 40k 行；`commands/` 目录剩余为不可拆核心命令。
-- [ ] `src/plugins/` 内置插件壳仅剩核心通道（ask/dispatch + corePluginManifest 核心面板），双轨状态消除。
+- [x] `src/plugins/` 内置插件壳仅剩核心通道（2026-11-09 清理后：core/ask/browser/scheduler/contracts；dispatch 已移除，双轨状态消除）。
 - [ ] 新功能全部落在插件仓（既有定案的可验证状态）。
 
 ---

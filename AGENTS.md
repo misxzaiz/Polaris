@@ -28,7 +28,7 @@
 | **Web / 桌面开发（默认）** | `pnpm tauri:dev:web` | 前端 9827、后端 9829；vite proxy 代理 `/api` |
 | 桌面 Tauri 开发 | `pnpm tauri:dev` | |
 | 类型检查（**前端门槛**） | `pnpm typecheck` | 即 `tsc --noEmit`；CI `build-check` 会跑；本地改动后自行跑 |
-| 前端测试 | `pnpm test:run`（一次）/ `pnpm test`（watch） | 118 个 vitest 文件，`src/` 下 |
+| 前端测试 | `pnpm test:run`（一次）/ `pnpm test`（watch） | 188 个 vitest 文件，`src/` 下（2026-11-09 复点） |
 | Lint | `pnpm lint` / `pnpm lint:fix` | eslint + typescript-eslint |
 | 安全审计 | `pnpm security:audit` | audit-ci |
 | **Rust 静态检查（后端门槛）** | `cargo check` | 本机 **不可** `cargo test --lib`（Tauri DLL 启动问题），**用 `cargo check` 代替** |

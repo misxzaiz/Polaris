@@ -4,7 +4,7 @@
 
 - `759b2be8 feat: add plugin registry and settings controls`
   - 前端插件类型、注册表、内置插件声明、图标映射。
-  - Todo 作为首个内置插件案例。
+  - （历史）Todo 曾作为首个内置插件案例；内置插件清理（2026-11）后 builtin MCP server 仅剩 scheduler/ask/browser/bus。
   - ActivityBar、RadialMenu、App 接入插件 UI contributions。
   - 设置页新增 Plugins 标签，可控制插件、UI 模块、MCP 能力开关。
 
@@ -35,7 +35,7 @@
 
 - `feat: add backend mcp contribution registry`
   - 新增 Rust 侧 `PluginMcpServerContribution`、`McpServerContributionRegistry`、`McpServerArgsMode`。
-  - 当前 Todo、Requirements、Scheduler MCP server 已迁移为 registry 初始化内容。
+  - 当前 Scheduler、Ask、Browser、Bus MCP server 由 registry 初始化；Todo/Requirements/Agnes/Computer/PersonalHub/Dispatch 面已随内置插件清理移除（见 plans/builtin-plugin-cleanup-*.md）。
   - `WorkspaceMcpConfigService` 支持从外部 contribution registry 构造，默认入口保持内置行为不变。
 
 - `fix: make all MCP server binaries optional`
@@ -68,7 +68,9 @@
 
 ## 当前架构边界
 
-前端插件 manifest 已经可以声明 UI 和 MCP contribution，后端 MCP 配置生成已经抽象为 Rust contribution registry。当前两端仍通过 server id/name 约定对齐，例如 Todo 使用 `polaris-todo`。
+前端插件 manifest 已经可以声明 UI 和 MCP contribution，后端 MCP 配置生成已经抽象为 Rust contribution registry。当前两端通过 server id/name 约定对齐（内置面仅剩 scheduler/ask/browser；bus 由 polaris.bus 归属注入）。
+
+> 注：本文件为现状快照，2026-11-09 起内置插件已收敛为 core/ask/browser/scheduler/contracts 五个，历史段落保留原貌。
 
 聊天链路已经支持禁用插件 MCP server，后端也具备接收 MCP contribution registry 的入口。还没有完成的是前后端 manifest/schema 对齐和插件安装发现后的自动注册闭环。
 

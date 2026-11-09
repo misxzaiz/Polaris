@@ -6,7 +6,7 @@
 
 ## 当前结论
 
-MCP 插件系统已经完成第一阶段骨架、阶段 4 后端 registry、阶段 5 前后端 manifest 对齐的第一步，以及阶段 6 插件发现/安装/更新闭环的主要操作面：前端插件注册表、Todo 插件案例、插件 UI/MCP 开关、状态后端持久化、聊天请求禁用 MCP server 过滤、设置页 MCP runtime 状态展示、后端内置 MCP server 声明式定义表、后端插件 MCP contribution registry、共享 manifest schema 文档、Todo 插件 MCP server 前后端一致性测试、用户/项目插件目录扫描、已安装插件 manifest 清单返回、前端发现插件 metadata 动态注册、设置页区分内置/用户安装/项目插件、设置页手动刷新已安装插件、前端 manifest contribution 校验诊断反馈、刷新时替换非内置插件避免已删除安装残留、用户/项目安装目录查询与打开入口、从本地目录复制安装插件、按已发现安装路径安全卸载插件、后端 manifest schema 校验命令、安装前 manifest 诊断拦截、Web/Tauri 两种传输下的 manifest 校验入口、manifest `origin` 来源链接展示、基于 `origin.updateUrl` 的插件更新检查入口、本地 zip/json 包安装、远程 manifest/zip 安装、`origin.downloadUrl` 更新包解析，以及用户确认后的覆盖更新。
+MCP 插件系统已经完成第一阶段骨架、阶段 4 后端 registry、阶段 5 前后端 manifest 对齐的第一步，以及阶段 6 插件发现/安装/更新闭环的主要操作面：前端插件注册表、（历史）Todo 插件案例、插件 UI/MCP 开关、状态后端持久化、聊天请求禁用 MCP server 过滤、设置页 MCP runtime 状态展示、后端内置 MCP server 声明式定义表、后端插件 MCP contribution registry、共享 manifest schema 文档、（历史）内置 manifest 一致性测试、用户/项目插件目录扫描、已安装插件 manifest 清单返回、前端发现插件 metadata 动态注册、设置页区分内置/用户安装/项目插件、设置页手动刷新已安装插件、前端 manifest contribution 校验诊断反馈、刷新时替换非内置插件避免已删除安装残留、用户/项目安装目录查询与打开入口、从本地目录复制安装插件、按已发现安装路径安全卸载插件、后端 manifest schema 校验命令、安装前 manifest 诊断拦截、Web/Tauri 两种传输下的 manifest 校验入口、manifest `origin` 来源链接展示、基于 `origin.updateUrl` 的插件更新检查入口、本地 zip/json 包安装、远程 manifest/zip 安装、`origin.downloadUrl` 更新包解析，以及用户确认后的覆盖更新。
 
 当前还没有完成的是：插件市场/远程来源管理、插件权限执行边界、插件可视化模块的动态加载与隔离策略、外部插件 MCP server 的分发与运行时权限收敛。阶段 5 仍可继续扩展为自动 JSON schema/生成式 schema 校验；阶段 6 仍可继续扩展为更完整的安装错误展示、来源可信度提示和更新回滚 UX。
 

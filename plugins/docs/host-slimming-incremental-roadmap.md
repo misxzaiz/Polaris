@@ -113,7 +113,7 @@ B1-3 Requirement（~3.6k，存储外迁是关键点）+ B2-3 PetOverlay（1.5k�
 | 指标 | 基线（2026-11-06） | W3 后 | W5 后 | W6 后 |
 |---|---|---|---|---|
 | 主仓非测试 LOC | 318k | ~310k | ~293k | ~275k |
-| 内置插件壳数 | 12 | 8 | 2-3 | 2（ask/dispatch 核心通道） |
+| 内置插件壳数 | 12 | 8 | 5（2026-11-09 清理后：core/ask/browser/scheduler/contracts，见 plans/builtin-plugin-cleanup-analysis.md） | — |
 | 主包体积 / 启动时长 | W0 补测 | 复测 | 复测 | 复测 |
 
 - LOC 复测命令（本文件口径可复跑）：
@@ -143,5 +143,5 @@ B1-3 Requirement（~3.6k，存储外迁是关键点）+ B2-3 PetOverlay（1.5k�
 ## 7. 明确不做（重申总纲 §4.3 不拆清单）
 
 Chat/ChatInput/会话域、Git 域（观察项）、FileExplorer/Terminal/Editor/Diff、Settings/主题、
-`ai/`+proxy、ask/dispatch 核心通道壳、lsp_index、conversationPackager 等共享原语。
+`ai/`+proxy、ask 核心通道壳（dispatch 已随 2026-11 内置插件清理移除，会话派发基础设施保留）、lsp_index、conversationPackager 等共享原语。
 判定四问（总纲 §3）随时可用：宿主性/边界性/通道性/收益——四问二否即不拆。
