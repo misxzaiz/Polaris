@@ -23,7 +23,6 @@ import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { PluginTab } from './tabs/PluginTab';
-import { PersonalHubTab } from './tabs/PersonalHubTab';
 import { PerformanceTab } from './tabs/PerformanceTab';
 import { TokenStatsTab } from './tabs/TokenStatsTab';
 import { createLogger } from '@/utils/logger';
@@ -53,7 +52,6 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'app-update': 'nav.appUpdate',
   'advanced': 'nav.advanced',
   'web': 'nav.web',
-  'personal-hub': 'nav.personalHub',
   'token-stats': 'nav.tokenStats',
   'performance': 'nav.performance',
 };
@@ -97,7 +95,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
     speech: ['speech', 'tts', 'wakeWord', 'voiceNotification', 'voiceCommands'],
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
-    'personal-hub': ['personalHub'],
     'ai-engine': ['defaultEngine', 'claudeCode'],
     'model-provider': ['modelProfiles', 'activeModelProfileId'],
     performance: ['performance', 'perfMigrationDismissed'],
@@ -320,14 +317,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
                 onConfigChange={setLocalConfig}
                 loading={loading}
                 statusRefreshKey={webStatusRefreshKey}
-              />
-            )}
-
-            {activeTab === 'personal-hub' && (
-              <PersonalHubTab
-                config={localConfig}
-                onConfigChange={setLocalConfig}
-                loading={loading}
               />
             )}
 

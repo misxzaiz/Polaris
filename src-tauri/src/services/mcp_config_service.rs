@@ -12,13 +12,11 @@ const MCP_BIN_NAME: &str = "polaris-mcp";
 const COMPUTER_MCP_SERVER_NAME: &str = "polaris-computer";
 const ASK_MCP_SERVER_NAME: &str = "polaris-ask";
 const BROWSER_MCP_SERVER_NAME: &str = "polaris-browser";
-const PH_MCP_SERVER_NAME: &str = "polaris-ph";
 const BUS_MCP_SERVER_NAME: &str = "polaris-bus";
 const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
 const COMPUTER_PLUGIN_ID: &str = "polaris.computer";
 const ASK_PLUGIN_ID: &str = "polaris.ask";
 const BROWSER_PLUGIN_ID: &str = "polaris.browser";
-const PERSONAL_HUB_PLUGIN_ID: &str = "polaris.personal-hub";
 const BUS_PLUGIN_ID: &str = "polaris.bus";
 const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
 
@@ -155,15 +153,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
             BROWSER_MCP_SERVER_NAME,
             "POLARIS_BROWSER_MCP_PATH",
             McpServerArgsMode::AskListener,
-            false,
-        ),
-    );
-    registry.register_plugin_server(
-        PERSONAL_HUB_PLUGIN_ID,
-        PluginMcpServerContribution::builtin(
-            PH_MCP_SERVER_NAME,
-            "POLARIS_PH_MCP_PATH",
-            McpServerArgsMode::ConfigDirAndWorkspace,
             false,
         ),
     );
@@ -795,7 +784,6 @@ fn capability_to_builtin_servers(capability: &str) -> Vec<&'static str> {
         "computer" => vec![COMPUTER_MCP_SERVER_NAME],
         "browser" => vec![BROWSER_MCP_SERVER_NAME],
         "ask" => vec![ASK_MCP_SERVER_NAME],
-        "personal-hub" => vec![PH_MCP_SERVER_NAME],
         // 硬编码工具能力（虚拟 server，无内置同名 MCP server）
         "shell" => vec![BUILTIN_BASH_MCP_SERVER_NAME],
         "filesystem" => vec![BUILTIN_FS_MCP_SERVER_NAME],

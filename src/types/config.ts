@@ -155,18 +155,6 @@ export interface BaiduTranslateConfig {
   secretKey: string;
 }
 
-/** Personal Hub 内部插件配置（Supabase 接入 + 字段级加密） */
-export interface PersonalHubConfig {
-  /** Supabase 项目 URL */
-  supabaseUrl: string;
-  /** Supabase anon key（公开密钥） */
-  supabaseAnonKey: string;
-  /** 字段级加密密钥（crypto-js AES 口令模式） */
-  encryptionKey: string;
-  /** Supabase session token（前端登录后同步写入，供 MCP server 使用） */
-  sessionToken?: string;
-}
-
 /** 消息显示模式 */
 export type IntegrationDisplayMode = 'chat' | 'separate' | 'both';
 
@@ -348,8 +336,6 @@ export interface Config {
   autoLaunch?: boolean;
   /** 百度翻译配置 */
   baiduTranslate?: BaiduTranslateConfig;
-  /** Personal Hub 内部插件配置 */
-  personalHub?: PersonalHubConfig;
   /** QQ Bot 集成配置 */
   qqbot: QQBotConfig;
   /** Feishu 集成配置 */

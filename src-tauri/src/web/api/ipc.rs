@@ -220,8 +220,6 @@ pub async fn handle_ipc_bridge(
         // ── Config helpers ─────────────────────────────────────────────────
         "set_work_dir" => dispatch_set_work_dir(&state, &args),
         "reset_cli_config" => dispatch_reset_cli_config(&state).await,
-        "set_personal_hub_session" => dispatch_set_personal_hub_session(&state, &args),
-        "get_personal_hub_session_token" => dispatch_get_personal_hub_session_token(&state),
 
         // ── File Explorer ──────────────────────────────────────────────────
         "read_directory" => dispatch_read_directory(&args).await,
@@ -1398,36 +1396,6 @@ async fn dispatch_reset_cli_config(state: &AppState) -> Result<Json<Value>, WebE
     registry.refresh_all_configs(next_config.clone());
     drop(registry);
     Ok(Json(serde_json::json!({ "status": "ok", "config": next_config })))
-}
-
-/// 写入 Personal Hub session token（供 MCP server 认证 Supabase）
-fn dispatch_set_personal_hub_session(
-    state: &AppState,
-    args: &Value,
-) -> Result<Json<Value>, WebError> {
-    let session_token = args
-        .get("sessionToken")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .unwrap_or_default();
-
-    let mut store = state.lock_config()?;
-    let mut config = store.get().clone();
-    config.personal_hub.session_token = session_token;
-    store
-        .update(config)
-        .map_err(|e| WebError::Internal(e.to_string()))?;
-
-    Ok(Json(serde_json::json!({ "status": "ok" })))
-}
-
-/// 读取当前 Personal Hub session token 状态（供 Web 端诊断/MCP 配置页）
-fn dispatch_get_personal_hub_session_token(state: &AppState) -> Result<Json<Value>, WebError> {
-    let store = state.lock_config()?;
-    let has_token = !store.get().personal_hub.session_token.is_empty();
-    Ok(Json(serde_json::json!({ "hasToken": has_token })))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

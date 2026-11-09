@@ -24,7 +24,6 @@ use std::path::PathBuf;
 use polaris_lib::services::{
     ask_mcp_server::{run_ask_mcp_server, AskMcpConfig},
     browser_mcp_server::{run_browser_mcp_server, BrowserMcpConfig},
-    personal_hub_mcp_server::run_ph_mcp_server,
     scheduler_mcp_server::run_scheduler_mcp_server,
 };
 use polaris_lib::{AppError, Result};
@@ -57,9 +56,6 @@ fn main_impl() -> Result<()> {
     match subcommand.as_str() {
         // ── 独立 MCP server（ConfigDirAndWorkspace 模式） ──────────
         }
-        "ph" => {
-            let (config_dir, workspace_path) = parse_config_dir_args(sub_args, "ph")?;
-            run_ph_mcp_server(&config_dir, workspace_path)
         }
         "computer" => {
             run_computer_mcp(sub_args)

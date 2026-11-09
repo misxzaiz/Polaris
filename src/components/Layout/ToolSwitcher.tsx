@@ -42,7 +42,6 @@ export function getToolGroup(panelType: string): ToolGroupId {
   switch (panelType) {
     case 'files':
     case 'browser':
-    case 'personalHub':
       return 'context'
     case 'git':
       return 'changes'
