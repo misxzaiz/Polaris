@@ -1,5 +1,12 @@
 # 2. 后续阶段计划
 
+> **【历史归档·2026-11-09】** 本文件为 MCP registry 迁移期的规划文档，其中提及的
+> polaris.todo / polaris.requirements 等内置插件已在「内置插件清理」中移除
+> （见 plans/builtin-plugin-cleanup-analysis.md）。阶段 4（registry 抽象）已完成，
+> 其余条目以 plans/ 现行文档为准。
+
+# 2. 后续阶段计划
+
 ## 阶段 4：后端插件 MCP contribution registry
 
 状态：已完成。后端已有 `PluginMcpServerContribution`、`McpServerContributionRegistry` 和 `McpServerArgsMode`，当前内置 MCP server 已迁移为 registry 初始化内容。

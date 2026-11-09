@@ -3,7 +3,6 @@
  */
 
 import type { AssistantChatMessage, ContentBlock, TextBlock, ToolCallBlock } from '@/types';
-import type { TodoInputData } from './types';
 import { markdownCache } from '@/utils/cache';
 
 /** Markdown 渲染器（使用缓存优化） */
@@ -141,32 +140,8 @@ export function isEmptyTextBlock(block: ContentBlock): boolean {
 }
 
 /**
- * 判断是否为 TodoWrite 工具
- */
-export function isTodoWriteTool(block: ToolCallBlock): boolean {
-  return block.name.toLowerCase() === 'todowrite';
-}
-
-/**
  * 判断是否为 Grep 工具
  */
 export function isGrepTool(block: ToolCallBlock): boolean {
   return block.name.toLowerCase().includes('grep');
-}
-
-/**
- * 解析 TodoWrite 输入数据
- */
-export function parseTodoInput(input: Record<string, unknown> | undefined): TodoInputData | null {
-  if (!input) return null;
-  const todos = input.todos as TodoInputData['todos'];
-  if (!Array.isArray(todos)) return null;
-
-  return {
-    todos,
-    total: todos.length,
-    completed: todos.filter(t => t.status === 'completed').length,
-    inProgress: todos.filter(t => t.status === 'in_progress').length,
-    pending: todos.filter(t => t.status === 'pending').length,
-  };
 }

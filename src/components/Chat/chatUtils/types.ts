@@ -21,18 +21,3 @@ export interface ThinkingStep {
   text: string;
   index: number;
 }
-
-/** TodoWrite 相关类型定义 */
-export interface TodoItemType {
-  content: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  activeForm?: string;
-}
-
-export interface TodoInputData {
-  todos: TodoItemType[];
-  total: number;
-  completed: number;
-  inProgress: number;
-  pending: number;
-}

@@ -368,7 +368,7 @@ pub fn create_app_state(
     }
 
     // 统一转发总线（第三步 RouterBus）：复用现有 WS 广播通道 + 契约 SqliteStorage。
-    // cap.kv / cap.todo 经 ctx.storage() 读写 <DataRoot>/stores/*.db。
+    // cap.kv 经 ctx.storage() 读写 <DataRoot>/stores/*.db。
     // 第五步：PolicyPermission 权限 gate（config.json permissions 段覆盖，缺省全放行
     // 与历史 StaticPermission 等价）+ FileAuditSink 审计落盘（tamper-evident 哈希链）。
     let state_context_store: Arc<Mutex<ContextMemoryStore>> = Arc::new(Mutex::new(ContextMemoryStore::new()));
@@ -394,7 +394,7 @@ pub fn create_app_state(
             BashCapability, EventAdapter, FileAuditSink, FsCapability, KvCapability, PolicyPermission,
             ContextCapability, ConfigCapability, DataRootCapability, HttpCapability,
             PluginDiscoveryCapability, PluginServiceManagerCapability, PromptSnippetCapability,
-            RouterBus, StreamEchoCapability, TodoCapability, audit_sink, prompt_snippet_capability,
+            RouterBus, StreamEchoCapability, audit_sink, prompt_snippet_capability,
         };
         use crate::services::hook_registry::{HookSystem, put_hook_system};
         use crate::services::router::HookCapability;
@@ -415,8 +415,8 @@ pub fn create_app_state(
             .permissions
             .clone();
         // ui_control_enabled 一并载入：关闭（默认）时策略层追加 Plugin 源对 cap.ui*/
-        // cap.self.mutate* 的 deny，补齐 polaris-dispatch(cap_dispatch) 旁路——
-        // 前端挂载门只摘 polaris-bus（见 conversationStoreUtils.getDisabledPluginMcpServers）。
+        // cap.self.mutate* 的 deny，补齐前端挂载门的盲区——
+        // 挂载门只摘 polaris-bus（见 conversationStoreUtils.getDisabledPluginMcpServers）。
         let ui_control_enabled = config_store_arc
             .lock()
             .unwrap()
@@ -501,9 +501,6 @@ pub fn create_app_state(
         // server.js / __proxy 迁此。插件面板（主窗口 Bootstrap）与 AI（Plugin，
         // bus_dispatch 白名单）均经此触达。SSRF 校验见 http_capability.rs）
         let _ = bus.register_handle(Box::new(HttpCapability));
-        // cap.todo —— 第四步闭环替换第一块：真实业务域（经 ctx.storage() 读写
-        // <DataRoot>/stores/todo.db，旧命令层已全部移除，本 capability 是唯一入口）
-        let _ = bus.register_handle(Box::new(TodoCapability));
         // cap.bash —— 宿主级 shell 命令执行（任务后台运行 + 会话解耦：任务归宿主，
         // 不随 AI 会话结束而终止；run/status/log/wait/kill/list 六个动作）。
         // 远程默认拒绝（管理面域，见 policy_permission.rs 默认规则表）。
@@ -651,7 +648,7 @@ pub fn create_app_state(
                 service
                     .resolved_simple_ai_servers(&config_dir.to_string_lossy(), &[])
                     .into_iter()
-                    // 排除无归属兜底（binary 无 plugin_id）；内置插件（polaris.computer 等）与外部插件统一纳入
+                    // 排除无归属兜底（binary 无 plugin_id）；内置插件与外部插件统一纳入
                     .filter(|s| s.plugin_id != "polaris.builtin")
                     .collect::<Vec<_>>()
             })

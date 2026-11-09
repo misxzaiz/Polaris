@@ -493,7 +493,7 @@ export interface AgentRunBlock {
  * TaskBoard 相关类型
  * ======================================== */
 
-/** 任务板单项状态（扩展 TodoWrite，增加 blocked/stopped） */
+/** 任务板单项状态（在 pending/in_progress/completed 基础上扩展 blocked/stopped） */
 export type TaskItemStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'stopped';
 
 /** 任务板单项 */

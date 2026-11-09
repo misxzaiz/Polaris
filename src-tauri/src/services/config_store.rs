@@ -1004,7 +1004,6 @@ impl OldConfig {
             auto_launch: false,
             floating_window: Default::default(),
             baidu_translate: None,
-            personal_hub: Default::default(),
             speech: Default::default(),
             tts: Default::default(),
             wake_word: None,

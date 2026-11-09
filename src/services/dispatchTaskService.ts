@@ -1,8 +1,8 @@
 /**
  * 派发任务服务
  *
- * 处理 polaris-dispatch MCP（dispatch_task 工具）发起的会话间任务委派：
- * 后端 ask_listener 收到 dispatch 帧后 emit `dispatch-task-request`，本服务
+ * 处理会话间任务委派（/dispatch 命令、nexus 专家团管线）：
+ * 后端 ask_listener/nexus_pipeline emit `dispatch-task-request`，本服务
  * 监听该事件并：
  *   1. 创建静默后台会话（dispatch-{depth}-{id}，不抢占当前 Tab）
  *   2. 通过 start_chat 驱动引擎执行任务（复用 scheduler 的执行路径）

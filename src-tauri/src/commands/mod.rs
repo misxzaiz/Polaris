@@ -70,12 +70,6 @@ pub mod scheduler;
 pub mod terminal;
 pub mod terminal_script;
 pub mod file_watcher;
-pub mod requirement;
-pub mod agnes;
-#[cfg(feature = "tauri-app")]
-pub use agnes::{
-    agnes_create_video, agnes_generate_image, agnes_get_config, agnes_query_video, agnes_save_config,
-};
 
 // 重新导出命令函数，确保它们在模块级别可见
 pub use workspace::validate_workspace_path;
@@ -98,7 +92,7 @@ pub mod lsp;
 
 pub mod cli_info;
 #[cfg(feature = "tauri-app")]
-pub use cli_info::{cli_get_agents, cli_get_auth_status, cli_get_version, cli_extract_structured};
+pub use cli_info::{cli_get_agents, cli_get_auth_status, cli_get_version};
 
 pub mod engine_install;
 #[cfg(feature = "tauri-app")]

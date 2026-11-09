@@ -1,3 +1,9 @@
+# 插件可见性治理（deprecated 摘除）
+
+> **【已被取代·2026-11-09】** 本文件的 deprecated 恢复裁决已被「内置插件清理」
+> 取代：polaris.requirements 整域移除（needs 插件承接）、polaris.agnes 外移
+> （插件仓 agnes 承接）。见 plans/builtin-plugin-cleanup-analysis.md。
+
 # 插件可见性治理：enabledByDefault 语义重定义
 
 > 状态：✅ 已实施（2026-09-12），Web 实测验证通过

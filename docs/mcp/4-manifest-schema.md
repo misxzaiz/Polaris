@@ -128,10 +128,12 @@ interface PluginServiceContribution {
 
 | Plugin ID | MCP Server ID | Transport | Frontend command | Backend bin name | Args mode |
 | --- | --- | --- | --- | --- | --- |
-| `polaris.todo` | `polaris-todo` | `stdio` | `polaris_todo_mcp` | `polaris-todo-mcp` | `ConfigDirAndWorkspace` |
+| `polaris.scheduler` | `polaris-scheduler` | `stdio` | `polaris_scheduler_mcp` | `polaris-mcp`（scheduler 子命令） | `ConfigDirAndWorkspace` |
+
+> 2026-11-09 内置插件清理后，对齐表仅剩上表一行；`builtin_plugin_mcp_manifests()` 死重声明面已删除，registry（`builtin_mcp_contribution_registry()`）是唯一权威。
 
 ## 校验入口
 
-- 前端：`src/plugin-system/mcp.test.ts` 校验 `polaris.todo` manifest 声明。
-- 后端：`src-tauri/src/services/mcp_config_service.rs` 中 `builtin_plugin_mcp_manifest_matches_registry` 校验 Rust mirror 与 registry。
+- 前端：`src/plugin-system/mcp.test.ts` 校验 `polaris.scheduler` manifest 声明。
+- 后端：registry 校验由 `builtin_mcp_contribution_registry()` 与 PluginState 门控测试覆盖（`disabled_builtin_mcp_server_names_*`）。
 - 后端：`plugin_validate_manifest` 校验本地外部 manifest；`plugin_install_package` 安装本地 zip/json 包；`plugin_install_remote` 从远程 manifest/zip 安装；`plugin_check_update` 读取 `origin.updateUrl` 并返回 `currentVersion` / `latestVersion` / `updateAvailable` / `downloadUrl`；`plugin_apply_update` 根据 `origin.downloadUrl` 下载/复制更新包并在用户确认后覆盖安装目录。

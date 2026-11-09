@@ -6,7 +6,6 @@ import zhCNSettings from '../locales/zh-CN/settings.json';
 import zhCNTranslate from '../locales/zh-CN/translate.json';
 import zhCNChat from '../locales/zh-CN/chat.json';
 import zhCNMenu from '../locales/zh-CN/menu.json';
-import zhCNTodo from '../locales/zh-CN/todo.json';
 import zhCNErrors from '../locales/zh-CN/errors.json';
 import zhCNWorkspace from '../locales/zh-CN/workspace.json';
 import zhCNGit from '../locales/zh-CN/git.json';
@@ -15,7 +14,6 @@ import zhCNSystemPrompt from '../locales/zh-CN/systemPrompt.json';
 import zhCNTools from '../locales/zh-CN/tools.json';
 import zhCNDeveloper from '../locales/zh-CN/developer.json';
 import zhCNScheduler from '../locales/zh-CN/scheduler.json';
-import zhCNRequirement from '../locales/zh-CN/requirement.json';
 import zhCNCommands from '../locales/zh-CN/commands.json';
 import zhCNPromptSnippet from '../locales/zh-CN/promptSnippet.json';
 import zhCNExecutionConsole from '../locales/zh-CN/executionConsole.json';
@@ -25,7 +23,6 @@ import enUSSettings from '../locales/en-US/settings.json';
 import enUSTranslate from '../locales/en-US/translate.json';
 import enUSChat from '../locales/en-US/chat.json';
 import enUSMenu from '../locales/en-US/menu.json';
-import enUSTodo from '../locales/en-US/todo.json';
 import enUSErrors from '../locales/en-US/errors.json';
 import enUSWorkspace from '../locales/en-US/workspace.json';
 import enUSGit from '../locales/en-US/git.json';
@@ -34,7 +31,6 @@ import enUSSystemPrompt from '../locales/en-US/systemPrompt.json';
 import enUSTools from '../locales/en-US/tools.json';
 import enUSDeveloper from '../locales/en-US/developer.json';
 import enUSScheduler from '../locales/en-US/scheduler.json';
-import enUSRequirement from '../locales/en-US/requirement.json';
 import enUSCommands from '../locales/en-US/commands.json';
 import enUSPromptSnippet from '../locales/en-US/promptSnippet.json';
 import enUSExecutionConsole from '../locales/en-US/executionConsole.json';
@@ -46,7 +42,6 @@ export const resources = {
     translate: zhCNTranslate,
     chat: zhCNChat,
     menu: zhCNMenu,
-    todo: zhCNTodo,
     errors: zhCNErrors,
     workspace: zhCNWorkspace,
     git: zhCNGit,
@@ -55,7 +50,6 @@ export const resources = {
     tools: zhCNTools,
     developer: zhCNDeveloper,
     scheduler: zhCNScheduler,
-    requirement: zhCNRequirement,
     commands: zhCNCommands,
     promptSnippet: zhCNPromptSnippet,
     executionConsole: zhCNExecutionConsole,
@@ -66,7 +60,6 @@ export const resources = {
     translate: enUSTranslate,
     chat: enUSChat,
     menu: enUSMenu,
-    todo: enUSTodo,
     errors: enUSErrors,
     workspace: enUSWorkspace,
     git: enUSGit,
@@ -75,7 +68,6 @@ export const resources = {
     tools: enUSTools,
     developer: enUSDeveloper,
     scheduler: enUSScheduler,
-    requirement: enUSRequirement,
     commands: enUSCommands,
     promptSnippet: enUSPromptSnippet,
     executionConsole: enUSExecutionConsole,

@@ -69,15 +69,9 @@ pub async fn handle_ipc_bridge(
 
         // ── Snippets ───────────────────────────────────────────────────────
 
-        // ── Dispatched tasks (dispatch_task MCP) ───────────────────────────
+        // ── Dispatched tasks（/dispatch 命令路径） ──────────────────────────
         "dispatch_report_status" => dispatch_report_dispatch_status(&state, &args),
         "dispatch_create_task" => dispatch_create_dispatch_task(&state, &args),
-        "dispatch_list_tasks" => {
-            let tasks = state.list_dispatched_tasks();
-            serde_json::to_value(tasks)
-                .map(Json)
-                .map_err(|e| WebError::Internal(format!("序列化派发任务失败: {}", e)))
-        }
         // ── 专家/专家团(自定义 + 用户自建,内置 corpus 已移除) ─────────
         "agent_corpus_rosters" => crate::commands::agent_corpus::corpus_rosters_inner()
             .map_err(bad_request)
@@ -164,14 +158,6 @@ pub async fn handle_ipc_bridge(
         .map_err(WebError::BadRequest)
         .and_then(to_json),
 
-        "dispatch_delete_task" => {
-            let dispatch_id = require_string(&args, "dispatchId")?;
-            if !state.delete_dispatched_task(&dispatch_id) {
-                return Err(WebError::BadRequest(format!("未找到派发任务: {}", dispatch_id)));
-            }
-            Ok(Json(Value::Null))
-        }
-
         // ── Scheduler: Task CRUD ───────────────────────────────────────────
         "scheduler_list_tasks" => dispatch_scheduler_list_tasks(&state, &args),
         "scheduler_get_task" => dispatch_scheduler_get_task(&state, &args),
@@ -234,8 +220,6 @@ pub async fn handle_ipc_bridge(
         // ── Config helpers ─────────────────────────────────────────────────
         "set_work_dir" => dispatch_set_work_dir(&state, &args),
         "reset_cli_config" => dispatch_reset_cli_config(&state).await,
-        "set_personal_hub_session" => dispatch_set_personal_hub_session(&state, &args),
-        "get_personal_hub_session_token" => dispatch_get_personal_hub_session_token(&state),
 
         // ── File Explorer ──────────────────────────────────────────────────
         "read_directory" => dispatch_read_directory(&args).await,
@@ -291,15 +275,6 @@ pub async fn handle_ipc_bridge(
         cmd if cmd.starts_with("git_") => {
             dispatch_git_via_bus(&state, cmd, &args).await
         }
-
-        // ── Requirement ───────────────────────────────────────────────────────
-        "list_requirements" => dispatch_list_requirements(&state, &args),
-        "create_requirement" => dispatch_create_requirement(&state, &args),
-        "update_requirement" => dispatch_update_requirement(&state, &args),
-        "delete_requirement" => dispatch_delete_requirement(&state, &args),
-        "save_requirement_prototype" => dispatch_save_requirement_prototype(&state, &args),
-        "read_requirement_prototype" => dispatch_read_requirement_prototype(&state, &args),
-        "get_requirement_workspace_breakdown" => dispatch_requirement_workspace_breakdown(&state, &args),
 
         // ── Scheduler: Run & Protocol ─────────────────────────────────────────
         "scheduler_run_task" => dispatch_scheduler_run_task(&state, &args).await,
@@ -1423,36 +1398,6 @@ async fn dispatch_reset_cli_config(state: &AppState) -> Result<Json<Value>, WebE
     Ok(Json(serde_json::json!({ "status": "ok", "config": next_config })))
 }
 
-/// 写入 Personal Hub session token（供 MCP server 认证 Supabase）
-fn dispatch_set_personal_hub_session(
-    state: &AppState,
-    args: &Value,
-) -> Result<Json<Value>, WebError> {
-    let session_token = args
-        .get("sessionToken")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .unwrap_or_default();
-
-    let mut store = state.lock_config()?;
-    let mut config = store.get().clone();
-    config.personal_hub.session_token = session_token;
-    store
-        .update(config)
-        .map_err(|e| WebError::Internal(e.to_string()))?;
-
-    Ok(Json(serde_json::json!({ "status": "ok" })))
-}
-
-/// 读取当前 Personal Hub session token 状态（供 Web 端诊断/MCP 配置页）
-fn dispatch_get_personal_hub_session_token(state: &AppState) -> Result<Json<Value>, WebError> {
-    let store = state.lock_config()?;
-    let has_token = !store.get().personal_hub.session_token.is_empty();
-    Ok(Json(serde_json::json!({ "hasToken": has_token })))
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // File Explorer — delegate to command functions directly
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1892,87 +1837,6 @@ fn dispatch_lsp_index_update_file(state: &AppState, args: &Value) -> Result<Json
         json_result!(svc.update_file(std::path::Path::new(&root), std::path::Path::new(&abs_path)))
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Requirement
-// ═══════════════════════════════════════════════════════════════════════════
-
-fn get_req_repo(state: &AppState, args: &Value) -> Result<crate::services::unified_requirement_repository::UnifiedRequirementRepository, WebError> {
-    let config_dir = get_config_dir(state)?;
-    // Frontend wraps args in { params: { workspacePath, ... } }
-    let wp = args.get("workspacePath")
-        .or_else(|| args.get("params").and_then(|p| p.get("workspacePath")))
-        .and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).map(std::path::PathBuf::from);
-    let repo = crate::services::unified_requirement_repository::UnifiedRequirementRepository::new(config_dir, wp);
-    repo.register_workspace().ok();
-    Ok(repo)
-}
-
-/// Extract a string field from args, checking both top-level and nested `params`.
-fn req_string(args: &Value, key: &str) -> Result<String, WebError> {
-    args.get(key).and_then(|v| v.as_str()).map(String::from)
-        .or_else(|| args.get("params").and_then(|p| p.get(key)).and_then(|v| v.as_str()).map(String::from))
-        .ok_or_else(|| WebError::BadRequest(format!("Missing required field: {}", key)))
-}
-
-fn dispatch_list_requirements(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let repo = get_req_repo(state, args)?;
-    let scope = match args.get("scope").and_then(|v| v.as_str()).unwrap_or("workspace") {
-        "all" => crate::models::requirement::QueryScope::All, _ => crate::models::requirement::QueryScope::Workspace,
-    };
-    let mut reqs = repo.list_requirements(scope)?;
-    if let Some(l) = args.get("limit").and_then(|v| v.as_u64()) { reqs.truncate(l as usize); }
-    Ok(Json(serde_json::to_value(reqs).unwrap_or_default()))
-}
-fn dispatch_create_requirement(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let repo = get_req_repo(state, args)?;
-    let title = require_string(args, "title")?;
-    let description = args.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let priority = args.get("priority").and_then(|v| v.as_str())
-        .and_then(|p| serde_json::from_value(serde_json::Value::String(p.to_string())).ok());
-    let tags = args.get("tags").and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>());
-    let cp = crate::models::requirement::RequirementCreateParams {
-        title, description, priority, tags,
-        ..Default::default()
-    };
-    json_result!(repo.create_requirement(cp))
-}
-fn dispatch_update_requirement(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = req_string(args, "id")?;
-    let repo = get_req_repo(state, args)?;
-    let mut u = crate::models::requirement::RequirementUpdateParams::default();
-    // Check both top-level and nested params for all fields
-    if let Ok(v) = req_string(args, "title") { u.title = Some(v); }
-    if let Ok(v) = req_string(args, "description") { u.description = Some(v); }
-    if let Some(v) = args.get("status").or_else(|| args.get("params").and_then(|p| p.get("status"))).and_then(|v| v.as_str()) {
-        u.status = serde_json::from_value(serde_json::Value::String(v.to_string())).ok();
-    }
-    if let Some(v) = args.get("priority").or_else(|| args.get("params").and_then(|p| p.get("priority"))).and_then(|v| v.as_str()) {
-        u.priority = serde_json::from_value(serde_json::Value::String(v.to_string())).ok();
-    }
-    if let Some(v) = args.get("tags").or_else(|| args.get("params").and_then(|p| p.get("tags"))) { u.tags = Some(serde_json::from_value(v.clone()).unwrap_or_default()); }
-    json_result!(repo.update_requirement(&id, u))
-}
-fn dispatch_delete_requirement(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = req_string(args, "id")?;
-    json_result!(get_req_repo(state, args)?.delete_requirement(&id))
-}
-fn dispatch_save_requirement_prototype(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = req_string(args, "id")?;
-    let html = req_string(args, "html")?;
-    json_result!(get_req_repo(state, args)?.save_prototype(&id, &html))
-}
-fn dispatch_read_requirement_prototype(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    // Frontend sends "prototypePath" for the path to read
-    let prototype_path = req_string(args, "prototypePath")?;
-    let repo = get_req_repo(state, args)?;
-    json_result!(repo.read_prototype(&prototype_path))
-}
-fn dispatch_requirement_workspace_breakdown(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    json_result!(get_req_repo(state, args)?.get_workspace_breakdown())
-}
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Terminal

@@ -160,7 +160,7 @@ pub fn prepare_mcp_config(params: McpConfigParams) -> Result<McpSessionConfig> {
         Path::new(params.work_dir),
     );
     mcp_servers.retain(|s| {
-        // 内置总暴露（builtin 标记，含真实归属 plugin_id 如 polaris.computer）；外部插件检查 aiToolAccess
+        // 内置总暴露（builtin 标记，含真实归属 plugin_id 如 polaris.scheduler）；外部插件检查 aiToolAccess
         if s.builtin {
             return true;
         }

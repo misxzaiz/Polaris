@@ -16,13 +16,13 @@ import type { ContextBlock } from '@/stores/conversationStore/types'
 
 /** 目录条目（capCatalogStore 从 cap.help index 解析而来） */
 export interface CapCatalogEntry {
-  /** cap id，如 cap.todo */
+  /** cap id，如 cap.kv */
   id: string
   /** 中文短名（describe.name），缺省回退 id 本身 */
   name: string
   /** 一句话说明（describe.summary） */
   summary: string
-  /** 是否流式能力（cap_dispatch 同步不可调，注入块中标注） */
+  /** 是否流式能力（同步总线转发不可调，注入块中标注） */
   streaming: boolean
   /** 原始 describe 对象（注入详情块用）；缺省 null */
   describe: Record<string, unknown> | null
@@ -84,7 +84,7 @@ export function matchCaps(caps: CapCatalogEntry[], query: string): CapCatalogEnt
 export function buildCapDigestBlock(caps: CapCatalogEntry[], note?: string): string {
   const lines = caps.map((c) => {
     const summary = c.summary ? `：${c.summary}` : ''
-    const tag = c.streaming ? '（流式，同步 cap_dispatch 不可调）' : ''
+    const tag = c.streaming ? '（流式，同步总线转发不可调）' : ''
     return `- ${c.id}（${c.name}）${tag}${summary}`
   })
   let head = `[cap 能力速查 · ${caps.length} 项 · 实时来自 cap.help；动作协议细节用 cap.help show target=<id> 或 cap_list 查询，不要凭记忆猜]`
@@ -94,7 +94,7 @@ export function buildCapDigestBlock(caps: CapCatalogEntry[], note?: string): str
 
 /** 详情块头：唯一命中时注入该能力完整协议 */
 export function buildCapDetailBlock(cap: CapCatalogEntry, note?: string): string {
-  let header = `[cap 协议 · ${cap.id}（${cap.name}）${cap.streaming ? '· 流式能力，同步 cap_dispatch 不可调' : ''} · 实时来自 cap.help，下方 JSON 即完整调用协议]`
+  let header = `[cap 协议 · ${cap.id}（${cap.name}）${cap.streaming ? '· 流式能力，同步总线转发不可调' : ''} · 实时来自 cap.help，下方 JSON 即完整调用协议]`
   if (note) header += `\n（用户备注：${note}）`
   const body = cap.describe
     ? `\n\`\`\`json\n${JSON.stringify(cap.describe, null, 2)}\n\`\`\``

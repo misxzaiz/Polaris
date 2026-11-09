@@ -58,7 +58,7 @@ export function isProtectedSession(metadata: SessionMetadata | undefined): boole
 
 /**
  * 实体渲染事件白名单（单一权威，EventRouter 同款语义引用本常量）：
- * 外部入口（MCP bridge / cap_dispatch 经 cap.ui.render 等调用）的这类事件不承载
+ * 外部入口（MCP bridge 经 cap.ui.render 等调用）的这类事件不承载
  * 会话主体逻辑，只驱动卡片渲染 / 回答回写——路由 miss 或无路由 ID 时允许兜底投递
  * 到当前活跃会话。其余事件保持丢弃语义，避免重新引入「回退 activeSessionId」的
  * 历史根因（见对不准窗口/新开窗口旧 bug）。

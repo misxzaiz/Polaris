@@ -17,13 +17,10 @@ import { ThinkingBlockRenderer } from './ThinkingBlockRenderer';
 import { ToolCallBlockRenderer } from './ToolCallBlockRenderer';
 import { PluginCardHost } from './PluginCardHost';
 import { ContextCompactRenderer } from './ContextCompactRenderer';
-import { DispatchTaskCard } from '../dispatch/DispatchTaskCard';
 import { AssaultResultCard } from '../tool-calls/AssaultResultCard';
 import { WorkflowCard } from '../tool-calls/WorkflowCard';
 import { parseWorkflowResult } from '../tool-calls/workflowParsers';
 
-/** dispatch_task 工具块渲染为专属派发卡片（实时状态/动态/操作） */
-const DISPATCH_TOOL_NAME = 'mcp__polaris-dispatch__dispatch_task';
 /** workflow 工具块(SDK 内置多 agent 编排)。按 name 小写规范化匹配,同时命中
  * 'workflow' 与 'Workflow'。解析器注册表(parseWorkflowResult)自协商三路分发:
  * 攻坚格式→AssaultResultCard,通用 workflow→WorkflowCard,全失败→降级工具块。 */
@@ -53,12 +50,6 @@ export function renderContentBlock(
         `thinking-${block.content.slice(0, 20)}`
       );
     case 'tool_call':
-      if (block.name === DISPATCH_TOOL_NAME) {
-        return wrapWithErrorBoundary(
-          <DispatchTaskCard block={block} />,
-          block.id
-        );
-      }
       if (block.name.toLowerCase() === WORKFLOW_TOOL_NAME) {
         // 解析器注册表自协商:攻坚格式→AssaultResultCard,通用 workflow→WorkflowCard,
         // 全失败→降级通用工具块。避免误捕获 deep-research / code-review 等非攻坚 workflow。

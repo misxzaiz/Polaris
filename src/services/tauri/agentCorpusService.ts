@@ -76,75 +76,7 @@ export async function deleteCustomAgent(slug: string): Promise<void> {
   return invoke('custom_agent_delete', { slug });
 }
 
-export interface RosterStartResult {
-  rosterId: string;
-  scenario: string;
-  waves: string[][];
-  dispatchedNow: string[];
-}
-
-export async function startRoster(params: {
-  scenario: string;
-  goal: string;
-  sourceSessionId?: string;
-  workDir?: string;
-  mode?: 'sprint' | 'micro';
-}): Promise<RosterStartResult> {
-  return invoke<RosterStartResult>('nexus_start_roster', params);
-}
-
-// ============================================================================
-// NEXUS pipeline 进度
-// ============================================================================
-
-export interface PipelineMember {
-  slug: string;
-  status: 'pending' | 'dispatching' | 'running' | 'completed' | 'failed';
-  dispatchId?: string;
-  verdictStatus?: string;
-}
-
-export interface PipelineEscalation {
-  qaSlug: string;
-  devSlug: string;
-  attempts: number;
-  resolution: 'pending' | 'accepted' | 'failed';
-}
-
-export interface PipelineLaterGroup {
-  activation: string;
-  members: string[];
-}
-
-export interface RosterPipeline {
-  id: string;
-  scenario: string;
-  goal: string;
-  sourceSessionId: string;
-  workDir?: string;
-  waves: string[][];
-  currentWave: number;
-  members: Record<string, PipelineMember>;
-  memberSummaries: Record<string, string>;
-  fixAttempts?: Record<string, number>;
-  loopState?: { devSlug: string; qaSlug: string; phase: 'fixing' | 'reverifying' };
-  escalations?: PipelineEscalation[];
-  laterGroups?: PipelineLaterGroup[];
-  dispatchedGroups?: string[];
-  mode?: string;
-  finalReport?: string;
-  status: 'running' | 'completed';
-  createdAt: number;
-}
-
-export async function resolveEscalation(rosterId: string, qaSlug: string, action: 'accept' | 'fail'): Promise<void> {
-  return invoke('nexus_resolve_escalation', { rosterId, qaSlug, action });
-}
-
-export async function dispatchLaterGroup(rosterId: string, activation: string): Promise<string[]> {
-  return invoke<string[]>('nexus_dispatch_group', { rosterId, activation });
-}
-
-export async function listPipelines(): Promise<RosterPipeline[]> {
-  return invoke<RosterPipeline[]>('nexus_list_pipelines');
-}
+// NEXUS pipeline 封装（startRoster/resolveEscalation/dispatchLaterGroup/listPipelines）
+// 已随专家画廊移除（2026-11）：唯一消费者是画廊面板；/nexus 斜杠命令经
+// chatCommandRouter 直调 transportInvoke('nexus_start_roster')，不经本文件。
+// 后端 nexus 命令与 ask_listener 派发链保留（基础设施）。

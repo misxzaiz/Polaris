@@ -844,7 +844,7 @@ mod tests {
         let (_tmp, storage) = setup_storage();
         let entry = AuditEntry {
             timestamp_ms: 2000,
-            capability: CapabilityId("cap.todo.create".into()),
+            capability: CapabilityId("cap.kv.list".into()),
             source: Source::Bootstrap,
             action: "store".into(),
             prev_hash: "0".repeat(64),

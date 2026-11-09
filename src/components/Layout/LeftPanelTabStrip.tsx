@@ -31,7 +31,6 @@ const GROUP_LABEL: Record<ToolGroupId, string> = {
   context: '上下文',
   changes: '变更',
   run: '运行',
-  automation: '自动化',
   integrations: '集成',
   developer: '开发者',
   system: '系统',

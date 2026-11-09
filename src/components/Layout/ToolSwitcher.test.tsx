@@ -27,11 +27,8 @@ const makeIcon = (name: string) => {
 
 const PINNED_IDS = ['files', 'git', 'browser', 'terminal'];
 const OVERFLOW_IDS = [
-  'todo',
   'translate',
   'scheduler',
-  'requirement',
-  'personalHub',
   'developer',
   'integration',
   'aiConsole',
@@ -78,7 +75,7 @@ describe('ToolSwitcher 渲染与语义', () => {
     expect(activeOption).toHaveAttribute('aria-selected', 'true');
 
     // 未激活项应标记 aria-selected="false"
-    const inactiveOption = screen.getByRole('option', { name: 'label-todo' });
+    const inactiveOption = screen.getByRole('option', { name: 'label-translate' });
     expect(inactiveOption).toHaveAttribute('aria-selected', 'false');
   });
 
@@ -97,11 +94,11 @@ describe('ToolSwitcher 渲染与语义', () => {
 
   it('点击选项触发 onSelect 并关闭浮层', () => {
     const items = makeItems();
-    const target = items.find((item) => item.id === 'todo')!;
+    const target = items.find((item) => item.id === 'translate')!;
     const onClose = vi.fn();
     renderSwitcher({ items, onClose });
 
-    fireEvent.click(screen.getByRole('option', { name: 'label-todo' }));
+    fireEvent.click(screen.getByRole('option', { name: 'label-translate' }));
     expect(target.onSelect).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -174,7 +171,7 @@ describe('ToolSwitcher 锚定与关闭', () => {
   it('浮层上的 mousedown 不关闭浮层', () => {
     const onClose = vi.fn();
     renderSwitcher({ onClose });
-    fireEvent.mouseDown(screen.getByRole('option', { name: 'label-todo' }));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'label-translate' }));
     expect(onClose).not.toHaveBeenCalled();
   });
 

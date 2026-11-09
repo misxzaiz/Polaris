@@ -222,7 +222,7 @@ fn handle_tools_list() -> Value {
                     "the user fills and submits it. Two modes: ",
                     "(1) 'mode':'dispatch' (default) — values are forwarded to a target ",
                     "capability on the bus; 'target' and 'action' are required and the ",
-                    "target must be on the whitelist (cap.todo/cap.kv/cap.context). ",
+                    "target must be on the whitelist (cap.kv/cap.context). ",
                     "(2) 'mode':'collect' — values are collected ONLY and returned to ",
                     "you via the receipt; no capability is dispatched, no whitelist ",
                     "check. Use collect when you need parameters to drive your own next ",
@@ -256,9 +256,8 @@ fn handle_tools_list() -> Value {
                     "The user can SKIP the form — the tool_result then reports 'skipped' ",
                     "with no values. ",
                     "IMPORTANT for mode=dispatch: each field's 'name' MUST be the target ",
-                    "capability's canonical parameter name (e.g. cap.todo create: ",
-                    "content, description, dueDate, priority, tags, relatedFiles, ",
-                    "subtasks, estimatedHours, sessionId). Use 'label' for the ",
+                    "capability's canonical parameter name (check the target capability's ",
+                    "describe contract for its action params). Use 'label' for the ",
                     "human-readable text shown to the user. Never use display text as ",
                     "the 'name'."
                 ),
@@ -270,7 +269,7 @@ fn handle_tools_list() -> Value {
                     "properties": {
                         "target": {
                             "type": "string",
-                            "description": "Target capability id on the bus (e.g. cap.todo, cap.kv, cap.context). Required for mode=dispatch."
+                            "description": "Target capability id on the bus (e.g. cap.kv, cap.context). Required for mode=dispatch."
                         },
                         "action": {
                             "type": "string",
@@ -688,7 +687,7 @@ mod tests {
         let params = json!({
             "name": FORM_TOOL_NAME,
             "arguments": {
-                "target": "cap.todo",
+                "target": "cap.kv",
                 "action": "create",
                 "fields": [{ "name": "content", "type": "string" }]
             }

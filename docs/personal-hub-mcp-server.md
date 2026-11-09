@@ -1,3 +1,10 @@
+# Personal Hub MCP Server（polaris-ph-mcp）实现记录
+
+> **【历史归档·2026-11-09】** 内置插件 polaris.personal-hub 已摘除并外移至
+> 插件仓 `plugins/personal-hub`（stdio MCP + 面板，工具契约 1:1 对齐）。
+> 本文描述的 `polaris_ph_mcp` 独立 bin 时代实现仅作历史参考；现行实现见
+> `D:/space/base/Polaris-plugin/plugins/personal-hub/mcp/server.js`。
+
 # Personal Hub MCP Server 实现
 
 > 日期: 2026-07-26

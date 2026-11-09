@@ -155,8 +155,8 @@ impl PolicyPermission {
     ///
     /// `ui_control_enabled`（config 同名字段，默认 false）：关闭时追加 Plugin 源
     /// （AI 会话）对 `cap.ui*` / `cap.self.mutate*` 的 deny。前端挂载门
-    /// （disabledMcpServers）只摘 polaris-bus，挡不住 polaris-dispatch 的
-    /// cap_dispatch 路径；策略层 deny 补齐该旁路（2026-10-25 治理收紧，
+    /// （disabledMcpServers）只摘 polaris-bus，其余 Plugin 源通道（如 bus_dispatch）
+    /// 不受其约束；策略层 deny 补齐该盲区（2026-10-25 治理收紧，
     /// plans/router-governance-hardening-spec.md）。与其余内置规则一致：
     /// 装配时载入、改动需重启生效；config 精确 allow（特异性更高）可覆盖。
     ///
@@ -472,7 +472,7 @@ mod tests {
             Source::Remote { token: "t".into() },
             Source::Plugin { caller: crate::contracts::PluginId("cap.ai".into()) },
         ] {
-            for cap in ["cap.todo", "cap.kv", "cap.config"] {
+            for cap in ["cap.kv", "cap.config"] {
                 assert_eq!(
                     p.check(&req(cap, source.clone())).unwrap(),
                     PermissionVerdict::Allow

@@ -25,12 +25,12 @@ pub const FORM_WAIT_TIMEOUT_SECS: u64 = 600;
 /// 表单目标能力白名单（阶段 E，安全兜底）。
 ///
 /// 语义：**默认拒绝，仅白名单放行**——与全局权限矩阵（默认放行）方向相反，
-/// 作为 form 工具这层的独立兜底。首个版本限数据域（kv / todo / context）；
+/// 作为 form 工具这层的独立兜底。首个版本限数据域（kv / context）；
 /// cap.config 属管理面，后续阶段逐个放开。**放开即改这张表，不动架构。**
 ///
 /// 双向拦截：拉起时（`handle_form_frame` 校验 target）与提交时（`submit_form`
 /// 纵深防御）都会检查，防表单被篡改或绕过拉起校验。
-pub const FORM_TARGET_WHITELIST: &[&str] = &["cap.kv", "cap.todo", "cap.context"];
+pub const FORM_TARGET_WHITELIST: &[&str] = &["cap.kv", "cap.context"];
 
 /// 判断目标能力是否在表单白名单内（前缀不参与，精确匹配）。
 pub fn target_allowed(target: &str) -> bool {
@@ -45,9 +45,9 @@ pub struct FormHold {
     pub title: String,
     /// 定位会话 / 前端事件路由（可能为空，未绑定时提交降级拒绝）
     pub session_id: String,
-    /// 目标能力（cap.todo / cap.kv / cap.context …）
+    /// 目标能力（cap.kv / cap.kv / cap.context …）
     pub target: String,
-    /// 目标动作（cap.todo 的 create 等）
+    /// 目标动作（cap.kv 的 create 等）
     pub action: String,
     /// read 模式：full 或 none
     pub read: String,
@@ -215,9 +215,9 @@ pub fn submit_form(
         return (receipt, false, exec_result);
     }
 
-    // 1. 点路径展开 + 字段名归一化（AI 声明的自由名 → 目标能力契约参数名）+ 注入 action
+    // 1. 点路径展开 + 字段名归一化（schema label→name 修正）+ 注入 action
     let mut payload = expand_dot_paths(values);
-    payload = normalize_payload_for_target(&hold.target, &payload, &hold.fields);
+    payload = normalize_payload_for_target(&payload, &hold.fields);
     if !hold.action.is_empty() {
         if let Some(obj) = payload.as_object_mut() {
             obj.insert("action".into(), Value::String(hold.action.clone()));
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn target_allowed_permits_whitelist_only() {
         assert!(target_allowed("cap.kv"));
-        assert!(target_allowed("cap.todo"));
+        assert!(target_allowed("cap.kv"));
         assert!(target_allowed("cap.context"));
         assert!(!target_allowed("cap.config"), "管理面目标必须拒绝");
         assert!(!target_allowed("cap.shell"), "未列名能力必须拒绝");
@@ -354,19 +354,19 @@ mod tests {
 
     #[test]
     fn build_hold_rejects_bad_fields() {
-        let err = build_hold("f1", "s1", "cap.todo", "create", "full", &json!([]), "标题", "dispatch", &json!({}), &json!(null)).unwrap_err();
+        let err = build_hold("f1", "s1", "cap.kv", "create", "full", &json!([]), "标题", "dispatch", &json!({}), &json!(null)).unwrap_err();
         assert!(err.contains("fields"));
     }
 
     #[test]
     fn build_hold_accepts_valid() {
         let h = build_hold(
-            "f2", "s1", "cap.todo", "create", "none",
+            "f2", "s1", "cap.kv", "create", "none",
             &json!([{"name": "content", "type": "string"}]),
             "标题",
             "dispatch", &json!({}), &json!(null),
         ).unwrap();
-        assert_eq!(h.target, "cap.todo");
+        assert_eq!(h.target, "cap.kv");
         assert_eq!(h.read, "none");
         assert_eq!(h.fields.len(), 1);
     }
@@ -380,9 +380,9 @@ mod tests {
     #[test]
     fn cleanup_removes_expired_only() {
         let mut holds = std::collections::HashMap::new();
-        let mut old = build_hold("old", "", "cap.todo", "", "full", &json!([{"name": "a"}]), "标题", "dispatch", &json!({}), &json!(null)).unwrap();
+        let mut old = build_hold("old", "", "cap.kv", "", "full", &json!([{"name": "a"}]), "标题", "dispatch", &json!({}), &json!(null)).unwrap();
         old.created_at = Instant::now() - Duration::from_secs(601);
-        let mut fresh = build_hold("fresh", "", "cap.todo", "", "full", &json!([{"name": "a"}]), "标题", "dispatch", &json!({}), &json!(null)).unwrap();
+        let mut fresh = build_hold("fresh", "", "cap.kv", "", "full", &json!([{"name": "a"}]), "标题", "dispatch", &json!({}), &json!(null)).unwrap();
         // fresh 保留
         holds.insert("old".into(), old);
         holds.insert("fresh".into(), fresh);
@@ -395,7 +395,7 @@ mod tests {
     #[test]
     fn private_submit_never_returns_field_value_to_ai() {
         // 隐私泄漏实证：AI 声明 read=full，但用户勾选私密提交(private=true)。
-        // 目标能力 cap.todo 的 create 返回值含 content(=用户填的正文原文)——
+        // 目标能力 cap.kv 的 create 返回值含 content(=用户填的正文原文)——
         // 若不脱敏 exec，即使 read=none 也会经 `执行结果:` 把原文透回 AI。
         // 此处用一个假 router 返回 { "item": { "content": "机密正文" } } 复现。
         struct EchoRouter;
@@ -428,7 +428,7 @@ mod tests {
 
         // AI 声明 read=full（默认往 AI 上下文透值），但用户 forced private。
         let hold = build_hold(
-            "f-private", "s1", "cap.todo", "create", "full",
+            "f-private", "s1", "cap.kv", "create", "full",
             &json!([{"name": "content", "type": "string"}]),
             "私密表单",
             "dispatch", &json!({}), &json!(null),
@@ -445,7 +445,7 @@ mod tests {
         );
         assert!(
             !receipt.contains("\"content\""),
-            "私密提交不得把 target 返回值(cap.todo item.content)透出: {}",
+            "私密提交不得把 target 返回值(cap.kv item.content)透出: {}",
             receipt
         );
         assert!(receipt.contains("执行结果"), "应保有执行结果概要: {}", receipt);
@@ -461,14 +461,14 @@ mod tests {
     fn build_skip_receipt_never_leaks_values() {
         // 跳过回执的信任边界：无论 AI 声明的 read 模式，跳过都不携带任何字段值。
         let hold = build_hold(
-            "f-skip", "s1", "cap.todo", "create", "full",
+            "f-skip", "s1", "cap.kv", "create", "full",
             &json!([{"name": "content", "type": "string"}]),
             "跳过表单",
             "dispatch", &json!({}), &json!(null),
         ).unwrap();
         let user_receipt = build_skip_receipt(&hold, "user");
         assert!(user_receipt.contains("跳过"));
-        assert!(user_receipt.contains("cap.todo"));
+        assert!(user_receipt.contains("cap.kv"));
         assert!(user_receipt.contains("create"));
         assert!(!user_receipt.contains("content"), "跳过不得携带字段名/值");
 
@@ -493,7 +493,7 @@ mod tests {
                 &self,
                 _env: crate::contracts::Envelope,
             ) -> Result<crate::contracts::Reply, String> {
-                Err("cap.todo 需要 content（你填的是: xxx）".to_string())
+                Err("cap.kv 需要 content（你填的是: xxx）".to_string())
             }
             fn subscribe(
                 &self,
@@ -510,7 +510,7 @@ mod tests {
         }
 
         let hold = build_hold(
-            "f-fail", "s1", "cap.todo", "create", "full", // AI 声明 full
+            "f-fail", "s1", "cap.kv", "create", "full", // AI 声明 full
             &json!([{"name": "content", "type": "string"}]),
             "私密失败表单",
             "dispatch", &json!({}), &json!(null),

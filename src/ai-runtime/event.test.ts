@@ -21,12 +21,6 @@ import {
   createTaskProgressEvent,
   createTaskCompletedEvent,
   createTaskCanceledEvent,
-  createTodoCreatedEvent,
-  createTodoUpdatedEvent,
-  createTodoDeletedEvent,
-  createTodoExecutionStartedEvent,
-  createTodoExecutionProgressEvent,
-  createTodoExecutionCompletedEvent,
   // 类型守卫
   isTokenEvent,
   isThinkingEvent,
@@ -43,12 +37,6 @@ import {
   isTaskProgressEvent,
   isTaskCompletedEvent,
   isTaskCanceledEvent,
-  isTodoCreatedEvent,
-  isTodoUpdatedEvent,
-  isTodoDeletedEvent,
-  isTodoExecutionStartedEvent,
-  isTodoExecutionProgressEvent,
-  isTodoExecutionCompletedEvent,
   isAIEvent,
   // Question 事件类型守卫
   isQuestionAnsweredEvent,
@@ -435,115 +423,6 @@ describe('Task Event Creation Functions', () => {
   })
 })
 
-describe('Todo Event Creation Functions', () => {
-  describe('createTodoCreatedEvent', () => {
-    it('should create todo created event with user source', () => {
-      const event = createTodoCreatedEvent('todo-123', 'Write tests', 'high')
-      expect(event).toEqual({
-        type: 'todo_created',
-        todoId: 'todo-123',
-        content: 'Write tests',
-        priority: 'high',
-        source: 'user',
-      })
-    })
-
-    it('should create todo created event with ai source', () => {
-      const event = createTodoCreatedEvent('todo-123', 'Fix bug', 'medium', 'ai')
-      expect(event.source).toBe('ai')
-    })
-  })
-
-  describe('createTodoUpdatedEvent', () => {
-    it('should create todo updated event with status change', () => {
-      const event = createTodoUpdatedEvent('todo-123', { status: 'completed' })
-      expect(event).toEqual({
-        type: 'todo_updated',
-        todoId: 'todo-123',
-        changes: { status: 'completed' },
-      })
-    })
-
-    it('should create todo updated event with multiple changes', () => {
-      const event = createTodoUpdatedEvent('todo-123', {
-        status: 'in_progress',
-        content: 'Updated content',
-        priority: 'high',
-      })
-      expect(event.changes).toEqual({
-        status: 'in_progress',
-        content: 'Updated content',
-        priority: 'high',
-      })
-    })
-  })
-
-  describe('createTodoDeletedEvent', () => {
-    it('should create todo deleted event', () => {
-      const event = createTodoDeletedEvent('todo-123')
-      expect(event).toEqual({
-        type: 'todo_deleted',
-        todoId: 'todo-123',
-      })
-    })
-  })
-
-  describe('createTodoExecutionStartedEvent', () => {
-    it('should create todo execution started event', () => {
-      const event = createTodoExecutionStartedEvent('todo-123', 'session-456')
-      expect(event).toEqual({
-        type: 'todo_execution_started',
-        todoId: 'todo-123',
-        sessionId: 'session-456',
-      })
-    })
-  })
-
-  describe('createTodoExecutionProgressEvent', () => {
-    it('should create todo execution progress event with percent', () => {
-      const event = createTodoExecutionProgressEvent('todo-123', 'Working...', 50)
-      expect(event).toEqual({
-        type: 'todo_execution_progress',
-        todoId: 'todo-123',
-        message: 'Working...',
-        percent: 50,
-      })
-    })
-
-    it('should create todo execution progress event without percent', () => {
-      const event = createTodoExecutionProgressEvent('todo-123', 'Starting...')
-      expect(event.percent).toBeUndefined()
-    })
-  })
-
-  describe('createTodoExecutionCompletedEvent', () => {
-    it('should create todo execution completed event with success', () => {
-      const event = createTodoExecutionCompletedEvent('todo-123', 'success')
-      expect(event).toEqual({
-        type: 'todo_execution_completed',
-        todoId: 'todo-123',
-        status: 'success',
-        error: undefined,
-      })
-    })
-
-    it('should create todo execution completed event with failure', () => {
-      const event = createTodoExecutionCompletedEvent('todo-123', 'failed', 'Task failed')
-      expect(event).toEqual({
-        type: 'todo_execution_completed',
-        todoId: 'todo-123',
-        status: 'failed',
-        error: 'Task failed',
-      })
-    })
-
-    it('should create todo execution completed event with aborted status', () => {
-      const event = createTodoExecutionCompletedEvent('todo-123', 'aborted')
-      expect(event.status).toBe('aborted')
-    })
-  })
-})
-
 describe('Type Guards', () => {
   const testSessionId = 'test-session'
 
@@ -640,50 +519,6 @@ describe('Type Guards', () => {
       expect(isTaskCanceledEvent(createTaskCompletedEvent(testSessionId, 'task-123', 'success'))).toBe(false)
     })
   })
-
-  describe('Todo event type guards', () => {
-    it('isTodoCreatedEvent should return true for todo created events', () => {
-      const event = createTodoCreatedEvent('todo-123', 'Test', 'high')
-      expect(isTodoCreatedEvent(event)).toBe(true)
-      expect(isTodoCreatedEvent(createTodoUpdatedEvent('todo-123', {}))).toBe(false)
-    })
-
-    it('isTodoUpdatedEvent should return true for todo updated events', () => {
-      const event = createTodoUpdatedEvent('todo-123', { status: 'done' })
-      expect(isTodoUpdatedEvent(event)).toBe(true)
-      expect(isTodoUpdatedEvent(createTodoCreatedEvent('todo-123', 'Test', 'high'))).toBe(false)
-    })
-
-    it('isTodoDeletedEvent should return true for todo deleted events', () => {
-      const event = createTodoDeletedEvent('todo-123')
-      expect(isTodoDeletedEvent(event)).toBe(true)
-      expect(isTodoDeletedEvent(createTodoCreatedEvent('todo-123', 'Test', 'high'))).toBe(false)
-    })
-
-    it('isTodoExecutionStartedEvent should return true for todo execution started events', () => {
-      const event = createTodoExecutionStartedEvent('todo-123', 'session-456')
-      expect(isTodoExecutionStartedEvent(event)).toBe(true)
-      expect(isTodoExecutionStartedEvent(createTodoCreatedEvent('todo-123', 'Test', 'high'))).toBe(
-        false
-      )
-    })
-
-    it('isTodoExecutionProgressEvent should return true for todo execution progress events', () => {
-      const event = createTodoExecutionProgressEvent('todo-123', 'Working...')
-      expect(isTodoExecutionProgressEvent(event)).toBe(true)
-      expect(
-        isTodoExecutionProgressEvent(createTodoExecutionStartedEvent('todo-123', 'session-456'))
-      ).toBe(false)
-    })
-
-    it('isTodoExecutionCompletedEvent should return true for todo execution completed events', () => {
-      const event = createTodoExecutionCompletedEvent('todo-123', 'success')
-      expect(isTodoExecutionCompletedEvent(event)).toBe(true)
-      expect(
-        isTodoExecutionCompletedEvent(createTodoExecutionStartedEvent('todo-123', 'session-456'))
-      ).toBe(false)
-    })
-  })
 })
 
 describe('isAIEvent', () => {
@@ -706,12 +541,6 @@ describe('isAIEvent', () => {
       createTaskProgressEvent(testSessionId, 'task-123'),
       createTaskCompletedEvent(testSessionId, 'task-123', 'success'),
       createTaskCanceledEvent(testSessionId, 'task-123'),
-      createTodoCreatedEvent('todo-123', 'Test', 'high'),
-      createTodoUpdatedEvent('todo-123', {}),
-      createTodoDeletedEvent('todo-123'),
-      createTodoExecutionStartedEvent('todo-123', 'session-456'),
-      createTodoExecutionProgressEvent('todo-123', 'Working...'),
-      createTodoExecutionCompletedEvent('todo-123', 'success'),
     ]
 
     validEvents.forEach((event) => {

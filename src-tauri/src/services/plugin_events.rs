@@ -298,13 +298,13 @@ mod tests {
 
         let mut states = PluginStateMap::new();
         states.insert(
-            "polaris.todo".to_string(),
+            "polaris.scheduler".to_string(),
             state(true, true, vec![]),
         );
 
         let overview =
             handle_plugin_state_change(config_dir, &states, &broadcaster);
-        assert!(overview.changed_plugins.contains(&"polaris.todo".to_string()));
+        assert!(overview.changed_plugins.contains(&"polaris.scheduler".to_string()));
 
         // 应广播一条 state_changed（initial）
         let mut got = 0;

@@ -4,5 +4,5 @@
   "fileRefSyntax": "File reference syntax: @/path",
   "contextWorkspaces": "Context workspaces:",
   "refSyntax": "Reference syntax: @{{name}}:path",
-  "workspaceToolGuidance": "When handling todos, scheduled tasks, or the requirements library, prefer workspace-scoped MCP tools instead of direct .polaris/*.json file-editing instructions."
+  "workspaceToolGuidance": "When handling scheduled tasks, prefer workspace-scoped MCP tools instead of direct .polaris/*.json file-editing instructions."
 }

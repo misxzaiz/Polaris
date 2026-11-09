@@ -68,7 +68,7 @@ mod tests {
 
         let mut states = PluginStateMap::new();
         states.insert(
-            "polaris.todo".to_string(),
+            "polaris.scheduler".to_string(),
             PluginState {
                 enabled: true,
                 ui_enabled: false,

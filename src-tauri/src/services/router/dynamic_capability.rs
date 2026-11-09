@@ -7,11 +7,11 @@
 //! 典型配置（由 cap.registry 的 register 动作构造）：
 //! ```json
 //! {
-//!   "id": "cap.user.todo-report",
-//!   "summary": "生成待办周报",
+//!   "id": "cap.user.kv-report",
+//!   "summary": "生成键值存储周报",
 //!   "handler": {
 //!     "type": "forward",
-//!     "target": "cap.todo",
+//!     "target": "cap.kv",
 //!     "defaults": { "action": "list", "scope": "all" }
 //!   }
 //! }
@@ -50,7 +50,7 @@ use crate::services::router::RouterBus;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DynamicHandler {
-    /// 转发到既有 cap（如 cap.todo / cap.http / cap.kv / cap.bash）
+    /// 转发到既有 cap（如 cap.http / cap.kv / cap.bash）
     #[serde(alias = "forward")]
     Forward {
         /// 底层转发目标（必须 `cap.*` 且已注册）

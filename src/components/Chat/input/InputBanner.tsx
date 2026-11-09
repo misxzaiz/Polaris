@@ -2,7 +2,7 @@
  * 输入区动态横幅（AI 经 cap.ui.input 注入）
  *
  * 渲染在输入容器上方：文案 + 可选动作按钮。点击按钮执行 banner 里声明的
- * dispatch（cap_dispatch 任意能力）。显示「清除」按钮供用户主动关闭。
+ * dispatch（bus_dispatch 低危白名单能力）。显示「清除」按钮供用户主动关闭。
  * 背景色按 tone 分级，遵循主题 token（不硬编码颜色）。
  */
 import { X } from 'lucide-react'

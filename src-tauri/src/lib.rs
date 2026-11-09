@@ -25,7 +25,7 @@ use models::config::{Config, HealthStatus};
 use services::config_store::ConfigStore;
 use services::logger::Logger;
 #[cfg(feature = "tauri-app")]
-use commands::dispatch::{dispatch_report_status, dispatch_create_task, dispatch_list_tasks, dispatch_delete_task};
+use commands::dispatch::{dispatch_report_status, dispatch_create_task};
 #[cfg(feature = "tauri-app")]
 use commands::{
     get_directory_info, get_home_dir, get_server_config, set_server_config,
@@ -1100,8 +1100,6 @@ pub fn run() {
             // 派发任务（dispatch_task MCP）状态回报
             dispatch_report_status,
             dispatch_create_task,
-            dispatch_list_tasks,
-            dispatch_delete_task,
             // 工作区相关
             validate_workspace_path,
             get_directory_info,
@@ -1278,14 +1276,6 @@ pub fn run() {
             commands::lsp::lsp_index_rebuild,
             commands::lsp::lsp_index_status,
             commands::lsp::lsp_index_update_file,
-            // Requirement 相关
-            commands::requirement::list_requirements,
-            commands::requirement::create_requirement,
-            commands::requirement::update_requirement,
-            commands::requirement::delete_requirement,
-            commands::requirement::save_requirement_prototype,
-            commands::requirement::read_requirement_prototype,
-            commands::requirement::get_requirement_workspace_breakdown,
             // Plugin 相关：管理面已上总线（cap.pluginDiscovery + cap.pluginServiceManager，
             // 见 services/router/plugin_discovery_capability.rs / plugin_service_manager_capability.rs）。
             // 旧命令层 commands/plugin.rs + commands/plugin_service.rs 已整体删除，不再注册
@@ -1296,12 +1286,6 @@ pub fn run() {
             commands::plugin_config::plugin_get_config,
             commands::plugin_config::plugin_set_config,
             // （Auto-Mode 已移除，移至外部插件 polaris.claude-code）
-            // Agnes 多模态插件面板命令
-            commands::agnes::agnes_get_config,
-            commands::agnes::agnes_save_config,
-            commands::agnes::agnes_generate_image,
-            commands::agnes::agnes_create_video,
-            commands::agnes::agnes_query_video,
             // CLI 信息查询相关
             commands::cli_info::cli_get_agents,
             commands::cli_info::cli_get_auth_status,
@@ -1309,7 +1293,6 @@ pub fn run() {
             commands::cli_info::cli_check_installed,
             commands::cli_info::cli_find_paths,
             commands::cli_info::cli_get_version_for,
-            commands::cli_info::cli_extract_structured,
             // 引擎安装 / 卸载 / 检测
             commands::engine_install::engine_detect_version,
             commands::engine_install::engine_install,

@@ -38,7 +38,6 @@
     "taskStop": "Stop Task",
     "agent": "Agent",
     "skill": "Skill",
-    "todoList": "Todo List",
     "workflow": "Workflow",
     "analyze": "Analyze",
     "codeAnalysis": "Code Analysis",
@@ -47,7 +46,6 @@
     "applyPatch": "Apply Patch",
     "updatePlan": "Update Plan",
     "browser": "Browser",
-    "computer": "Computer"
   },
   "actions": {
     "editing": "Editing",
@@ -98,11 +96,8 @@
     "files": "files",
     "matches": "matches",
     "results": "results",
-    "todos": "todos",
     "newFile": "new file",
     "completed": "completed",
-    "fetchCompleted": "Fetch completed",
-    "todosUpdated": "Updated {{count}} todos",
-    "todoUpdated": "Todo updated"
+    "fetchCompleted": "Fetch completed"
   }
 }

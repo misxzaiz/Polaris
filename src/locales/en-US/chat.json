@@ -1,33 +1,17 @@
 {
   "dispatch": {
     "defaultTitle": "Dispatched Task",
-    "cardTitle": "Dispatched Task",
-    "cardTitleWithRole": "{{role}} · {{title}}",
-    "staleCard": "Session ended or from history",
-    "openSession": "Open Session",
-    "interrupt": "Interrupt",
-    "followUp": "Follow-up",
-    "followUpPlaceholder": "Send a follow-up instruction to this background session...",
-    "handOff": "Let AI handle result",
-    "send": "Send",
-    "expand": "Expand",
-    "collapse": "Collapse",
     "reportDone": "completed",
     "reportFailed": "failed",
     "reportPreamble": "Your previously dispatched background tasks have results. Continue your work with these reports:\n{{reports}}",
     "handOffMessage": "Background task \"{{title}}\" {{status}}. Please handle its result:\n{{summary}}",
-    "confirmTitle": "Dispatch Confirmation",
     "confirmMessage": "AI requests to dispatch background task \"{{title}}\". Allow?",
-    "confirmAllow": "Allow",
-    "confirmDeny": "Deny",
     "userDeclined": "User declined this dispatch",
     "usageTitle": "Usage",
     "usageDetail": "/dispatch [@role] task content",
     "dispatchedTitle": "Dispatched",
     "dispatchedDetail": "Task \"{{title}}\" is running in a background session",
-    "dispatchFailed": "Dispatch failed",
-    "rerun": "Re-dispatch",
-    "deleteRecord": "Delete"
+    "dispatchFailed": "Dispatch failed"
   },
   "input": {
     "placeholder": "Type a message... (Enter to send, Shift+Enter for new line)",
@@ -159,17 +143,6 @@
   },
   "attachment": {
     "loadFailed": "Load failed"
-  },
-  "todo": {
-    "createPrompt": "Please help me create a todo item",
-    "priority": {
-      "label": "Priority",
-      "low": "Low",
-      "normal": "Normal",
-      "high": "High",
-      "urgent": "Urgent"
-    },
-    "tags": "Tags"
   },
   "status": {
     "generating": "Generating",

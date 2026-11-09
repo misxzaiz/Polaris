@@ -9,22 +9,12 @@ use crate::services::plugin_state_service::PluginStateService;
 
 const MCP_CONFIG_RELATIVE_PATH: &str = ".polaris/claude/mcp.json";
 const MCP_BIN_NAME: &str = "polaris-mcp";
-const REQUIREMENTS_MCP_SERVER_NAME: &str = "polaris-requirements";
-const COMPUTER_MCP_SERVER_NAME: &str = "polaris-computer";
 const ASK_MCP_SERVER_NAME: &str = "polaris-ask";
-const DISPATCH_MCP_SERVER_NAME: &str = "polaris-dispatch";
 const BROWSER_MCP_SERVER_NAME: &str = "polaris-browser";
-const AGNES_MCP_SERVER_NAME: &str = "polaris-agnes";
-const PH_MCP_SERVER_NAME: &str = "polaris-ph";
 const BUS_MCP_SERVER_NAME: &str = "polaris-bus";
 const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
-const REQUIREMENTS_PLUGIN_ID: &str = "polaris.requirements";
-const COMPUTER_PLUGIN_ID: &str = "polaris.computer";
 const ASK_PLUGIN_ID: &str = "polaris.ask";
-const DISPATCH_PLUGIN_ID: &str = "polaris.dispatch";
 const BROWSER_PLUGIN_ID: &str = "polaris.browser";
-const AGNES_PLUGIN_ID: &str = "polaris.agnes";
-const PERSONAL_HUB_PLUGIN_ID: &str = "polaris.personal-hub";
 const BUS_PLUGIN_ID: &str = "polaris.bus";
 const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
 
@@ -76,12 +66,6 @@ pub struct PluginMcpServerContribution {
     pub env_var_name: String,
     pub args_mode: McpServerArgsMode,
     required: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BuiltinPluginMcpManifest {
-    pub plugin_id: &'static str,
-    pub mcp_server_names: &'static [&'static str],
 }
 
 impl PluginMcpServerContribution {
@@ -141,63 +125,8 @@ impl McpServerContributionRegistry {
     }
 }
 
-pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
-    &[
-        BuiltinPluginMcpManifest {
-            plugin_id: REQUIREMENTS_PLUGIN_ID,
-            mcp_server_names: &[REQUIREMENTS_MCP_SERVER_NAME],
-        },
-        BuiltinPluginMcpManifest {
-            plugin_id: COMPUTER_PLUGIN_ID,
-            mcp_server_names: &[COMPUTER_MCP_SERVER_NAME],
-        },
-        BuiltinPluginMcpManifest {
-            plugin_id: ASK_PLUGIN_ID,
-            mcp_server_names: &[ASK_MCP_SERVER_NAME],
-        },
-        BuiltinPluginMcpManifest {
-            plugin_id: DISPATCH_PLUGIN_ID,
-            mcp_server_names: &[DISPATCH_MCP_SERVER_NAME],
-        },
-        BuiltinPluginMcpManifest {
-            plugin_id: BROWSER_PLUGIN_ID,
-            mcp_server_names: &[BROWSER_MCP_SERVER_NAME],
-        },
-        BuiltinPluginMcpManifest {
-            plugin_id: AGNES_PLUGIN_ID,
-            mcp_server_names: &[AGNES_MCP_SERVER_NAME],
-        },
-        BuiltinPluginMcpManifest {
-            plugin_id: PERSONAL_HUB_PLUGIN_ID,
-            mcp_server_names: &[PH_MCP_SERVER_NAME],
-        },
-        BuiltinPluginMcpManifest {
-            plugin_id: SCHEDULER_PLUGIN_ID,
-            mcp_server_names: &[SCHEDULER_MCP_SERVER_NAME],
-        },
-    ]
-}
-
 fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
     let mut registry = McpServerContributionRegistry::new();
-    registry.register_plugin_server(
-        REQUIREMENTS_PLUGIN_ID,
-        PluginMcpServerContribution::builtin(
-            REQUIREMENTS_MCP_SERVER_NAME,
-            "POLARIS_REQUIREMENTS_MCP_PATH",
-            McpServerArgsMode::ConfigDirAndWorkspace,
-            false,
-        ),
-    );
-    registry.register_plugin_server(
-        COMPUTER_PLUGIN_ID,
-        PluginMcpServerContribution::builtin(
-            COMPUTER_MCP_SERVER_NAME,
-            "POLARIS_COMPUTER_MCP_PATH",
-            McpServerArgsMode::ConfigDirAndWorkspace,
-            false,
-        ),
-    );
     registry.register_plugin_server(
         ASK_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
@@ -208,38 +137,11 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         ),
     );
     registry.register_plugin_server(
-        DISPATCH_PLUGIN_ID,
-        PluginMcpServerContribution::builtin(
-            DISPATCH_MCP_SERVER_NAME,
-            "POLARIS_DISPATCH_MCP_PATH",
-            McpServerArgsMode::AskListener,
-            false,
-        ),
-    );
-    registry.register_plugin_server(
         BROWSER_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
             BROWSER_MCP_SERVER_NAME,
             "POLARIS_BROWSER_MCP_PATH",
             McpServerArgsMode::AskListener,
-            false,
-        ),
-    );
-    registry.register_plugin_server(
-        AGNES_PLUGIN_ID,
-        PluginMcpServerContribution::builtin(
-            AGNES_MCP_SERVER_NAME,
-            "POLARIS_AGNES_MCP_PATH",
-            McpServerArgsMode::ConfigDirAndWorkspace,
-            false,
-        ),
-    );
-    registry.register_plugin_server(
-        PERSONAL_HUB_PLUGIN_ID,
-        PluginMcpServerContribution::builtin(
-            PH_MCP_SERVER_NAME,
-            "POLARIS_PH_MCP_PATH",
-            McpServerArgsMode::ConfigDirAndWorkspace,
             false,
         ),
     );
@@ -306,18 +208,18 @@ pub struct WorkspaceMcpConfigService {
 }
 
 impl WorkspaceMcpConfigService {
-    /// 测试专用构造：指定内置 MCP server 二进制路径。
+    /// 测试专用构造：指定内置 MCP server 二进制路径（挂到 scheduler 内置 server 名下）。
     ///
     /// 生产代码使用 [`Self::from_app_paths`]（基于 contribution registry 解析）。
     pub fn new(
         config_dir: PathBuf,
-        requirements_executable_path: Option<PathBuf>,
+        builtin_executable_path: Option<PathBuf>,
     ) -> Self {
         let mut binaries = Vec::new();
 
-        if let Some(path) = requirements_executable_path {
+        if let Some(path) = builtin_executable_path {
             binaries.push(ResolvedMcpBinary {
-                server_name: REQUIREMENTS_MCP_SERVER_NAME.to_string(),
+                server_name: SCHEDULER_MCP_SERVER_NAME.to_string(),
                 plugin_id: None,
                 executable_path: path,
                 args_mode: McpServerArgsMode::ConfigDirAndWorkspace,
@@ -538,7 +440,7 @@ impl WorkspaceMcpConfigService {
     ///
     /// 内置 MCP 的 `builtin` 标记为 true，SimpleAI 分支据此跳过 `aiToolAccess`
     /// 门控（内置默认信任）；外部插件由 SimpleAI 分支另行检查 `aiToolAccess`。
-    /// `plugin_id` 携带真实归属插件（如 `polaris.computer`），供 cap.mcp 管理面聚合。
+    /// `plugin_id` 携带真实归属插件（如 `polaris.scheduler`），供 cap.mcp 管理面聚合。
     /// 全部已注册 server 名（内置 + 外部插件，未做禁用过滤）。
     ///
     /// 供会话级白名单（config.json `mcp.sessionDefaults`，spec §四 C-P0）
@@ -590,7 +492,7 @@ impl WorkspaceMcpConfigService {
                 self.ask_route_session_id.as_deref(),
             );
             servers.push(ResolvedExternalMcpServer {
-                // 内置 MCP 用真实归属插件 ID（如 polaris.computer），供 cap.mcp 管理面按插件聚合；
+                // 内置 MCP 用真实归属插件 ID（如 polaris.scheduler），供 cap.mcp 管理面按插件聚合；
                 // 无归属的兜底 `polaris.builtin`（仅测试构造会走到）。launcher 用 `builtin: true` 跳过 aiToolAccess。
                 plugin_id: binary
                     .plugin_id
@@ -624,7 +526,7 @@ impl WorkspaceMcpConfigService {
 
         // 工具能力覆盖：插件声明的 toolProvider 替换同 capability 的内置 server。
         // 例如插件声明 capability: "computer" + mcpServerId: "my-computer"，
-        // 则找到内置 "polaris-computer" 移除，并从 external_servers 中取出
+        // 则找到同 capability 的内置 server 移除，并从 external_servers 中取出
         // mcpServerId == "my-computer" 的条目（改名为 polaris-computer）注入。
         apply_tool_provider_overrides(&mut servers, &self.external_servers, &self.tool_providers);
 
@@ -868,13 +770,8 @@ fn is_server_disabled(disabled_server_names: &[String], server_name: &str) -> bo
 fn capability_to_builtin_servers(capability: &str) -> Vec<&'static str> {
     match capability {
         // 内置 MCP server 能力
-        "computer" => vec![COMPUTER_MCP_SERVER_NAME],
         "browser" => vec![BROWSER_MCP_SERVER_NAME],
         "ask" => vec![ASK_MCP_SERVER_NAME],
-        "dispatch" => vec![DISPATCH_MCP_SERVER_NAME],
-        "requirements" => vec![REQUIREMENTS_MCP_SERVER_NAME],
-        "agnes" => vec![AGNES_MCP_SERVER_NAME],
-        "personal-hub" => vec![PH_MCP_SERVER_NAME],
         // 硬编码工具能力（虚拟 server，无内置同名 MCP server）
         "shell" => vec![BUILTIN_BASH_MCP_SERVER_NAME],
         "filesystem" => vec![BUILTIN_FS_MCP_SERVER_NAME],
@@ -1001,7 +898,7 @@ fn apply_tool_provider_overrides(
     }
 }
 
-/// 将 MCP server 名称（如 "polaris-requirements"）转换为子命令名（如 "requirements"）。
+/// 将 MCP server 名称（如 "polaris-scheduler"）转换为子命令名（如 "scheduler"）。
 fn server_name_to_subcommand(server_name: &str) -> &str {
     server_name.strip_prefix("polaris-").unwrap_or(server_name)
 }
@@ -1620,26 +1517,10 @@ mod tests {
     }
 
     #[test]
-    fn builtin_plugin_mcp_manifest_matches_registry() {
-        let registry = builtin_mcp_contribution_registry();
-
-        for manifest in builtin_plugin_mcp_manifests() {
-            for server_name in manifest.mcp_server_names {
-                assert!(
-                    registry.has_plugin_server(manifest.plugin_id, server_name),
-                    "plugin {} must register MCP server {}",
-                    manifest.plugin_id,
-                    server_name
-                );
-            }
-        }
-    }
-
-    #[test]
     fn disabled_builtin_mcp_server_names_honors_plugin_state() {
         let mut states = PluginStateMap::new();
         states.insert(
-            REQUIREMENTS_PLUGIN_ID.to_string(),
+            SCHEDULER_PLUGIN_ID.to_string(),
             PluginState {
                 enabled: true,
                 ui_enabled: true,
@@ -1652,20 +1533,20 @@ mod tests {
 
         let disabled = disabled_builtin_mcp_server_names(&states);
 
-        assert_eq!(disabled, vec![REQUIREMENTS_MCP_SERVER_NAME.to_string()]);
+        assert_eq!(disabled, vec![SCHEDULER_MCP_SERVER_NAME.to_string()]);
     }
 
     #[test]
     fn disabled_builtin_mcp_server_names_honors_server_state() {
         let mut states = PluginStateMap::new();
         states.insert(
-            REQUIREMENTS_PLUGIN_ID.to_string(),
+            SCHEDULER_PLUGIN_ID.to_string(),
             PluginState {
                 enabled: true,
                 ui_enabled: true,
                 mcp_enabled: true,
                 mcp_servers: BTreeMap::from([(
-                    REQUIREMENTS_MCP_SERVER_NAME.to_string(),
+                    SCHEDULER_MCP_SERVER_NAME.to_string(),
                     PluginMcpServerState { enabled: false },
                 )]),
                 mcp_tool_gates: Default::default(),
@@ -1675,7 +1556,7 @@ mod tests {
 
         let disabled = disabled_builtin_mcp_server_names(&states);
 
-        assert_eq!(disabled, vec![REQUIREMENTS_MCP_SERVER_NAME.to_string()]);
+        assert_eq!(disabled, vec![SCHEDULER_MCP_SERVER_NAME.to_string()]);
     }
 
     #[test]
@@ -1778,21 +1659,21 @@ mod tests {
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-external-conflict");
         let config_dir = temp_root.join("config");
-        let requirements_executable_path =
+        let builtin_executable_path =
             temp_root.join(fixture_exe("bin/polaris-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::create_dir_all(requirements_executable_path.parent().unwrap()).unwrap();
-        std::fs::write(&requirements_executable_path, "requirements bin").unwrap();
+        std::fs::create_dir_all(builtin_executable_path.parent().unwrap()).unwrap();
+        std::fs::write(&builtin_executable_path, "scheduler bin").unwrap();
 
         let service = WorkspaceMcpConfigService::new(
             config_dir,
-            Some(requirements_executable_path.clone()),
+            Some(builtin_executable_path.clone()),
         )
         .with_external_servers(vec![ResolvedExternalMcpServer {
             plugin_id: "example.conflict".to_string(),
-            server_name: REQUIREMENTS_MCP_SERVER_NAME.to_string(),
+            server_name: SCHEDULER_MCP_SERVER_NAME.to_string(),
             command: "node".to_string(),
             args: vec!["conflict.js".to_string()],
             builtin: false,
@@ -1805,8 +1686,8 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(
-            json["mcpServers"][REQUIREMENTS_MCP_SERVER_NAME]["command"],
-            serde_json::Value::String(requirements_executable_path.to_string_lossy().to_string())
+            json["mcpServers"][SCHEDULER_MCP_SERVER_NAME]["command"],
+            serde_json::Value::String(builtin_executable_path.to_string_lossy().to_string())
         );
 
         let _ = std::fs::remove_dir_all(&temp_root);
@@ -1818,16 +1699,16 @@ mod tests {
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-a");
         let config_dir = temp_root.join("config");
-        let requirements_executable_path =
+        let builtin_executable_path =
             temp_root.join(fixture_exe("bin/polaris-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::create_dir_all(requirements_executable_path.parent().unwrap()).unwrap();
-        std::fs::write(&requirements_executable_path, "requirements bin").unwrap();
+        std::fs::create_dir_all(builtin_executable_path.parent().unwrap()).unwrap();
+        std::fs::write(&builtin_executable_path, "scheduler bin").unwrap();
 
         let service =
-            WorkspaceMcpConfigService::new(config_dir.clone(), Some(requirements_executable_path.clone()));
+            WorkspaceMcpConfigService::new(config_dir.clone(), Some(builtin_executable_path.clone()));
         let config_path = service
             .prepare_workspace_config(workspace.to_string_lossy().as_ref())
             .unwrap();
@@ -1837,11 +1718,11 @@ mod tests {
         let content = std::fs::read_to_string(&config_path).unwrap();
         let json: serde_json::Value = serde_json::from_str(&content).unwrap();
 
-        // Requirements MCP should have two args: config_dir and workspace_path
-        let requirements_server = &json["mcpServers"][REQUIREMENTS_MCP_SERVER_NAME];
+        // Builtin scheduler MCP should have two args: config_dir and workspace_path
+        let requirements_server = &json["mcpServers"][SCHEDULER_MCP_SERVER_NAME];
         assert_eq!(
             requirements_server["command"],
-            serde_json::Value::String(requirements_executable_path.to_string_lossy().to_string())
+            serde_json::Value::String(builtin_executable_path.to_string_lossy().to_string())
         );
         assert_eq!(
             requirements_server["args"][0],
@@ -1913,23 +1794,23 @@ mod tests {
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-disabled");
         let config_dir = temp_root.join("config");
-        let requirements_executable_path =
+        let builtin_executable_path =
             temp_root.join(fixture_exe("bin/polaris-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::create_dir_all(requirements_executable_path.parent().unwrap()).unwrap();
-        std::fs::write(&requirements_executable_path, "requirements bin").unwrap();
+        std::fs::create_dir_all(builtin_executable_path.parent().unwrap()).unwrap();
+        std::fs::write(&builtin_executable_path, "scheduler bin").unwrap();
 
         let service = WorkspaceMcpConfigService::new(
             config_dir,
-            Some(requirements_executable_path),
+            Some(builtin_executable_path),
         );
 
         let config_path = service
             .prepare_workspace_config_with_disabled(
                 workspace.to_string_lossy().as_ref(),
-                &[REQUIREMENTS_MCP_SERVER_NAME.to_string()],
+                &[SCHEDULER_MCP_SERVER_NAME.to_string()],
             )
             .unwrap();
 

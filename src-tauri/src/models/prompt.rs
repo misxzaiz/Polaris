@@ -278,33 +278,12 @@ impl PromptConfig {
 
     /// 创建默认模块
     fn create_default_modules() -> Vec<PromptModule> {
-        vec![
-            PromptModule::new(
-                "module-workspace-info".to_string(),
-                PromptModuleType::WorkspaceInfo,
-                "工作区信息".to_string(),
-                "{{workspace_content}}".to_string(),
-            ),
-            PromptModule::new(
-                "module-todo-management".to_string(),
-                PromptModuleType::TodoManagement,
-                "待办管理".to_string(),
-                r#"待办管理:
-当前工作区的待办数据存储在: {{workspace_path}}/.polaris/todos.json
-当用户提到「待办」、「todo」、「任务」时，使用 Bash 工具操作待办文件:
-1. 读取待办: cat .polaris/todos.json
-2. 待办文件格式: {"version": "1.0.0", "todos": [{"id": "uuid", "content": "内容", "status": "pending|in_progress|completed", "priority": "low|normal|high|urgent"}]}
-3. 可以用 jq 工具解析 JSON: cat .polaris/todos.json | jq '.todos'"#.to_string(),
-            ),
-            PromptModule::new(
-                "module-requirement-queue".to_string(),
-                PromptModuleType::RequirementQueue,
-                "需求队列".to_string(),
-                r#"需求队列:
-需求队列用于管理和追踪项目需求，支持 AI 自动生成和用户手动创建。
-需求文件路径: {{workspace_path}}/.polaris/requirements/requirements.json"#.to_string(),
-            ),
-        ]
+        vec![PromptModule::new(
+            "module-workspace-info".to_string(),
+            PromptModuleType::WorkspaceInfo,
+            "工作区信息".to_string(),
+            "{{workspace_content}}".to_string(),
+        )]
     }
 
     /// 根据场景获取默认预设 ID

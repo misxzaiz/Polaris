@@ -54,8 +54,6 @@ const TOOL_NAME_MAP: Record<string, string> = {
   'move_file': 'names.moveFile',
   'CopyFile': 'names.copyFile',
   'copy_file': 'names.copyFile',
-  'TodoWrite': 'names.todoList',
-  'todowrite': 'names.todoList',
   'Task': 'names.task',
   'task': 'names.task',
   'Agent': 'names.agent',
@@ -452,17 +450,6 @@ export function generateCollapsedSummary(
     };
   }
 
-  // TodoWrite 工具：显示待办数
-  if (normalizedToolName.includes('todo')) {
-    const todos = input?.todos as Array<unknown> | undefined;
-    const count = todos?.length || 0;
-    return {
-      target: toolName,
-      summary: `${count} ${t('output.todos')}`,
-      summaryType: 'count',
-    };
-  }
-
   // Task/Agent 工具：不显示输出摘要（状态由状态图标统一显示）
   if (normalizedToolName.includes('task') || normalizedToolName.includes('agent')) {
     const agentType = (input?.agentType as string) || (input?.subagent_type as string) || toolName;
@@ -793,11 +780,6 @@ export function generateOutputSummary(
     return parseWebFetchOutput(output);
   }
 
-  // 新增：TodoWrite 工具
-  if (normalizedToolName.includes('todo') || normalizedToolName.includes('todowrite')) {
-    return parseTodoOutput(output, input);
-  }
-
   // 新增：Task/Agent 工具
   if (normalizedToolName.includes('task') || normalizedToolName.includes('agent')) {
     return parseTaskOutput(output);
@@ -831,28 +813,6 @@ function parseWebFetchOutput(output: string): OutputSummary | null {
     summary: `${sizeKB} KB`,
     fullOutput: output,
     expandable: output.length > 200,
-  };
-}
-
-/**
- * 解析 TodoWrite 输出
- */
-function parseTodoOutput(output: string, input?: Record<string, unknown>): OutputSummary | null {
-  // 从 input 解析待办数量
-  const todos = input?.todos as Array<unknown> | undefined;
-  if (todos && Array.isArray(todos)) {
-    const count = todos.length;
-    return {
-      type: 'todoProgress',
-      summary: t('output.todosUpdated', { count }),
-      fullOutput: output,
-    };
-  }
-
-  return {
-    type: 'todoProgress',
-    summary: t('output.todoUpdated'),
-    fullOutput: output,
   };
 }
 

@@ -7,7 +7,6 @@ export type ToolGroupId =
   | 'context'
   | 'changes'
   | 'run'
-  | 'automation'
   | 'integrations'
   | 'developer'
   | 'system'
@@ -43,8 +42,6 @@ export function getToolGroup(panelType: string): ToolGroupId {
   switch (panelType) {
     case 'files':
     case 'browser':
-    case 'requirement':
-    case 'personalHub':
       return 'context'
     case 'git':
       return 'changes'
@@ -52,8 +49,6 @@ export function getToolGroup(panelType: string): ToolGroupId {
     case 'scheduler':
     case 'aiConsole':
       return 'run'
-    case 'todo':
-      return 'automation'
     case 'translate':
     case 'integration':
       return 'integrations'

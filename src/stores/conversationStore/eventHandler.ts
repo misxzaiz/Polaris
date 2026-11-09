@@ -93,19 +93,15 @@ function isInteractiveTool(toolName: string): boolean {
 
 /** 判定是否为总线派发工具。
  *
- * 两个 MCP server 都能让 AI 调 cap.ui.*：
- * - `polaris-bus` 暴露 `bus_dispatch`（工具名 `mcp__polaris-bus__bus_dispatch`），
- *   走本进程总线，白名单含 cap.ui.theme / cap.ui.chat / cap.ui.input。
- * - `polaris-dispatch` 暴露 `cap_dispatch`（工具名 `mcp__polaris-dispatch__cap_dispatch`），
- *   走主进程总线，可触达全部 cap.*。
+ * `polaris-bus` 暴露 `bus_dispatch`（工具名 `mcp__polaris-bus__bus_dispatch`），
+ * 走本进程总线，白名单含 cap.ui.theme / cap.ui.chat / cap.ui.input。
+ * （polaris-dispatch 的 cap_dispatch 通道已随该 server 移除——2026-11。）
  *
- * 两者参数形状一致 `{ target, payload }`，前端统一按 cap.ui.* 消费。
- * 历史只认 bus_dispatch 导致 cap_dispatch 路径双重断链：能调到 cap.ui.theme
- * 的工具名不被识别，被识别的工具又调不到 cap.ui.theme（bus 侧未注册）。
+ * 参数形状 `{ target, payload }`，前端统一按 cap.ui.* 消费。
  * 兼容裸名防引擎变体漂移。 */
 function isBusDispatchTool(toolName: string): boolean {
   const n = toolName.toLowerCase()
-  return n.endsWith('bus_dispatch') || n.endsWith('cap_dispatch')
+  return n.endsWith('bus_dispatch')
 }
 
 /** 从 TaskCreate 输入解析任务项(无 id,流式路径延迟到 tool_call_end 用 output 回传 taskId) */
@@ -1049,15 +1045,6 @@ export function handleAIEvent(
       }
       break
     }
-
-    // Todo 事件 - 由 TodoStore 处理，不在 ConversationStore 范围内
-    case 'todo_created':
-    case 'todo_updated':
-    case 'todo_deleted':
-    case 'todo_execution_started':
-    case 'todo_execution_progress':
-    case 'todo_execution_completed':
-      break
 
     default: {
       // 穷尽性检查：如果所有 AIEvent 类型都已处理，此处应为 never
