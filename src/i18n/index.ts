@@ -6,7 +6,6 @@ import zhCNSettings from '../locales/zh-CN/settings.json';
 import zhCNTranslate from '../locales/zh-CN/translate.json';
 import zhCNChat from '../locales/zh-CN/chat.json';
 import zhCNMenu from '../locales/zh-CN/menu.json';
-import zhCNTodo from '../locales/zh-CN/todo.json';
 import zhCNErrors from '../locales/zh-CN/errors.json';
 import zhCNWorkspace from '../locales/zh-CN/workspace.json';
 import zhCNGit from '../locales/zh-CN/git.json';
@@ -25,7 +24,6 @@ import enUSSettings from '../locales/en-US/settings.json';
 import enUSTranslate from '../locales/en-US/translate.json';
 import enUSChat from '../locales/en-US/chat.json';
 import enUSMenu from '../locales/en-US/menu.json';
-import enUSTodo from '../locales/en-US/todo.json';
 import enUSErrors from '../locales/en-US/errors.json';
 import enUSWorkspace from '../locales/en-US/workspace.json';
 import enUSGit from '../locales/en-US/git.json';
@@ -46,7 +44,6 @@ export const resources = {
     translate: zhCNTranslate,
     chat: zhCNChat,
     menu: zhCNMenu,
-    todo: zhCNTodo,
     errors: zhCNErrors,
     workspace: zhCNWorkspace,
     git: zhCNGit,
@@ -66,7 +63,6 @@ export const resources = {
     translate: enUSTranslate,
     chat: enUSChat,
     menu: enUSMenu,
-    todo: enUSTodo,
     errors: enUSErrors,
     workspace: enUSWorkspace,
     git: enUSGit,

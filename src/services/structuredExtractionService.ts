@@ -2,7 +2,7 @@
  * 结构化提取服务（claude --json-schema）
  *
  * 以自然语言输入 + JSON Schema 约束，调用 Claude CLI 做一次性结构化提取，
- * 用于 Todo / 需求的「AI 结构化提取」。底层走 Tauri 命令 `cli_extract_structured`，
+ * 用于需求库的「AI 结构化提取」。底层走 Tauri 命令 `cli_extract_structured`，
  * 该命令返回 CLI `--output-format json` 的完整输出，本服务负责解包出结构化结果。
  *
  * 注意：CLI 的结果包装结构在本环境未做端到端验证，`unwrapCliJson` 做了多层
@@ -11,12 +11,11 @@
 
 import { invoke } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
-import type { TodoCreateParams } from '@/types/todo'
 import type { RequirementCreateParams } from '@/types/requirement'
 
 const log = createLogger('structuredExtraction')
 
-/** 优先级字面量（Todo / 需求共用同一枚举） */
+/** 优先级字面量（需求共用枚举） */
 type PriorityLiteral = 'low' | 'normal' | 'high' | 'urgent'
 const VALID_PRIORITIES = new Set<PriorityLiteral>(['low', 'normal', 'high', 'urgent'])
 
@@ -26,35 +25,6 @@ export interface ExtractOptions {
   /** 指定模型（可选） */
   model?: string | null
 }
-
-/** 待办提取结果 schema：固定 todos 数组 */
-export const TODO_EXTRACTION_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    todos: {
-      type: 'array',
-      description: '从输入中提取出的待办事项列表',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          content: { type: 'string', description: '待办标题，简洁的动宾短语' },
-          description: { type: 'string', description: '补充说明（可选）' },
-          priority: {
-            type: 'string',
-            enum: ['low', 'normal', 'high', 'urgent'],
-            description: '优先级',
-          },
-          tags: { type: 'array', items: { type: 'string' }, description: '标签（可选）' },
-          estimatedHours: { type: 'number', description: '预估工时（小时，可选）' },
-        },
-        required: ['content'],
-      },
-    },
-  },
-  required: ['todos'],
-} as const
 
 /** 需求提取结果 schema：单条需求 */
 export const REQUIREMENT_EXTRACTION_SCHEMA = {
@@ -167,51 +137,6 @@ function normalizeTags(value: unknown): string[] | undefined {
     .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
     .map(t => t.trim())
   return tags.length > 0 ? tags : undefined
-}
-
-/**
- * 从自然语言提取待办列表（TodoCreateParams[]）。
- */
-export async function extractTodos(
-  prompt: string,
-  options: ExtractOptions = {}
-): Promise<TodoCreateParams[]> {
-  const result = await extractStructured(prompt, TODO_EXTRACTION_SCHEMA, options)
-
-  // 兼容 result 直接是数组 / { todos: [...] }
-  let list: unknown[] = []
-  if (Array.isArray(result)) {
-    list = result
-  } else if (
-    result &&
-    typeof result === 'object' &&
-    Array.isArray((result as Record<string, unknown>).todos)
-  ) {
-    list = (result as Record<string, unknown>).todos as unknown[]
-  }
-
-  const todos: TodoCreateParams[] = []
-  for (const item of list) {
-    if (!item || typeof item !== 'object') continue
-    const obj = item as Record<string, unknown>
-    const content = typeof obj.content === 'string' ? obj.content.trim() : ''
-    if (!content) continue
-    todos.push({
-      content,
-      description:
-        typeof obj.description === 'string' && obj.description.trim()
-          ? obj.description.trim()
-          : undefined,
-      priority: normalizePriority(obj.priority),
-      tags: normalizeTags(obj.tags),
-      estimatedHours:
-        typeof obj.estimatedHours === 'number' && obj.estimatedHours > 0
-          ? obj.estimatedHours
-          : undefined,
-    })
-  }
-
-  return todos
 }
 
 /**

@@ -46,7 +46,6 @@ const DefinitionPeek = lazy(() => import('./components/Editor/DefinitionPeek').t
 
 // 懒加载大型面板组件，减少初始 bundle 大小
 const GitPanel = lazy(() => import('./components/GitPanel').then(m => ({ default: m.GitPanel })));
-const SimpleTodoPanel = lazy(() => import('./components/TodoPanel/SimpleTodoPanel').then(m => ({ default: m.SimpleTodoPanel })));
 const TranslatePanel = lazy(() => import('./components/Translate/TranslatePanel').then(m => ({ default: m.TranslatePanel })));
 const RequirementPanel = lazy(() => import('./components/RequirementPanel/RequirementPanel').then(m => ({ default: m.RequirementPanel })));
 const TerminalPanel = lazy(() => import('./components/Terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
@@ -316,7 +315,6 @@ function App() {
         </Suspense>
       }
       browserContent={<Suspense fallback={loadingFallback}><BrowserSidebarPanel /></Suspense>}
-      todoContent={<Suspense fallback={loadingFallback}><SimpleTodoPanel /></Suspense>}
       translateContent={<Suspense fallback={loadingFallback}><TranslatePanel onSendToChat={sendMessage} /></Suspense>}
       requirementContent={<Suspense fallback={loadingFallback}><RequirementPanel /></Suspense>}
       terminalContent={<Suspense fallback={loadingFallback}><TerminalPanel /></Suspense>}

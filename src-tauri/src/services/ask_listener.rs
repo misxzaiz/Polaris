@@ -1208,7 +1208,7 @@ async fn handle_dispatch_frame(
 }
 
 /// 处理 cap 帧：通用总线能力转发 —— 经主进程 RouterBus.dispatch 调任意已注册
-/// 能力（cap.ai.chat / cap.history / cap.todo / cap.kv / cap.config 等），返回能力
+/// 能力（cap.ai.chat / cap.history / cap.kv / cap.config 等），返回能力
 /// 执行结果。帧协议：{ type:"cap", token, target:"cap.*", payload:{action,...} }。
 ///
 /// 权限：以 Source::Plugin 注入（bus 桥的既定身份），走主进程 PolicyPermission gate。

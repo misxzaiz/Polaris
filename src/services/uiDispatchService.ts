@@ -285,12 +285,12 @@ interface DispatchResponse {
 /**
  * dispatchCapUiAction 的 target 白名单：用户点击 AI 注入的 UI（横幅按钮/插槽部件）
  * 时经此函数以 Bootstrap 源直达总线，必须限定为低危域——
- * 前缀 cap.ui.*（界面域）+ 精确 cap.kv / cap.todo / cap.context
+ * 前缀 cap.ui.*（界面域）+ 精确 cap.kv / cap.context
  * （对齐后端 form_flow.rs FORM_TARGET_WHITELIST）。
  * 2026-10-25 治理收紧前，任意 target（含 cap.bash）均可经横幅按钮执行。
  */
 const DISPATCH_ALLOWED_PREFIXES = ['cap.ui.']
-const DISPATCH_ALLOWED_TARGETS = new Set(['cap.kv', 'cap.todo', 'cap.context'])
+const DISPATCH_ALLOWED_TARGETS = new Set(['cap.kv', 'cap.context'])
 
 function isDispatchTargetAllowed(target: string): boolean {
   return DISPATCH_ALLOWED_TARGETS.has(target) || DISPATCH_ALLOWED_PREFIXES.some(p => target.startsWith(p))

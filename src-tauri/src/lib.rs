@@ -1262,14 +1262,6 @@ pub fn run() {
             commands::lsp::lsp_index_rebuild,
             commands::lsp::lsp_index_status,
             commands::lsp::lsp_index_update_file,
-            // Requirement 相关
-            commands::requirement::list_requirements,
-            commands::requirement::create_requirement,
-            commands::requirement::update_requirement,
-            commands::requirement::delete_requirement,
-            commands::requirement::save_requirement_prototype,
-            commands::requirement::read_requirement_prototype,
-            commands::requirement::get_requirement_workspace_breakdown,
             // Plugin 相关：管理面已上总线（cap.pluginDiscovery + cap.pluginServiceManager，
             // 见 services/router/plugin_discovery_capability.rs / plugin_service_manager_capability.rs）。
             // 旧命令层 commands/plugin.rs + commands/plugin_service.rs 已整体删除，不再注册

@@ -16,7 +16,7 @@ import type { ContextBlock } from '@/stores/conversationStore/types'
 
 /** 目录条目（capCatalogStore 从 cap.help index 解析而来） */
 export interface CapCatalogEntry {
-  /** cap id，如 cap.todo */
+  /** cap id，如 cap.kv */
   id: string
   /** 中文短名（describe.name），缺省回退 id 本身 */
   name: string

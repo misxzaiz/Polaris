@@ -286,17 +286,6 @@ impl PromptConfig {
                 "{{workspace_content}}".to_string(),
             ),
             PromptModule::new(
-                "module-todo-management".to_string(),
-                PromptModuleType::TodoManagement,
-                "待办管理".to_string(),
-                r#"待办管理:
-当前工作区的待办数据存储在: {{workspace_path}}/.polaris/todos.json
-当用户提到「待办」、「todo」、「任务」时，使用 Bash 工具操作待办文件:
-1. 读取待办: cat .polaris/todos.json
-2. 待办文件格式: {"version": "1.0.0", "todos": [{"id": "uuid", "content": "内容", "status": "pending|in_progress|completed", "priority": "low|normal|high|urgent"}]}
-3. 可以用 jq 工具解析 JSON: cat .polaris/todos.json | jq '.todos'"#.to_string(),
-            ),
-            PromptModule::new(
                 "module-requirement-queue".to_string(),
                 PromptModuleType::RequirementQueue,
                 "需求队列".to_string(),

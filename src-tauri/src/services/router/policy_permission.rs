@@ -472,7 +472,7 @@ mod tests {
             Source::Remote { token: "t".into() },
             Source::Plugin { caller: crate::contracts::PluginId("cap.ai".into()) },
         ] {
-            for cap in ["cap.todo", "cap.kv", "cap.config"] {
+            for cap in ["cap.kv", "cap.config"] {
                 assert_eq!(
                     p.check(&req(cap, source.clone())).unwrap(),
                     PermissionVerdict::Allow

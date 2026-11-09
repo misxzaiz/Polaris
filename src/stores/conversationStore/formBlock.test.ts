@@ -24,7 +24,7 @@ describe('conversation form block', () => {
       formId: 'form-1',
       title: '新建任务',
       read: 'full',
-      target: 'cap.todo',
+      target: 'cap.kv',
       action: 'create',
       fields: [
         { name: 'content', type: 'string', required: true },
@@ -40,7 +40,7 @@ describe('conversation form block', () => {
       sessionId: 'frontend-session-1',
       title: '新建任务',
       read: 'full',
-      target: 'cap.todo',
+      target: 'cap.kv',
       action: 'create',
       status: 'pending',
     })
@@ -92,7 +92,7 @@ describe('conversation form block', () => {
       type: 'form',
       sessionId: 'frontend-session-1',
       formId: 'form-3',
-      target: 'cap.todo',
+      target: 'cap.kv',
       action: 'create',
       fields: [{ name: 'content', type: 'string' }],
     } satisfies AIEvent)
@@ -131,7 +131,7 @@ describe('conversation form block', () => {
       type: 'form',
       sessionId: 'frontend-session-1',
       formId: 'form-4',
-      target: 'cap.todo',
+      target: 'cap.kv',
       action: 'create',
       fields: [{ name: 'content', type: 'string' }],
     } satisfies AIEvent
@@ -159,7 +159,7 @@ describe('conversation form block', () => {
       formId: 'form-5',
       title: '归档后回填',
       read: 'full',
-      target: 'cap.todo',
+      target: 'cap.kv',
       action: 'create',
       fields: [{ name: 'content', type: 'string' }],
     } satisfies AIEvent)
@@ -188,7 +188,7 @@ describe('conversation form block', () => {
       sessionId: 'frontend-session-1',
       formId: 'form-5',
       ok: true,
-      receipt: 'cap.todo.create ok: id=123',
+      receipt: 'cap.kv.create ok: id=123',
     } satisfies AIEvent)
 
     // 断言：messages[] 里的 form block 已被更新为 submitted
@@ -203,7 +203,7 @@ describe('conversation form block', () => {
       id: 'form-5',
       status: 'submitted',
       ok: true,
-      receipt: 'cap.todo.create ok: id=123',
+      receipt: 'cap.kv.create ok: id=123',
     })
     // 幂等：不能因找不到 block 而抛错或产生额外消息
     expect(store.getState().currentMessage).toBeNull()
@@ -220,7 +220,7 @@ describe('conversation form block', () => {
       sessionId: 'frontend-session-1',
       formId: 'form-A',
       read: 'full',
-      target: 'cap.todo',
+      target: 'cap.kv',
       action: 'create',
       fields: [{ name: 'content', type: 'string' }],
     } satisfies AIEvent)
@@ -231,7 +231,7 @@ describe('conversation form block', () => {
       sessionId: 'frontend-session-1',
       formId: 'form-B',
       read: 'full',
-      target: 'cap.todo',
+      target: 'cap.kv',
       action: 'create',
       fields: [{ name: 'content', type: 'string' }],
     } satisfies AIEvent)
@@ -299,7 +299,7 @@ describe('conversation form block', () => {
       sessionId: 'frontend-session-1',
       formId: 'form-A',
       read: 'full',
-      target: 'cap.todo',
+      target: 'cap.kv',
       action: 'create',
       fields: [{ name: 'content', type: 'string' }],
     } satisfies AIEvent)
@@ -312,7 +312,7 @@ describe('conversation form block', () => {
       sessionId: 'frontend-session-1',
       formId: 'form-B',
       read: 'full',
-      target: 'cap.todo',
+      target: 'cap.kv',
       action: 'create',
       fields: [{ name: 'content', type: 'string' }],
     } satisfies AIEvent)

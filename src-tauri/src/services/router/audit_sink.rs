@@ -454,7 +454,7 @@ mod tests {
     fn entry(action: &str) -> AuditEntry {
         AuditEntry {
             timestamp_ms: 1_700_000_000_000,
-            capability: CapabilityId("cap.todo".into()),
+            capability: CapabilityId("cap.kv".into()),
             source: Source::Remote { token: "SECRET".into() },
             action: action.into(),
             prev_hash: String::new(),
@@ -616,7 +616,7 @@ mod tests {
         //    canonical 串手工按 AuditRecordCore 声明序拼（serde_json::json! 的
         //    Map 字段序不确定，不能用于复现结构体序列化形态）。
         let old_canonical = format!(
-            "{{\"timestampMs\":1700000000000,\"capability\":\"cap.todo\",\
+            "{{\"timestampMs\":1700000000000,\"capability\":\"cap.kv\",\
              \"source\":\"Bootstrap\",\"action\":\"dispatch.ok\",\"prevHash\":\"{}\"}}",
             GENESIS_HASH
         );
@@ -625,7 +625,7 @@ mod tests {
         hasher.update(old_canonical.as_bytes());
         let old_hash = format!("{:x}", hasher.finalize());
         let old_line = format!(
-            "{{\"timestampMs\":1700000000000,\"capability\":\"cap.todo\",\
+            "{{\"timestampMs\":1700000000000,\"capability\":\"cap.kv\",\
              \"source\":\"Bootstrap\",\"action\":\"dispatch.ok\",\
              \"prevHash\":\"{}\",\"recordHash\":\"{}\"}}",
             GENESIS_HASH, old_hash

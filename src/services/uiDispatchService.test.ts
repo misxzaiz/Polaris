@@ -230,7 +230,7 @@ describe('consumeCapUiDispatch', () => {
   })
 
   it('非 cap.ui target 不消费', () => {
-    const res = consumeCapUiDispatch({ target: 'cap.todo', payload: { action: 'list' } })
+    const res = consumeCapUiDispatch({ target: 'cap.bash', payload: { action: 'run' } })
     expect(res.consumed).toBe(false)
   })
 

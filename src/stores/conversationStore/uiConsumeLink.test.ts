@@ -102,14 +102,14 @@ describe('cap.ui 经 bus_dispatch tool_call_start 消费', () => {
     expect(updateConfigPatchMock).not.toHaveBeenCalled()
   })
 
-  it('非 cap.ui 的 bus_dispatch（cap.todo）不触发 configStore 副作用', () => {
+  it('非 cap.ui 的 bus_dispatch（cap.kv）不触发 configStore 副作用', () => {
     const store = createConversationStore('session-1', createDeps())
     store.getState().handleAIEvent({
       type: 'tool_call_start',
       sessionId: 'backend-session',
       callId: 'item_ui_3',
       tool: 'mcp__polaris-bus__bus_dispatch',
-      args: { target: 'cap.todo', payload: { action: 'list' } },
+      args: { target: 'cap.kv', payload: { action: 'list' } },
     } as AIEvent)
     expect(updateConfigPatchMock).not.toHaveBeenCalled()
   })
@@ -164,14 +164,14 @@ describe('cap.ui 经 bus_dispatch tool_call_start 消费', () => {
     expect(updateConfigPatchMock.mock.calls[0][0].chatDisplay.lineHeight).toBe(1.6)
   })
 
-  it('cap_dispatch 携带非 cap.ui target（cap.todo）不触发副作用', () => {
+  it('cap_dispatch 携带非 cap.ui target（cap.kv）不触发副作用', () => {
     const store = createConversationStore('session-1', createDeps())
     store.getState().handleAIEvent({
       type: 'tool_call_start',
       sessionId: 'backend-session',
       callId: 'item_ui_7',
       tool: 'mcp__polaris-dispatch__cap_dispatch',
-      args: { target: 'cap.todo', payload: { action: 'list' } },
+      args: { target: 'cap.kv', payload: { action: 'list' } },
     } as AIEvent)
     expect(updateConfigPatchMock).not.toHaveBeenCalled()
   })

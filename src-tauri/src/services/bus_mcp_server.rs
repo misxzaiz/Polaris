@@ -1,15 +1,13 @@
 //! Bus MCP Server（第七步阶段 E 前置：把总线能力以 MCP 工具开放给 AI）
 //!
 //! 独立 stdio 进程（polaris-mcp bus <config_dir>），在进程内构建一条
-//! **与主应用同源**的轻量总线：同 DataRoot 的 SqliteStorage（stores/todo.db
-//! 与主应用共享，WAL + busy_timeout）+ 同一 TodoCapability 业务核 +
+//! **与主应用同源**的轻量总线：同 DataRoot 的 SqliteStorage（stores/*.db
+//! 与主应用共享，WAL + busy_timeout）+
 //! PolicyPermission（Plugin 来源默认放行）+ 独立审计链（dispatch-mcp.jsonl，
 //! 避免与主应用 dispatch.jsonl 的跨进程哈希链竞争）。
 //!
 //! # 工具面
 //!
-//! - 精选 todo 工具：todo_list / todo_get / todo_create / todo_update /
-//!   todo_complete / todo_delete（对 AI 更友好的显式工具面）
 //! - `bus_dispatch`：通用转发 {target, payload}——**全量放开，无白名单**。
 //!   target 为本进程 RouterBus 已注册的任何 cap.*（含运行时动态注册），
 //!   完整清单见 `tools_list` 的 target enum 与 bus_help 的 `dispatchable`。
@@ -17,7 +15,7 @@
 //!
 //! # 与主应用的关系
 //!
-//! 同一业务核（TodoCapability）+ 同一存储文件，单份逻辑双入口（step7 阶段 E
+//! 同一能力实现 + 同一存储文件，单份逻辑双入口（step7 阶段 E
 //! 的"MCP 共享业务核"形态）。cap.context 为本进程**独立**内存实例：已注册、
 //! 可经 bus_dispatch 调用，但与主进程内存互不共享（经 bus 写入的条目主进程
 //! 不可见，读主进程上下文须经主进程 cap_dispatch）。
@@ -35,7 +33,7 @@ use crate::services::router::{
     audit_sink, BashCapability, DataRootCapability, DynamicCapability, EventAdapter,
     FileAuditSink, FsCapability, HookCapability, HelpCapability, HttpCapability, KvCapability,
     PolicyPermission, PromptSnippetCapability, RegistryCapability, RouterBus,
-    SelfInspectCapability, SelfMutateCapability, TodoCapability, UiChatCapability,
+    SelfInspectCapability, SelfMutateCapability, UiChatCapability,
     UiInputCapability, UiThemeCapability,
 };
 #[cfg(feature = "git")]
@@ -127,7 +125,6 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
     ));
     {
         use crate::contracts::Router as _;
-        let _ = router.register_handle(Box::new(TodoCapability));
         // cap.http —— 通用 HTTP 转发（AI 经 bus_dispatch 调用外部 API）。
         // SSRF 校验内建于能力（见 http_capability.rs），Remote 由策略 deny。
         let _ = router.register_handle(Box::new(HttpCapability));
@@ -248,7 +245,7 @@ impl McpServerHandler for BusMcpHandler {
         json!({
             "tools": [
                 mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 可转发的目标清单；并列出主进程总线全部 cap.* 能力经 polaris-dispatch 的 cap_dispatch/cap_list 工具的触达入口。首次使用请先调用本工具", &[], json!({})),
-                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力（全量放开，无白名单）：target 为本进程已注册的任何 cap.* 能力（含运行时动态注册），完整清单见 target 字段的 enum 与 bus_help 的 dispatchable。常见用途——读写应用持久化数据（cap.todo，待办）、发起外部 HTTP 请求（cap.http，通用转发）、在宿主 shell 执行命令（cap.bash，后台任务）、读取文件系统（cap.fs，只读 list/getFileInfo/exists）、控制界面主题配色（cap.ui.theme）、对话渲染配置（cap.ui.chat）与输入区即时调节（cap.ui.input）、AI 改造自身 UI 的具名插槽注入/替换/移除（cap.self.mutate，配合前端 uiSlotStore 消费，见 slotId input-extra/app-badge/message-extra）、自注册新能力（cap.registry）。是否放行由 RouterBus 统一裁决（注册表命中 + PolicyPermission 权限 gate + 审计），本工具不做业务限制。注意：这是数据读写/网络/文件/UI 工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
+                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力（全量放开，无白名单）：target 为本进程已注册的任何 cap.* 能力（含运行时动态注册），完整清单见 target 字段的 enum 与 bus_help 的 dispatchable。常见用途——读写应用键值存储（cap.kv）、发起外部 HTTP 请求（cap.http，通用转发）、在宿主 shell 执行命令（cap.bash，后台任务）、读取文件系统（cap.fs，只读 list/getFileInfo/exists）、控制界面主题配色（cap.ui.theme）、对话渲染配置（cap.ui.chat）与输入区即时调节（cap.ui.input）、AI 改造自身 UI 的具名插槽注入/替换/移除（cap.self.mutate，配合前端 uiSlotStore 消费，见 slotId input-extra/app-badge/message-extra）、自注册新能力（cap.registry）。是否放行由 RouterBus 统一裁决（注册表命中 + PolicyPermission 权限 gate + 审计），本工具不做业务限制。注意：这是数据读写/网络/文件/UI 工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
                     "target": { "type": "string", "enum": caps, "description": "目标 cap.* 能力 id；随注册实时变化，含运行时动态注册的能力" },
                     "payload": { "type": "object", "description": "能力动作参数，协议见 bus_help 的 protocol 段或该能力的 describe" }
                 })),
@@ -554,7 +551,6 @@ fn write_json_atomically(path: &std::path::Path, value: &Value) -> Result<()> {
 /// 进程 dispatchable 集合自动判定。警示内容与 policy_permission.rs 的审批规则
 /// 对齐（2026-10-25 核对），仅作导航提示，裁决权威在 RouterBus 权限 gate。
 const MODULE_DOMAINS: &[(&str, &[&str], Option<&str>)] = &[
-    ("todo", &["cap.todo"], None),
     ("http", &["cap.http"], Some("Remote 来源默认 deny；本地（Bootstrap/Plugin）默认放行——2026-10-26 起 Plugin 源审批名单全量停用，不再弹审批")),
     ("fs", &["cap.fs"], Some("只读边界（list/getFileInfo/exists）；Remote 来源默认 deny")),
     ("bash", &["cap.bash"], Some("Remote 来源默认 deny；本地（Bootstrap/Plugin）默认放行（2026-10-26 起审批名单停用）；任务归宿主进程（TaskManager 单例），不随 AI 会话结束")),
@@ -823,31 +819,31 @@ mod tests {
         let adapter = Arc::new(EventAdapter::new(64));
         let permission = Arc::new(PolicyPermission::from_config(None, false));
         let router = RouterBus::new(adapter, permission, None, None);
-        let _ = router.register_handle(Box::new(TodoCapability));
+        let _ = router.register_handle(Box::new(FsCapability));
 
         let help = handle_bus_help_impl(&router, &json!({ "tools": [] }));
-        // protocol 键集 == 提供 describe 的注册能力集（本测试仅注册 cap.todo）
+        // protocol 键集 == 提供 describe 的注册能力集（本测试仅注册 cap.fs）
         let protocol = help["protocol"].as_object().unwrap();
         let cap_keys: Vec<&str> = protocol
             .keys()
             .filter(|k| k.starts_with("cap."))
             .map(|k| k.as_str())
             .collect();
-        assert_eq!(cap_keys, vec!["cap.todo"]);
-        // usage_examples 从 describe.example 派生（cap.todo 首批 create/list/complete）
+        assert_eq!(cap_keys, vec!["cap.fs"]);
+        // usage_examples 从 describe.example 派生（cap.fs 首批 list/getFileInfo）
         let usage = help["usage_examples"].as_array().unwrap();
         let targets: Vec<&str> = usage
             .iter()
             .filter_map(|e| e["arguments"]["target"].as_str())
             .collect();
         assert!(
-            targets.contains(&"cap.todo"),
-            "usage_examples 应含 cap.todo 示例: {usage:?}"
+            targets.contains(&"cap.fs"),
+            "usage_examples 应含 cap.fs 示例: {usage:?}"
         );
         // modules 入口自动判定：本进程已注册 → bus_dispatch
         let modules = help["modules"].as_array().unwrap();
-        let todo_row = modules.iter().find(|m| m["domain"] == "todo").unwrap();
-        assert_eq!(todo_row["入口"], json!(["cap.todo（bus_dispatch）"]));
+        let fs_row = modules.iter().find(|m| m["domain"] == "fs").unwrap();
+        assert_eq!(fs_row["入口"], json!(["cap.fs（bus_dispatch）"]));
         // 未注册进本进程的能力自动标主进程入口（旧版错标「已注册」的反向校验）
         let ai_row = modules.iter().find(|m| m["domain"] == "ai-chat").unwrap();
         assert_eq!(

@@ -217,7 +217,6 @@ type LeftPanelContentProps = {
   filesContent: ReactNode
   gitContent: ReactNode
   browserContent?: ReactNode
-  todoContent: ReactNode
   translateContent?: ReactNode
   requirementContent?: ReactNode
   terminalContent?: ReactNode
@@ -239,7 +238,6 @@ export function LeftPanelContent({
   filesContent,
   gitContent,
   browserContent,
-  todoContent,
   translateContent,
   requirementContent,
   terminalContent,
@@ -263,7 +261,6 @@ export function LeftPanelContent({
     files: filesContent,
     git: gitContent,
     browser: browserContent,
-    todo: todoContent,
     translate: translateContent,
     requirement: requirementContent,
     terminal: terminalContent,

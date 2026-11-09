@@ -16,7 +16,7 @@ vi.mock('../services/pluginStateService', () => ({
   savePluginStates: vi.fn().mockResolvedValue(undefined),
 }))
 
-const pluginId = 'polaris.todo'
+const pluginId = 'polaris.example'
 const mockedLoadPluginStates = vi.mocked(loadPluginStates)
 const mockedSavePluginStates = vi.mocked(savePluginStates)
 

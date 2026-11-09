@@ -20,8 +20,6 @@ function getToolDescription(panelType: string): string | undefined {
       return '变更、提交、分支与审查'
     case 'browser':
       return '学习网页、本地预览与 AI 页面上下文'
-    case 'todo':
-      return '工作区待办与任务拆解'
     case 'translate':
       return '选中文本与消息翻译'
     case 'scheduler':

@@ -32,7 +32,6 @@
   "activityBar": {
     "fileExplorer": "文件浏览器",
     "gitPanel": "Git 面板",
-    "todoPanel": "待办面板",
     "translatePanel": "翻译面板"
   }
 }

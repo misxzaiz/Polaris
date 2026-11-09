@@ -32,7 +32,6 @@
   "activityBar": {
     "fileExplorer": "File Explorer",
     "gitPanel": "Git Panel",
-    "todoPanel": "Todo Panel",
     "translatePanel": "Translate Panel"
   }
 }

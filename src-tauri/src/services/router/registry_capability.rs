@@ -7,7 +7,7 @@
 //! # 动作协议（payload `{ "action": ... }`）
 //!
 //! - `register` `{ "id": "cap.user.xxx", "summary": "...", "description": "...",
-//!     "handler": { "type": "forward", "target": "cap.todo", "defaults": { "action": "list" } },
+//!     "handler": { "type": "forward", "target": "cap.kv", "defaults": { "action": "list" } },
 //!     "persist": true }`
 //!   → `{ "registered": true, "id": "...", "dynamic": true, "handler": …, "persisted": … }`
 //!   handler 两种形态：`forward`（target=cap.* 底层能力，可选 defaults）或

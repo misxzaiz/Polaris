@@ -159,17 +159,6 @@
   "attachment": {
     "loadFailed": "加载失败"
   },
-  "todo": {
-    "createPrompt": "请帮我创建一个待办事项",
-    "priority": {
-      "label": "优先级",
-      "low": "低",
-      "normal": "普通",
-      "high": "高",
-      "urgent": "紧急"
-    },
-    "tags": "标签"
-  },
   "status": {
     "generating": "生成中",
     "pending": "等待中",

@@ -2,7 +2,7 @@
  * cap.config 统一配置服务
  *
  * 第八步：系统配置读写着总线（router_dispatch → cap.config）。
- * 与 simpleTodoService / contextService 同一范式：经 RouterBus dispatch
+ * 与 contextService 同一范式：经 RouterBus dispatch
  * 而非直接 tauri command，获得统一权限 gate + 审计 + 深层合并保存。
  *
  * 与旧 `update_config_patch` 的关键差异：

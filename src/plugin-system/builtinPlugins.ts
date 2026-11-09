@@ -6,7 +6,6 @@ import { fileExplorerToolbarSlot } from './fileExplorerToolbarSlot'
 import { GitStatusIndicator } from '@/components/FileExplorer/GitStatusIndicator'
 import { computerPluginManifest } from '@/plugins/computer/manifest'
 import { requirementPluginManifest } from '@/plugins/requirement/manifest'
-import { todoPluginManifest } from '@/plugins/todo/manifest'
 import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
 import { agnesPluginManifest } from '@/plugins/agnes/manifest'
 import { agentGalleryPluginManifest } from '@/plugins/agent-gallery/manifest'
@@ -128,7 +127,6 @@ export function registerBuiltinPlugins(): void {
   void import('./editor').then(({ registerGitEditorExtensions }) =>
     registerGitEditorExtensions(),
   )
-  pluginRegistry.register(todoPluginManifest)
   pluginRegistry.register(requirementPluginManifest)
   pluginRegistry.register(computerPluginManifest)
   pluginRegistry.register(personalHubPluginManifest)

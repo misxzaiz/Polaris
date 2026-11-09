@@ -160,17 +160,6 @@
   "attachment": {
     "loadFailed": "Load failed"
   },
-  "todo": {
-    "createPrompt": "Please help me create a todo item",
-    "priority": {
-      "label": "Priority",
-      "low": "Low",
-      "normal": "Normal",
-      "high": "High",
-      "urgent": "Urgent"
-    },
-    "tags": "Tags"
-  },
   "status": {
     "generating": "Generating",
     "pending": "Pending",

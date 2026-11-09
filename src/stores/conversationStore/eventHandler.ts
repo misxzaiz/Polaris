@@ -1050,15 +1050,6 @@ export function handleAIEvent(
       break
     }
 
-    // Todo 事件 - 由 TodoStore 处理，不在 ConversationStore 范围内
-    case 'todo_created':
-    case 'todo_updated':
-    case 'todo_deleted':
-    case 'todo_execution_started':
-    case 'todo_execution_progress':
-    case 'todo_execution_completed':
-      break
-
     default: {
       // 穷尽性检查：如果所有 AIEvent 类型都已处理，此处应为 never
       const _exhaustive: never = event

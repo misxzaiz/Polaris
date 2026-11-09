@@ -493,86 +493,6 @@ export interface FormSkippedEvent {
 }
 
 // ========================================
-// Todo 相关事件
-// ========================================
-
-/**
- * 待办创建事件
- */
-export interface TodoCreatedEvent {
-  type: 'todo_created'
-  /** 待办 ID */
-  todoId: string
-  /** 待办内容 */
-  content: string
-  /** 优先级 */
-  priority: string
-  /** 创建来源（用户/AI） */
-  source: 'user' | 'ai'
-}
-
-/**
- * 待办更新事件
- */
-export interface TodoUpdatedEvent {
-  type: 'todo_updated'
-  /** 待办 ID */
-  todoId: string
-  /** 更新字段 */
-  changes: {
-    status?: string
-    content?: string
-    priority?: string
-  }
-}
-
-/**
- * 待办删除事件
- */
-export interface TodoDeletedEvent {
-  type: 'todo_deleted'
-  /** 待办 ID */
-  todoId: string
-}
-
-/**
- * 待办执行开始事件
- */
-export interface TodoExecutionStartedEvent {
-  type: 'todo_execution_started'
-  /** 待办 ID */
-  todoId: string
-  /** 关联的会话 ID */
-  sessionId: string
-}
-
-/**
- * 待办执行进度事件
- */
-export interface TodoExecutionProgressEvent {
-  type: 'todo_execution_progress'
-  /** 待办 ID */
-  todoId: string
-  /** 进度消息 */
-  message: string
-  /** 进度百分比 */
-  percent?: number
-}
-
-/**
- * 待办执行完成事件
- */
-export interface TodoExecutionCompletedEvent {
-  type: 'todo_execution_completed'
-  /** 待办 ID */
-  todoId: string
-  /** 完成状态 */
-  status: 'success' | 'failed' | 'aborted'
-  /** 错误信息（失败时） */
-  error?: string
-}
-
-// ========================================
 // Question 相关事件
 // ========================================
 
@@ -926,12 +846,6 @@ export type AIEvent =
   | FormEvent
   | FormAnsweredEvent
   | FormSkippedEvent
-  | TodoCreatedEvent
-  | TodoUpdatedEvent
-  | TodoDeletedEvent
-  | TodoExecutionStartedEvent
-  | TodoExecutionProgressEvent
-  | TodoExecutionCompletedEvent
   | PlanStartEvent
   | PlanContentEvent
   | PlanStageUpdateEvent
@@ -1212,103 +1126,6 @@ export function isTaskCanceledEvent(event: AIEvent): event is TaskCanceledEvent 
 }
 
 // ========================================
-// Todo 事件创建函数
-// ========================================
-
-/**
- * 创建待办创建事件
- */
-export function createTodoCreatedEvent(
-  todoId: string,
-  content: string,
-  priority: string,
-  source: 'user' | 'ai' = 'user'
-): TodoCreatedEvent {
-  return { type: 'todo_created', todoId, content, priority, source }
-}
-
-/**
- * 创建待办更新事件
- */
-export function createTodoUpdatedEvent(
-  todoId: string,
-  changes: {
-    status?: string
-    content?: string
-    priority?: string
-  }
-): TodoUpdatedEvent {
-  return { type: 'todo_updated', todoId, changes }
-}
-
-/**
- * 创建待办删除事件
- */
-export function createTodoDeletedEvent(todoId: string): TodoDeletedEvent {
-  return { type: 'todo_deleted', todoId }
-}
-
-/**
- * 创建待办执行开始事件
- */
-export function createTodoExecutionStartedEvent(
-  todoId: string,
-  sessionId: string
-): TodoExecutionStartedEvent {
-  return { type: 'todo_execution_started', todoId, sessionId }
-}
-
-/**
- * 创建待办执行进度事件
- */
-export function createTodoExecutionProgressEvent(
-  todoId: string,
-  message: string,
-  percent?: number
-): TodoExecutionProgressEvent {
-  return { type: 'todo_execution_progress', todoId, message, percent }
-}
-
-/**
- * 创建待办执行完成事件
- */
-export function createTodoExecutionCompletedEvent(
-  todoId: string,
-  status: 'success' | 'failed' | 'aborted',
-  error?: string
-): TodoExecutionCompletedEvent {
-  return { type: 'todo_execution_completed', todoId, status, error }
-}
-
-// ========================================
-// Todo 事件类型守卫
-// ========================================
-
-export function isTodoCreatedEvent(event: AIEvent): event is TodoCreatedEvent {
-  return event.type === 'todo_created'
-}
-
-export function isTodoUpdatedEvent(event: AIEvent): event is TodoUpdatedEvent {
-  return event.type === 'todo_updated'
-}
-
-export function isTodoDeletedEvent(event: AIEvent): event is TodoDeletedEvent {
-  return event.type === 'todo_deleted'
-}
-
-export function isTodoExecutionStartedEvent(event: AIEvent): event is TodoExecutionStartedEvent {
-  return event.type === 'todo_execution_started'
-}
-
-export function isTodoExecutionProgressEvent(event: AIEvent): event is TodoExecutionProgressEvent {
-  return event.type === 'todo_execution_progress'
-}
-
-export function isTodoExecutionCompletedEvent(event: AIEvent): event is TodoExecutionCompletedEvent {
-  return event.type === 'todo_execution_completed'
-}
-
-// ========================================
 // 通用类型守卫
 // ========================================
 
@@ -1335,12 +1152,6 @@ const AI_EVENT_TYPES = new Set([
   'question_answered',
   'plugin_card',
   'plugin_card_answered',
-  'todo_created',
-  'todo_updated',
-  'todo_deleted',
-  'todo_execution_started',
-  'todo_execution_progress',
-  'todo_execution_completed',
   'plan_start',
   'plan_content',
   'plan_stage_update',
