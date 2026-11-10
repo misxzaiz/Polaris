@@ -799,6 +799,7 @@ impl AIEngine for PluginProcessEngine {
         let mut cmd = self.build_adapter_command()?;
         let child = cmd.spawn()
             .map_err(|e| AppError::ProcessError(format!("启动适配器进程失败: {}", e)))?;
+        crate::services::supervisor::job::assign_std_child(&child);
         let pid = child.id();
         let temp_id = uuid::Uuid::new_v4().to_string();
 
@@ -843,6 +844,7 @@ impl AIEngine for PluginProcessEngine {
         let mut cmd = self.build_adapter_command()?;
         let child = cmd.spawn()
             .map_err(|e| AppError::ProcessError(format!("启动适配器进程失败: {}", e)))?;
+        crate::services::supervisor::job::assign_std_child(&child);
         let pid = child.id();
 
         let input_sender = self.spawn_event_reader(

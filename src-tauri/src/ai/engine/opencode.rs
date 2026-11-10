@@ -1204,7 +1204,10 @@ impl AIEngine for OpencodeEngine {
         tracing::info!("[OpencodeEngine] 执行命令: {}", cmd_str);
 
         let child = match cmd.spawn() {
-            Ok(c) => c,
+            Ok(c) => {
+                crate::services::supervisor::job::assign_std_child(&c);
+                c
+            }
             Err(e) => {
                 // spawn 失败时注入文件无人消费，立即清理防泄漏
                 if let Some(b) = &mcp_bridge {
@@ -1338,7 +1341,10 @@ impl AIEngine for OpencodeEngine {
         tracing::info!("[OpencodeEngine] 执行命令: {}", cmd_str);
 
         let child = match cmd.spawn() {
-            Ok(c) => c,
+            Ok(c) => {
+                crate::services::supervisor::job::assign_std_child(&c);
+                c
+            }
             Err(e) => {
                 if let Some(b) = &mcp_bridge {
                     b.apply();

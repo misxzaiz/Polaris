@@ -85,6 +85,12 @@ mod imp {
             }
         }
     }
+
+    /// 将 std 子进程收进 Job（同步引擎 spawn 点用；语义同 assign_child）。
+    pub fn assign_std_child(child: &std::process::Child) -> bool {
+        use std::os::windows::io::AsRawHandle;
+        assign_handle(child.as_raw_handle())
+    }
 }
 
 #[cfg(not(windows))]
@@ -98,9 +104,13 @@ mod imp {
     pub fn assign_child(_child: &tokio::process::Child) -> bool {
         true
     }
+
+    pub fn assign_std_child(_child: &std::process::Child) -> bool {
+        true
+    }
 }
 
-pub use imp::{assign_child, ensure_initialized};
+pub use imp::{assign_child, assign_std_child, ensure_initialized};
 
 #[cfg(windows)]
 #[cfg(test)]

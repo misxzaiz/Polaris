@@ -893,3 +893,52 @@ fn status_from(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 协议 v2 env 注入（验收 B4）：宿主端点/EPOCH/HOST_PID 显式注入——
+    /// kvclient env 优先，服务只与本宿主通信，跨数据根渗透与孤儿骚扰即断。
+    #[test]
+    fn spawn_env_injects_host_binding() {
+        let ctx = StartContext {
+            workspace_path: None,
+            app_config_dir: Some("C:/cfg".into()),
+            web_port: Some(9829),
+            web_token: Some("tok".into()),
+        };
+        let env: HashMap<String, String> = spawn_env(&ctx, 42, &("p".into(), "s".into()))
+            .into_iter()
+            .collect();
+        assert_eq!(env.get("POLARIS_HOST").map(String::as_str), Some("127.0.0.1"));
+        assert_eq!(env.get("POLARIS_PORT").map(String::as_str), Some("9829"));
+        assert_eq!(env.get("POLARIS_TOKEN").map(String::as_str), Some("tok"));
+        assert_eq!(env.get("POLARIS_EPOCH").map(String::as_str), Some("42"));
+        assert_eq!(
+            env.get("POLARIS_HOST_PID").map(String::as_str),
+            Some(std::process::id().to_string().as_str())
+        );
+    }
+
+    /// 协议 v2 args：{{hostPid}}/{{pluginId}} 新变量替换；旧变量不受影响。
+    #[test]
+    fn build_args_v2_expands_host_pid() {
+        let contribution = serde_json::from_value::<PluginServiceManifestContribution>(
+            serde_json::json!({
+                "id": "radar-service", "type": "http", "command": "node",
+                "argsTemplate": ["{{pluginDir}}/s.js", "{{port}}", "{{hostPid}}", "{{pluginId}}"]
+            }),
+        )
+        .expect("fixture");
+        let ctx = StartContext {
+            app_config_dir: Some("C:/cfg".into()),
+            ..Default::default()
+        };
+        let args = build_args_v2(&contribution, "D:/root/plugins/feed-radar", 10001, &ctx, &("feed-radar".into(), "radar-service".into()));
+        assert!(args[0].contains("D:/root/plugins/feed-radar"));
+        assert_eq!(args[1], "10001");
+        assert_eq!(args[2], std::process::id().to_string(), "{{hostPid}} 应展开为宿主 PID");
+        assert_eq!(args[3], "feed-radar", "{{pluginId}} 应展开");
+    }
+}
