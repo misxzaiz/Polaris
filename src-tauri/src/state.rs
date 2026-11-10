@@ -312,8 +312,8 @@ pub struct AppState {
     pub profile_stats_collector: Arc<tokio::sync::Mutex<crate::services::ProfileStatsCollector>>,
     /// 失败调用日志收集器（持久化 JSONL 缓冲）
     pub failed_call_collector: Arc<tokio::sync::Mutex<crate::services::FailedCallCollector>>,
-    /// 插件服务管理器 — 管理插件声明的后台服务
-    pub plugin_service_manager: Arc<crate::services::plugin_service_manager::PluginServiceManager>,
+    /// 插件服务唯一管理者（重构 spec：单写者对账引擎 ServiceSupervisor）
+    pub plugin_service_manager: Arc<crate::services::supervisor::ServiceSupervisor>,
     /// Prompt 权限审批登记表（P1-g；respond_permission_request 回填入口）
     pub permission_prompt: Arc<crate::services::router::permission_prompt::PermissionPromptRegistry>,
     /// 通用执行器注册表 — 统一管理所有执行器（内置 + 插件自定义）
@@ -373,8 +373,9 @@ pub fn create_app_state(
     // 与历史 StaticPermission 等价）+ FileAuditSink 审计落盘（tamper-evident 哈希链）。
     let state_context_store: Arc<Mutex<ContextMemoryStore>> = Arc::new(Mutex::new(ContextMemoryStore::new()));
     let event_broadcast = crate::web::EventBroadcaster::new(256);
-    // 插件服务管理器：router block 的 cap.pluginDiscovery 需要注入，AppState 构造也需要
-    // （plugin_uninstall_with_cleanup 会先停 PluginServiceManager 服务）；提前创建一次共享。
+    // 插件服务唯一管理者（重构 spec：单写者对账引擎，取代旧 PluginServiceManager）。
+    // router block 的 cap.pluginDiscovery/cap.pluginServiceManager 需要注入，AppState
+    // 构造也需要（卸载先置期望停服务再删目录）；提前创建一次共享。
     // P1-1（2026-10-24 审计）：注入宿主保留端口（web 服务 + ask_listener 池），
     // 插件分配/声明端口时避让，不再与宿主端口体系互不感知。
     let reserved_host_ports = {
@@ -384,10 +385,12 @@ pub fn create_app_state(
         reserved
     };
     let plugin_service_manager = Arc::new(
-        crate::services::plugin_service_manager::PluginServiceManager::with_reserved_ports(
-            reserved_host_ports,
-        ),
+        crate::services::supervisor::ServiceSupervisor::new(reserved_host_ports),
     );
+    // 账本与孤儿扫描特征锚定数据根（registry 落盘 + 启动对账范围）。
+    // 对账循环由各 bin 启动路径在 tokio runtime 内 spawn（lib.rs / polaris-web）。
+    plugin_service_manager
+        .set_data_root(crate::services::data_root::data_root().root().to_path_buf());
     let router = {
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
         use crate::services::router::{
@@ -1071,23 +1074,5 @@ impl AppState {
 // 此前后端自动重启/Error 只改内存状态，UI 长期陈旧。
 // 独立 helper：须在 tokio runtime 上下文内调用（桌面 setup / web block_on），
 // 不能在 create_app_state（Builder 构造期、runtime 之外）里 spawn。
-pub fn spawn_plugin_status_forwarder(state: &AppState) {
-    let status_router = state.router.clone();
-    let mut status_rx = state.plugin_service_manager.subscribe_status();
-    tokio::spawn(async move {
-        loop {
-            match status_rx.recv().await {
-                Ok(status) => {
-                    status_router.emit_event(
-                        "plugin.service.status",
-                        serde_json::to_value(&status).unwrap_or(serde_json::Value::Null),
-                    );
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(lagged = n, "plugin service status subscriber lagged");
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-            }
-        }
-    });
-}
+// （重构注：spawn_plugin_status_forwarder 已删——status 回推统一由 lib.rs setup
+//  中的 supervisor 订阅中继承担，Web 桥经 EventBroadcaster 直达，无第二转发者。）

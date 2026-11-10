@@ -36,9 +36,7 @@ use crate::models::plugin::{
     DiscoveredPluginManifest, PluginServiceManifestContribution,
 };
 use crate::services::plugin_service::PluginService;
-use crate::services::plugin_service_manager::{
-    PluginServiceManager, StartContext,
-};
+use crate::services::supervisor::{ServiceSupervisor, StartContext};
 
 const CAP_ID: &str = "cap.pluginServiceManager";
 
@@ -50,6 +48,7 @@ pub const PLUGIN_SERVICE_MANAGER_ACTIONS: &[&str] = &[
     "list_status",
     "stop_for_plugin",
     "autostart",
+    "recent_actions",
 ];
 
 /// 前端 plugin_states 快照（autostart 用）
@@ -63,10 +62,10 @@ struct PluginStateSnapshot {
 /// cap.pluginServiceManager —— 插件服务管理能力。
 ///
 /// 依赖注入（组装点 state.rs 提供）：
-/// - `plugin_service_manager`：Arc<PluginServiceManager>（进程拉起/状态/自动重启）
+/// - `supervisor`：Arc<ServiceSupervisor>（期望/对账/进程动作单写者）
 /// - `app_config_dir`：插件安装基础目录（构建 StartContext）
 pub struct PluginServiceManagerCapability {
-    plugin_service_manager: Arc<PluginServiceManager>,
+    supervisor: Arc<ServiceSupervisor>,
     app_config_dir: std::path::PathBuf,
 }
 
@@ -101,17 +100,18 @@ impl PluginServiceManagerCapability {
                 "autostart": { "params": {
                     "pluginStates": "object（必填语义）——map: pluginId → { enabled: bool }，按各插件 enabled 决定是否启动其服务；缺省/空对象时不报错但不会启停任何服务",
                     "workspacePath": "string?"
-                }, "returns": "ServiceStatus[]（裸数组）" }
+                }, "returns": "ServiceStatus[]（裸数组）" },
+                "recent_actions": { "params": {}, "returns": "string[]（裸数组）——supervisor 最近对账动作环形日志（≤10 条，拉起/停止/孤儿清杀/spawn 失败），诊断用" }
             }),
         )
     }
 
     pub fn new(
-        plugin_service_manager: Arc<PluginServiceManager>,
+        supervisor: Arc<ServiceSupervisor>,
         app_config_dir: std::path::PathBuf,
     ) -> Self {
         Self {
-            plugin_service_manager,
+            supervisor,
             app_config_dir,
         }
     }
@@ -121,6 +121,8 @@ impl PluginServiceManagerCapability {
         StartContext {
             workspace_path,
             app_config_dir: Some(self.app_config_dir.to_string_lossy().to_string()),
+            web_port: None,
+            web_token: None,
         }
     }
 
@@ -189,11 +191,12 @@ impl Capability for PluginServiceManagerCapability {
                         )
                     })?;
                 let workspace_path = Self::workspace_path(&params);
-                let psm = self.plugin_service_manager.clone();
+                let sup = self.supervisor.clone();
                 let ctx = self.build_ctx(workspace_path);
+                let service_id = contribution.id.clone();
                 Self::block_on_async(async move {
-                    let status = psm
-                        .start_service(&plugin_id, contribution, install_path, ctx)
+                    let status = sup
+                        .start_service(&plugin_id, &service_id, contribution, install_path, ctx)
                         .await
                         .map_err(|e| e.to_string())?;
                     serde_json::to_value(status).map_err(|e| e.to_string())
@@ -202,9 +205,9 @@ impl Capability for PluginServiceManagerCapability {
             "stop" => {
                 let plugin_id = Self::require_string(&params, "pluginId")?.to_string();
                 let service_id = Self::require_string(&params, "serviceId")?.to_string();
-                let psm = self.plugin_service_manager.clone();
+                let sup = self.supervisor.clone();
                 Self::block_on_async(async move {
-                    let status = psm
+                    let status = sup
                         .stop_service(&plugin_id, &service_id)
                         .await
                         .map_err(|e| e.to_string())?;
@@ -214,9 +217,9 @@ impl Capability for PluginServiceManagerCapability {
             "restart" => {
                 let plugin_id = Self::require_string(&params, "pluginId")?.to_string();
                 let service_id = Self::require_string(&params, "serviceId")?.to_string();
-                let psm = self.plugin_service_manager.clone();
+                let sup = self.supervisor.clone();
                 Self::block_on_async(async move {
-                    let status = psm
+                    let status = sup
                         .restart_service(&plugin_id, &service_id)
                         .await
                         .map_err(|e| e.to_string())?;
@@ -224,17 +227,17 @@ impl Capability for PluginServiceManagerCapability {
                 })
             }
             "list_status" => {
-                let psm = self.plugin_service_manager.clone();
+                let sup = self.supervisor.clone();
                 Self::block_on_async(async move {
-                    let statuses = psm.list_status().await;
+                    let statuses = sup.list_status().await;
                     serde_json::to_value(statuses).map_err(|e| e.to_string())
                 })
             }
             "stop_for_plugin" => {
                 let plugin_id = Self::require_string(&params, "pluginId")?.to_string();
-                let psm = self.plugin_service_manager.clone();
+                let sup = self.supervisor.clone();
                 Self::block_on_async(async move {
-                    let statuses = psm
+                    let statuses = sup
                         .stop_services_for_plugin(&plugin_id)
                         .await
                         .map_err(|e| e.to_string())?;
@@ -259,20 +262,27 @@ impl Capability for PluginServiceManagerCapability {
                         .collect();
                 let states_map = states_map?;
                 let cfg_dir = self.app_config_dir.clone();
-                let psm = self.plugin_service_manager.clone();
+                let sup = self.supervisor.clone();
                 let ctx = self.build_ctx(workspace_path);
                 Self::block_on_async(async move {
                     let ws_path: Option<&Path> =
                         ctx.workspace_path.as_deref().map(Path::new);
                     let discovery = PluginService::discover_installed_plugins(&cfg_dir, ws_path);
                     let plugins: Vec<DiscoveredPluginManifest> = discovery.plugins;
-                    let statuses = psm
-                        .start_services_for_plugins(&plugins, &states_map, ctx)
-                        .await;
+                    // 重构后 autostart = 期望全量重算 + 唤醒（收敛由 tick 完成；
+                    // 返回同步快照，可能含 Starting 中间态——终态经 status 事件推送）
+                    sup.sync_from_manifests(&plugins, &states_map, ctx).await;
+                    let statuses = sup.list_status().await;
                     serde_json::to_value(statuses).map_err(|e| e.to_string())
                 })
             }
             // 审计错误工效：未知动作附支持清单与协议入口（错误即文档，可自纠）
+            "recent_actions" => {
+                let sup = self.supervisor.clone();
+                Self::block_on_async(async move {
+                    serde_json::to_value(sup.recent_actions().await).map_err(|e| e.to_string())
+                })
+            }
             other => Err(unsupported_action(
                 CAP_ID,
                 other,
@@ -326,7 +336,7 @@ mod tests {
     #[test]
     fn describe_contract() {
         let cap = PluginServiceManagerCapability::new(
-            Arc::new(PluginServiceManager::new()),
+            Arc::new(ServiceSupervisor::new(Vec::new())),
             std::path::PathBuf::from("."),
         );
         let d = cap.describe();
@@ -368,7 +378,7 @@ mod tests {
     #[test]
     fn unknown_action_lists_supported_actions() {
         let cap = PluginServiceManagerCapability::new(
-            Arc::new(PluginServiceManager::new()),
+            Arc::new(ServiceSupervisor::new(Vec::new())),
             std::path::PathBuf::from("."),
         );
         let err = cap

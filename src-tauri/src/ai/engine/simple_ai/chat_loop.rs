@@ -136,6 +136,20 @@ pub(super) async fn run_chat_loop(
             pool.connected_count().await,
             pool.tool_specs().len()
         );
+        // 失败显性化（重构 spec §3.5）：连接失败的 server 逐个点名推给会话
+        //（Progress 事件进诊断面），不再只有日志里的静默跳过。
+        let failed = pool.failed_servers().to_vec();
+        if !failed.is_empty() {
+            let summary = failed
+                .iter()
+                .map(|(n, r)| format!("{n}（{r}）"))
+                .collect::<Vec<_>>()
+                .join("、");
+            event_callback(AIEvent::Progress(ProgressEvent::new(
+                session_id,
+                format!("MCP server 不可用（已跳过）：{summary}"),
+            )));
+        }
         registry = registry.with_mcp(pool);
     }
     let tools = registry.specs();

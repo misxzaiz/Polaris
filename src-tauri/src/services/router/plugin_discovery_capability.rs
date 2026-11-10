@@ -62,7 +62,7 @@ use crate::models::plugin::PluginManifestSourceKind;
 use crate::services::config_store::ConfigStore;
 use crate::services::plugin_events::emit_plugin_lifecycle;
 use crate::services::plugin_service::PluginService;
-use crate::services::plugin_service_manager::PluginServiceManager;
+use crate::services::supervisor::ServiceSupervisor;
 use serde_json::json;
 
 const CAP_ID: &str = "cap.pluginDiscovery";
@@ -91,23 +91,23 @@ pub const PLUGIN_DISCOVERY_ACTIONS: &[&str] = &[
 /// 依赖注入（组装点 state.rs 提供，capability 内部不碰 AppState）：
 /// - `config_store`：取 claude CLI 路径（PluginService::new 需要）
 /// - `app_config_dir`：插件安装基础目录
-/// - `plugin_service_manager`：`uninstall_with_cleanup` 先停服务再删目录
+/// - `supervisor`：`uninstall_with_cleanup` 先置期望停服务再删目录
 pub struct PluginDiscoveryCapability {
     config_store: Arc<Mutex<ConfigStore>>,
     app_config_dir: PathBuf,
-    plugin_service_manager: Arc<PluginServiceManager>,
+    supervisor: Arc<ServiceSupervisor>,
 }
 
 impl PluginDiscoveryCapability {
     pub fn new(
         config_store: Arc<Mutex<ConfigStore>>,
         app_config_dir: PathBuf,
-        plugin_service_manager: Arc<PluginServiceManager>,
+        supervisor: Arc<ServiceSupervisor>,
     ) -> Self {
         Self {
             config_store,
             app_config_dir,
-            plugin_service_manager,
+            supervisor,
         }
     }
 
@@ -427,10 +427,10 @@ impl Capability for PluginDiscoveryCapability {
                 let install_path = Self::require_string(&params, "installPath")?.to_string();
                 let plugin_id = Self::require_string(&params, "pluginId")?.to_string();
                 let config_dir = config_dir.map_err(map_err)?;
-                let psm = self.plugin_service_manager.clone();
+                let sup = self.supervisor.clone();
                 Self::block_on_async(async move {
-                    // 1. 停止 PluginServiceManager 管理的服务
-                    let _ = psm.stop_services_for_plugin(&plugin_id).await;
+                    // 1. 置期望停服务（对账收敛后进程终止；stop 内含等待）
+                    let _ = sup.stop_services_for_plugin(&plugin_id).await;
                     // 2. 终止进程 + 删除目录（带重试）
                     let result = PluginService::uninstall_plugin_with_cleanup(
                         &config_dir,
@@ -503,7 +503,7 @@ impl Capability for PluginDiscoveryCapability {
                     // rename 高概率失败；且运行中服务会继续跑旧代码。
                     let plugin_id = Self::plugin_id_from_path_or_unknown(&install_path);
                     let _ = self
-                        .plugin_service_manager
+                        .supervisor
                         .stop_services_for_plugin(&plugin_id)
                         .await;
                     let result = PluginService::apply_local_plugin_update(

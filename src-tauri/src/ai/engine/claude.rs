@@ -1286,6 +1286,7 @@ impl AIEngine for ClaudeEngine {
         let child = cmd
             .spawn()
             .map_err(|e| Self::map_spawn_error(e, message.len(), "启动 Claude 进程失败"))?;
+        crate::services::supervisor::job::assign_std_child(&child);
 
         let pid = child.id();
         let temp_id = uuid::Uuid::new_v4().to_string();
@@ -1406,6 +1407,7 @@ impl AIEngine for ClaudeEngine {
         let child = cmd
             .spawn()
             .map_err(|e| Self::map_spawn_error(e, message.len(), "继续 Claude 会话失败"))?;
+        crate::services::supervisor::job::assign_std_child(&child);
 
         let pid = child.id();
 

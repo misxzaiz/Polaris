@@ -546,6 +546,13 @@ pub fn resolve_external_plugin_mcp_servers(
     let app_config_dir = config_dir.to_string_lossy().to_string();
     let mut resolved = Vec::new();
 
+    // MCP 健康门控（重构 spec §3.5）：声明了后台服务的插件，服务未 Running →
+    // 其 MCP server 不进 AI 配置。旧行为按开关静态注册，服务死了配置照发、
+    // 工具静默不可用——「需要的插件没注册进 AI」的机制 B（方案文档 §一）。
+    // 快照由 supervisor tick 维护（≤10s 最终一致）；None = 无快照（降级放行，
+    // 与无 supervisor 的测试/极早调用场景兼容）。
+    let running_gate = crate::services::supervisor::service::running_plugin_ids_snapshot();
+
     for plugin in plugins {
         let plugin_state = plugin_states.get(&plugin.id);
         if !is_plugin_mcp_enabled(plugin, plugin_state) {
@@ -556,6 +563,21 @@ pub fn resolve_external_plugin_mcp_servers(
         if plugin_dir.is_empty() {
             tracing::warn!("[MCP] 跳过插件 {}，缺少 installPath", plugin.id);
             continue;
+        }
+
+        // 健康门控：有后台服务声明且服务无一在管 → 跳过该插件全部 MCP server
+        if let Some(running) = &running_gate {
+            if should_skip_for_service_gate(
+                !plugin.contributes.services.is_empty(),
+                Some(running),
+                &plugin.id,
+            ) {
+                tracing::info!(
+                    "[MCP] 插件 {} 的后台服务未运行，MCP server 暂不注册（服务恢复后自动补注册）",
+                    plugin.id
+                );
+                continue;
+            }
         }
 
         for server in &plugin.contributes.mcp_servers {
@@ -624,6 +646,21 @@ pub fn resolve_external_plugin_mcp_servers(
     }
 
     resolved
+}
+
+/// MCP 健康门控判定（纯函数，重构 spec §3.5）：
+/// - 插件未声明后台服务 → 不门控（纯 MCP 插件不受影响）；
+/// - 有快照但插件无在管服务 → 跳过（服务恢复后 tick 联动补注册）；
+/// - 无快照（无 supervisor 场景）→ 放行（降级，与旧行为一致）。
+fn should_skip_for_service_gate(
+    has_services: bool,
+    running: Option<&std::collections::HashSet<String>>,
+    plugin_id: &str,
+) -> bool {
+    match running {
+        None => false,
+        Some(set) => has_services && !set.contains(plugin_id),
+    }
 }
 
 fn external_server_requires_listener(
@@ -1195,6 +1232,7 @@ mod tests {
                 skills: Vec::new(),
                 config_schema: Vec::new(),
                 executors: Vec::new(),
+                ui_templates: Vec::new(),
             },
             permissions: PluginManifestPermissions::default(),
             origin: PluginOriginMetadata::default(),
@@ -1821,4 +1859,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_root);
     }
 
+    /// MCP 健康门控纯函数（重构 spec §3.5 / 验收 A4）：
+    /// 无服务声明不门控；有快照且无在管服务跳过；无快照降级放行。
+    #[test]
+    fn service_gate_matrix() {
+        use std::collections::HashSet as Hs;
+        let running: Hs<String> = ["feed-radar".to_string()].into();
+
+        // 无服务声明的插件：不门控（纯 MCP 插件不受影响）
+        assert!(!should_skip_for_service_gate(false, Some(&running), "some-mcp-plugin"));
+        // 有服务且在管：放行
+        assert!(!should_skip_for_service_gate(true, Some(&running), "feed-radar"));
+        // 有服务且无在管：跳过
+        assert!(should_skip_for_service_gate(true, Some(&running), "quote-sentinel"));
+        // 无快照（无 supervisor）：降级放行
+        assert!(!should_skip_for_service_gate(true, None, "quote-sentinel"));
+    }
 }

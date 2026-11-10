@@ -1245,6 +1245,7 @@ impl AIEngine for PluginEngineRunner {
 
         let child = cmd.spawn()
             .map_err(|e| AppError::ProcessError(format!("启动 {} 进程失败: {}", self.config.cli.command, e)))?;
+        crate::services::supervisor::job::assign_std_child(&child);
         let pid = child.id();
         tracing::info!("[PluginEngine:{}] 进程启动，PID: {}, 临时 ID: {}", engine_id, pid, temp_id);
 
@@ -1325,6 +1326,7 @@ impl AIEngine for PluginEngineRunner {
 
         let child = cmd.spawn()
             .map_err(|e| AppError::ProcessError(format!("继续 {} 会话失败: {}", self.config.cli.command, e)))?;
+        crate::services::supervisor::job::assign_std_child(&child);
         let pid = child.id();
 
         // spawn_event_reader 用 session_id（前端 temp_id），事件回填用 temp_id，

@@ -628,6 +628,11 @@ pub fn run() {
             let state = app.state::<AppState>();
             let _ = state.app_handle.set(app.handle().clone());
 
+            // 子进程收容所（needs 067 P0-1 / 重构 spec §3.4）：越早创建越好，
+            // 之后所有 spawn（插件服务/MCP stdio/引擎 CLI）经 assign 进 Job。
+            // 失败降级为无收容（行为同旧版），不阻塞启动。
+            let _ = crate::services::supervisor::job::ensure_initialized();
+
             // cap.terminal 全局事件出口（plans/terminal-plugin-spec.md §四）：
             // 桌面 = Dual 双通道（Tauri webview 走 emit、浏览器客户端走 WS），
             // 与 plugin.service.status 双通道先例同构。旧命令 per-session sink 不受影响。
@@ -1031,10 +1036,37 @@ pub fn run() {
                 }
             });
 
-            // 加固 H-1（spec audit-startup-hardening §H-1）：标记宿主 setup 完成，
-            // 插件服务 BOOT_GRACE 宽限从此刻起算（而非 PluginServiceManager 构造时刻，
-            // 后者早于窗口创建/discover 10-15s，会让宽限提前耗尽）。幂等：首次写入生效。
-            state.plugin_service_manager.mark_setup_done();
+            // 重构（spec plugin-service-supervisor-rebuild）：BOOT_GRACE 宽限随旧
+            // PluginServiceManager 一并删除——互踩源（跨数据根渗透）已由 env 注入
+            // 根断，重启错峰由退避抖动承担，无需启动宽限特判。
+
+            // 插件服务对账循环 + 状态回推（重构 spec）：run_loop 是唯一进程动作
+            // 入口；status 事件经 RouterBus emit（EventBroadcaster → WS 直达 +
+            // 上方 Tauri 中继），前端 pluginLifecycleSubscriber 协议不变。
+            {
+                let sup = state.plugin_service_manager.clone();
+                let status_router = state.router.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut rx = sup.subscribe_status();
+                    loop {
+                        match rx.recv().await {
+                            Ok(status) => {
+                                if let Ok(v) = serde_json::to_value(&status) {
+                                    status_router.emit_event("plugin.service.status", v);
+                                }
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                tracing::warn!(lagged = n, "plugin service status subscriber lagged");
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                });
+                let sup_loop = state.plugin_service_manager.as_ref().clone();
+                tauri::async_runtime::spawn(async move {
+                    sup_loop.run_loop().await;
+                });
+            }
 
             Ok(())
         })
@@ -1051,18 +1083,17 @@ pub fn run() {
                     // 此前直接 exit(0)：kill_on_drop 失效、stop_all 无调用方，
                     // 插件服务在应用退出后变孤儿。上限 3s——宁可超时退出也不
                     // 阻塞用户关闭（退避窗口内的服务由 kill_on_drop 兜底）。
-                    if let Some(state) = window.app_handle().try_state::<crate::AppState>() {
-                        let psm = state.plugin_service_manager.clone();
-                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            tauri::async_runtime::block_on(async {
-                                let _ = tokio::time::timeout(
-                                    std::time::Duration::from_secs(3),
-                                    psm.stop_all(),
-                                )
-                                .await;
-                            });
-                        }));
-                    }
+            if let Some(state) = window.app_handle().try_state::<crate::AppState>() {
+                let sup = state.plugin_service_manager.clone();
+                // 重构（spec §四）：不再 3s block_on——置全停期望 + 唤醒对账 +
+                // 短等优雅退出；残余由 Job Object 在宿主进程退出时 OS 级兜底
+                // （旧 exit(0) 与 kill_on_drop 的矛盾在此根除）。
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    tauri::async_runtime::block_on(async move {
+                        sup.shutdown().await;
+                    });
+                }));
+            }
                     // 退出整个应用
                     std::process::exit(0);
                 }
@@ -1603,6 +1634,31 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let rt = tokio::runtime::Runtime::new()
         .expect("Failed to create tokio runtime");
     rt.block_on(async move {
+        // 插件服务对账循环 + 状态回推（重构 spec；与桌面端同一纪律，
+        // 必须在 runtime 上下文内 spawn——同 scheduler_daemon 理由）。
+        {
+            let sup = state.plugin_service_manager.as_ref().clone();
+            tokio::spawn(async move { sup.run_loop().await; });
+            let sup = state.plugin_service_manager.as_ref().clone();
+            let status_router = state.router.clone();
+            tokio::spawn(async move {
+                let mut rx = sup.subscribe_status();
+                loop {
+                    match rx.recv().await {
+                        Ok(status) => {
+                            if let Ok(v) = serde_json::to_value(&status) {
+                                status_router.emit_event("plugin.service.status", v);
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!(lagged = n, "plugin service status subscriber lagged");
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+
         // 调度器守护进程内部使用 tokio::spawn，必须在 Tokio runtime 上下文内启动，
         // 否则会 panic "there is no reactor running"。
         let mut scheduler_daemon = services::scheduler_daemon::SchedulerDaemon::new(
