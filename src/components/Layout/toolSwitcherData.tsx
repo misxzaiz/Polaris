@@ -53,6 +53,9 @@ export function useToolSwitcherItems({
   const panelButtons = pluginRegistry
     .listViewContributions('activityBar')
     .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
+    // shadow 接管的插件视图不出现独立图标（内容挂在被接管的内建席位下）——
+    // 与 LeftPanelTabStrip 同源折叠，漏过滤会出现内置+插件两个"终端"图标
+    .filter((view) => !pluginRegistry.listShadowOwnPanelTypes().has(view.panelType))
 
   const activePanel = panelButtons.find((btn) => btn.panelType === leftPanelType)
   const activePanelLabel = leftPanelType !== 'none' && activePanel

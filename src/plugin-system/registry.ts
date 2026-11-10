@@ -354,6 +354,28 @@ class PluginRegistry {
   }
 
   /**
+   * 列出被 shadow 接管（且接管目标 view 仍存在）的插件 panelType 集合。
+   *
+   * 这些插件视图的内容已挂在被接管的内建席位下渲染（LeftPanel shadow 消费端），
+   * 不应再出现独立入口。消费方：LeftPanelTabStrip（tab 条）、toolSwitcherData
+   * （工具切换器图标列）、RadialMenu（径向菜单）——此前只有 tab 条做了折叠，
+   * 工具切换器/径向菜单漏过滤，出现内置"终端"+插件"终端"两个入口
+   * （2026-11-11 terminal-desk 交付实测）。
+   *
+   * 目标 view 被拆除（如内建席位移除）时接管声明找不到目标，插件视图自动
+   * 恢复独立入口（自愈语义，与 LeftPanel 消费端一致）。
+   */
+  listShadowOwnPanelTypes(): Set<string> {
+    const views = this.listViewContributions('activityBar')
+    return new Set(
+      views
+        .filter((v) => v.slotMode === 'shadow' && v.slot)
+        .filter((v) => views.some((t) => t.id === v.slot))
+        .map((v) => v.panelType),
+    )
+  }
+
+  /**
    * 查询某 slot 的所有 chain 增强插件（P3-T1）。
    *
    * 返回声明了 `slotMode: "chain"` 且 slot 匹配的所有插件视图，

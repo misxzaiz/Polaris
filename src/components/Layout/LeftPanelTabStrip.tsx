@@ -56,13 +56,8 @@ export function LeftPanelTabStrip({ activePanelType }: LeftPanelTabStripProps) {
   // 全部可用面板（注册表序），过滤被插件禁用者。与 ActivityBar 同源。
   // shadow 接管视图（P3-T1，plans/terminal-plugin-spec.md §六）不显示独立 tab——
   // 其内容挂在被接管席位下；目标内建拆除后 slot 找不到目标，本视图自动恢复独立 tab。
-  const shadowOwnPanelTypes = new Set(
-    pluginRegistry
-      .listViewContributions('activityBar')
-      .filter((v) => v.slotMode === 'shadow' && v.slot)
-      .filter((v) => pluginRegistry.listViewContributions('activityBar').some((t) => t.id === v.slot))
-      .map((v) => v.panelType),
-  )
+  // 折叠集合单源在 registry.listShadowOwnPanelTypes（toolSwitcher/RadialMenu 同用）。
+  const shadowOwnPanelTypes = pluginRegistry.listShadowOwnPanelTypes()
   const availablePanels = pluginRegistry
     .listViewContributions('activityBar')
     .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId) && !shadowOwnPanelTypes.has(view.panelType))

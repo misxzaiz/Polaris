@@ -65,6 +65,8 @@ export function RadialMenu({
   const pluginMenuItems: MenuItem[] = pluginRegistry
     .listViewContributions('activityBar')
     .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
+    // shadow 接管的插件视图不出现独立菜单项（与 toolSwitcher/tab 条同源折叠）
+    .filter((view) => !pluginRegistry.listShadowOwnPanelTypes().has(view.panelType))
     .map((view) => ({
       id: view.panelType,
       // icon 支持四类值（内置名/相对路径/URL/dataURL，plans/plugin-custom-icon-spec.md）
