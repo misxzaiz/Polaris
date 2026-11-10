@@ -173,6 +173,7 @@ tauri-plugin-autostart = { version = "2", optional = true }
 # 单实例守护：防止多实例共用 WebView2 UserData 目录导致创建失败（0x8007139F）。
 # 必须是注册的第一个插件，以便尽早拦截重复启动。
 tauri-plugin-single-instance = { version = "2.4.3", optional = true }
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 
 # -- 平台条件依赖 --
 
@@ -193,6 +194,8 @@ windows-sys = { version = "0.59", features = [
     "Win32_Storage_FileSystem",
     "Win32_Security",
     "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
     "Win32_Graphics_Gdi",
     "Win32_System_DataExchange",
     "Win32_System_Memory",

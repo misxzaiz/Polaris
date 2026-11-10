@@ -108,6 +108,9 @@ impl StdioTransport {
                 server_name, command, e
             ))
         })?;
+        // 收容（needs 067 P0-1）：MCP stdio server 同样纳入宿主 Job Object，
+        // 宿主强杀/崩溃时 OS 保证终止（此前仅靠 Drop kill 的 graceful path）。
+        crate::services::supervisor::job::assign_child(&child);
         let stdin = child
             .stdin
             .take()
