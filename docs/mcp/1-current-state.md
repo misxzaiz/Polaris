@@ -70,7 +70,7 @@
 
 前端插件 manifest 已经可以声明 UI 和 MCP contribution，后端 MCP 配置生成已经抽象为 Rust contribution registry。当前两端通过 server id/name 约定对齐（内置面仅剩 scheduler/ask/browser；bus 由 polaris.bus 归属注入）。
 
-> 注：本文件为现状快照，2026-11-09 起内置插件已收敛为 core/ask/browser/scheduler/contracts 五个，历史段落保留原貌。
+> 注：本文件为现状快照，2026-11-09 起内置插件已收敛为 core/ask/browser/scheduler/contracts 五个，2026-11-10 同期内置壳清理移除 contracts 契约浏览器壳，现为 core/ask/browser/scheduler 四个；历史段落保留原貌。
 
 聊天链路已经支持禁用插件 MCP server，后端也具备接收 MCP contribution registry 的入口。还没有完成的是前后端 manifest/schema 对齐和插件安装发现后的自动注册闭环。
 

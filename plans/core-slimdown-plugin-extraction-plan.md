@@ -88,8 +88,8 @@ B1 合计 ~30k 行。外移后同步动作（每项相同，下称「三处同�
 |---|---|---|---|---|
 | B2-1 | 语音电台 / 伴播 | `voice_capability.rs` 1229 + RadioBroadcast 组件 2044 + `voiceBroadcast` ~1.8k + `speechService` 683 + `ttsService` 617 + VoiceCompanion 476 + `streamingTts` 309 | ~7.2k | 近期高频演进域（radio-broadcast P0-P3 刚收尾），发布解耦收益最大；插件仓 `mimo-tts` 已有 TTS 先例。锁屏控制/媒体键如属宿主能力，保留薄通道 |
 | B2-2 | IM 集成 | `integrations/` 7095（钉钉/飞书/QQ bot）+ Integration 组件 771 + `integrationService.ts` 168 | ~8k | 典型独立进程形态（`contributes.services` 常驻 + webhook），与宿主仅共享 config |
-| B2-3 | PetOverlay | `petOverlay/` 1531 | 1.5k | 独立浮窗，边界干净 |
-| B2-4 | Translate | `commands/translate.rs` 107 + Translate 组件 705 | 0.8k | 顺手项，可与 B2-3 同批 |
+| ~~B2-3~~ | PetOverlay | ✅ 已移除（2026-11-10 用户定案：主仓直接删除，不新建插件；插件仓 `whale-pet` 为替代） | ~~1.5k~~ | 独立浮窗；宿主 `__POLARIS_PET_OVERLAY__` 桥与 `?petOverlay=1` 分支同步拆除，whale-pet 桌面悬浮按钮按存在性降级 |
+| B2-4 | Translate | `commands/translate.rs` 107 + Translate 组件 705 | 0.8k | 顺手项；方案见 `translate-extraction-spec.md`（2026-11-10 定案待批，实施另需批准） |
 
 B2 合计 ~17.5k。
 
@@ -141,7 +141,7 @@ B2 合计 ~17.5k。
 
 **整体（全部批次完成后）**：
 - [ ] 主仓前后端合计出仓 ≥ 40k 行；`commands/` 目录剩余为不可拆核心命令。
-- [x] `src/plugins/` 内置插件壳仅剩核心通道（2026-11-09 清理后：core/ask/browser/scheduler/contracts；dispatch 已移除，双轨状态消除）。
+- [x] `src/plugins/` 内置插件壳仅剩核心通道（2026-11-10：core/ask/browser/scheduler；contracts 契约浏览器壳已移除，dispatch 已移除，双轨状态消除）。
 - [ ] 新功能全部落在插件仓（既有定案的可验证状态）。
 
 ---

@@ -88,7 +88,7 @@ cap.session（含所有权记账）+ `ai.stream.end` hook 插桩 + `contributes.
 
 ### W4 中项（~5.9k 行，每项 1-2 会话）
 
-B1-3 Requirement（~3.6k，存储外迁是关键点）+ B2-3 PetOverlay（1.5k，边界最干净）+ B2-4 Translate（0.8k）。
+B1-3 Requirement（~3.6k，存储外迁是关键点）+ ~~B2-3 PetOverlay~~（2026-11-10 已随主仓清理直接移除，不新建插件；插件仓 whale-pet 为替代）+ B2-4 Translate（0.8k）。
 
 ### W5 B2 大项（~25k 行，每项 2-4 会话，收益主体）
 
@@ -113,7 +113,7 @@ B1-3 Requirement（~3.6k，存储外迁是关键点）+ B2-3 PetOverlay（1.5k�
 | 指标 | 基线（2026-11-06） | W3 后 | W5 后 | W6 后 |
 |---|---|---|---|---|
 | 主仓非测试 LOC | 318k | ~310k | ~293k | ~275k |
-| 内置插件壳数 | 12 | 8 | 5（2026-11-09 清理后：core/ask/browser/scheduler/contracts，见 plans/builtin-plugin-cleanup-analysis.md） | — |
+| 内置插件壳数 | 12 | 8 | 4（2026-11-10 清理后：core/ask/browser/scheduler；contracts 契约浏览器壳同期清理移除，见 plans/core-slimdown-plugin-extraction-plan.md §7） | — |
 | 主包体积 / 启动时长 | W0 补测 | 复测 | 复测 | 复测 |
 
 - LOC 复测命令（本文件口径可复跑）：
