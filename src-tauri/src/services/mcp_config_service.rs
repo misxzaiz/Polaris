@@ -546,6 +546,13 @@ pub fn resolve_external_plugin_mcp_servers(
     let app_config_dir = config_dir.to_string_lossy().to_string();
     let mut resolved = Vec::new();
 
+    // MCP 健康门控（重构 spec §3.5）：声明了后台服务的插件，服务未 Running →
+    // 其 MCP server 不进 AI 配置。旧行为按开关静态注册，服务死了配置照发、
+    // 工具静默不可用——「需要的插件没注册进 AI」的机制 B（方案文档 §一）。
+    // 快照由 supervisor tick 维护（≤10s 最终一致）；None = 无快照（降级放行，
+    // 与无 supervisor 的测试/极早调用场景兼容）。
+    let running_gate = crate::services::supervisor::service::running_plugin_ids_snapshot();
+
     for plugin in plugins {
         let plugin_state = plugin_states.get(&plugin.id);
         if !is_plugin_mcp_enabled(plugin, plugin_state) {
@@ -556,6 +563,18 @@ pub fn resolve_external_plugin_mcp_servers(
         if plugin_dir.is_empty() {
             tracing::warn!("[MCP] 跳过插件 {}，缺少 installPath", plugin.id);
             continue;
+        }
+
+        // 健康门控：有后台服务声明且服务无一在管 → 跳过该插件全部 MCP server
+        if let Some(running) = &running_gate {
+            // 粒度=插件级：任一服务在管即放行（MCP server 独立于具体服务）
+            if !plugin.contributes.services.is_empty() && !running.contains(&plugin.id) {
+                tracing::info!(
+                    "[MCP] 插件 {} 的后台服务未运行，MCP server 暂不注册（服务恢复后自动补注册）",
+                    plugin.id
+                );
+                continue;
+            }
         }
 
         for server in &plugin.contributes.mcp_servers {

@@ -36,6 +36,9 @@ pub(crate) struct McpClientPool {
     tool_index: HashMap<String, (String, String)>,
     /// 已缓存的 OpenAI function spec（spawn 后固定）。
     cached_specs: Vec<Value>,
+    /// 连接失败的 server（name, 原因）——重构 spec §3.5：失败显性化，
+    /// 供会话层以 Progress 事件透出（旧行为仅日志，用户只见工具静默缺失）。
+    failed: Vec<(String, String)>,
 }
 
 impl McpClientPool {
@@ -75,6 +78,7 @@ impl McpClientPool {
         let mut clients: HashMap<String, Arc<McpClient>> = HashMap::new();
         let mut tool_index: HashMap<String, (String, String)> = HashMap::new();
         let mut cached_specs: Vec<Value> = Vec::new();
+        let mut failed: Vec<(String, String)> = Vec::new();
 
         while let Some(joined) = join_set.join_next().await {
             let (server, result) = match joined {
@@ -91,6 +95,10 @@ impl McpClientPool {
                         server.server_name,
                         PER_SERVER_CONNECT_TIMEOUT.as_secs()
                     );
+                    failed.push((
+                        server.server_name,
+                        format!("连接超时（{}s）", PER_SERVER_CONNECT_TIMEOUT.as_secs()),
+                    ));
                 }
                 Ok(Err(e)) => {
                     tracing::warn!(
@@ -98,6 +106,7 @@ impl McpClientPool {
                         server.server_name,
                         e
                     );
+                    failed.push((server.server_name, e.to_string()));
                 }
                 Ok(Ok((client, tools))) => {
                     let client = Arc::new(client);
@@ -131,6 +140,7 @@ impl McpClientPool {
             clients: RwLock::new(clients),
             tool_index,
             cached_specs,
+            failed,
         }
     }
 
@@ -140,7 +150,13 @@ impl McpClientPool {
             clients: RwLock::new(HashMap::new()),
             tool_index: HashMap::new(),
             cached_specs: Vec::new(),
+            failed: Vec::new(),
         }
+    }
+
+    /// 连接失败的 server 清单（重构 spec §3.5 失败显性化）。
+    pub(crate) fn failed_servers(&self) -> &[(String, String)] {
+        &self.failed
     }
 
     /// 全部工具的 OpenAI function spec（同步，spawn 后缓存）。

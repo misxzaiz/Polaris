@@ -29,6 +29,9 @@ use super::registry::{Registry, RegistryEntry};
 
 /// tick 周期；事件（进程退出/期望变更/手动操作）额外唤醒。
 const TICK_INTERVAL: Duration = Duration::from_secs(10);
+/// 运行中服务集合快照（MCP 健康门控读；tick 更新，std 锁同步读无 runtime 依赖）。
+static RUNNING_PLUGIN_IDS: std::sync::RwLock<Option<std::collections::HashSet<String>>> =
+    std::sync::RwLock::new(None);
 /// 停止收敛等待（外部 stop 调用的阻塞上限；超时由后续 tick 兜底收敛）。
 const STOP_SETTLE_WAIT: Duration = Duration::from_secs(3);
 /// 退出钩子的短暂等待（CloseRequested：给优雅停止一个机会，Job Object 兜底超时）。
@@ -49,7 +52,8 @@ pub enum ServiceState {
     Error,
 }
 
-/// 服务状态信息（对外返回）
+/// 服务状态信息（对外返回；既有字段与旧 PluginServiceManager 冻结一致，
+/// 重构新增字段全部 Option + skip 序列化——向后兼容追加，spec §3.6）。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceStatus {
@@ -65,6 +69,12 @@ pub struct ServiceStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
     pub restart_count: u32,
+    /// 进程代际（重构新增）：跨重启区分同服务的不同进程实例
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epoch: Option<u64>,
+    /// 终态原因（重构新增）：Error 时的预算/端口等判定依据
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
 }
 
 /// 启动选项（旧 StartContext 平移 + 协议 v2 注入所需 web 端点）。
@@ -519,7 +529,8 @@ impl ServiceSupervisor {
             }
         }
 
-        // ── 6. 账本持久化 + 状态广播 ──
+        // ── 6. 账本持久化 + 快照表 + 状态广播 ──
+        update_running_snapshot(&epochs_snapshot);
         self.persist_registry().await;
         self.publish_all().await;
         Ok(())
@@ -723,6 +734,20 @@ impl ServiceSupervisor {
 
 // ── 自由函数 ──
 
+/// 运行中服务的 pluginId 集合快照（MCP 健康门控用）。
+/// 数据源 = 在管 epochs（存活进程），tick 更新，最终一致（≤tick 周期）。
+pub fn running_plugin_ids_snapshot() -> Option<std::collections::HashSet<String>> {
+    RUNNING_PLUGIN_IDS.read().ok().and_then(|g| g.clone())
+}
+
+fn update_running_snapshot(epochs: &HashMap<ServiceKey, EpochRecord>) {
+    let ids: std::collections::HashSet<String> =
+        epochs.keys().map(|(p, _)| p.clone()).collect();
+    if let Ok(mut g) = RUNNING_PLUGIN_IDS.write() {
+        *g = Some(ids);
+    }
+}
+
 async fn bind_probe(port: u16) -> bool {
     tokio::net::TcpListener::bind(("127.0.0.1", port)).await.is_ok()
 }
@@ -844,6 +869,8 @@ fn status_from(
             uptime: Some(now_ms().saturating_sub(rec.started_at_ms) / 1000),
             last_error: None,
             restart_count: budgets.get(key).map(|b| b.restart_count).unwrap_or(0),
+            epoch: Some(rec.epoch),
+            unavailable_reason: None,
         },
         None => {
             let budget = budgets.get(key);
@@ -860,6 +887,8 @@ fn status_from(
                 uptime: None,
                 last_error: budget.and_then(|b| b.error_terminal.clone()),
                 restart_count: budget.map(|b| b.restart_count).unwrap_or(0),
+                epoch: None,
+                unavailable_reason: budget.and_then(|b| b.error_terminal.clone()),
             }
         }
     }

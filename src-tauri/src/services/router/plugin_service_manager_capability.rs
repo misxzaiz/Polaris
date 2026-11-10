@@ -48,6 +48,7 @@ pub const PLUGIN_SERVICE_MANAGER_ACTIONS: &[&str] = &[
     "list_status",
     "stop_for_plugin",
     "autostart",
+    "recent_actions",
 ];
 
 /// 前端 plugin_states 快照（autostart 用）
@@ -99,7 +100,8 @@ impl PluginServiceManagerCapability {
                 "autostart": { "params": {
                     "pluginStates": "object（必填语义）——map: pluginId → { enabled: bool }，按各插件 enabled 决定是否启动其服务；缺省/空对象时不报错但不会启停任何服务",
                     "workspacePath": "string?"
-                }, "returns": "ServiceStatus[]（裸数组）" }
+                }, "returns": "ServiceStatus[]（裸数组）" },
+                "recent_actions": { "params": {}, "returns": "string[]（裸数组）——supervisor 最近对账动作环形日志（≤10 条，拉起/停止/孤儿清杀/spawn 失败），诊断用" }
             }),
         )
     }
@@ -275,6 +277,12 @@ impl Capability for PluginServiceManagerCapability {
                 })
             }
             // 审计错误工效：未知动作附支持清单与协议入口（错误即文档，可自纠）
+            "recent_actions" => {
+                let sup = self.supervisor.clone();
+                Self::block_on_async(async move {
+                    serde_json::to_value(sup.recent_actions().await).map_err(|e| e.to_string())
+                })
+            }
             other => Err(unsupported_action(
                 CAP_ID,
                 other,
