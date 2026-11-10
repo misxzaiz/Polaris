@@ -13,6 +13,7 @@
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri:dev:web": "node scripts/tauri-dev-web.mjs",
     "tauri:dev:win": "tauri dev --config src-tauri/tauri.windows.dev.conf.json",
+    "tauri:prod:web": "node scripts/tauri-dev-web.mjs --installed-anchor",
     "tauri:build": "tauri build",
     "tauri:build:win": "node scripts/build-win.mjs",
     "tauri:build:test": "tauri build --config src-tauri/tauri.test.conf.json --features test-profile --bundles msi",

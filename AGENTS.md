@@ -80,6 +80,7 @@
 ### 3.3 数据根与隔离
 - **数据根单点**：路径解析统一走 `services/data_root.rs`（DataRoot 抽象）。**禁止散落硬编码路径**。
 - **dev/test 隔离**：`POLARIS_DATA_ROOT` env 覆盖数据根（env > anchor > 默认）；`tauri:dev:web` 注入 `Polaris-dev`；`tauri:build:test` 产隔离 MSI。**改路径前先读 `data_root.rs` 与 `Cargo.toml` features。**
+- **锚点写读对称不变式**（2026-11-11，`plans/data-root-dev-anchor-spec.md`）：进程写的锚点 ≡ 下次启动读的锚点。`POLARIS_ANCHOR_DIR` env 重定向锚点目录；`tauri:dev:web` 解析 dev 锚点链（`%APPDATA%/Polaris-dev/anchor.json`）后**双 env 同注**；`tauri:prod:web` 不注入数据根 env → dev 构建直读安装版锚点（与安装版共用数据链，UI 改数据根会写安装版锚点）。env 有而 `POLARIS_ANCHOR_DIR` 无时，`set_root`/`validate_target` 后端守卫直接拒绝（防「改了又变回去」+ 生产锚点被污染事故复发）。
 
 ### 3.4 命令门控（Rust feature 陷阱，双方向）
 - Tauri 命令有条件编译（`tauri-app` / `git` / `lsp-index` 等 feature）。
