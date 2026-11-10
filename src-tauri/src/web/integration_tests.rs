@@ -101,7 +101,7 @@ let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/
         profile_stats_collector: Arc::new(tokio::sync::Mutex::new(crate::services::ProfileStatsCollector::new())),
         failed_call_collector: Arc::new(tokio::sync::Mutex::new(crate::services::FailedCallCollector::new())),
         plugin_service_manager: Arc::new(
-            crate::services::plugin_service_manager::PluginServiceManager::new(),
+            crate::services::supervisor::ServiceSupervisor::new(Vec::new()),
         ),
         permission_prompt: Arc::new(
             crate::services::router::permission_prompt::PermissionPromptRegistry::new(

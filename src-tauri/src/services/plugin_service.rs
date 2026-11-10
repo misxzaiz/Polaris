@@ -1063,34 +1063,40 @@ impl PluginService {
         "bun", "bun.exe",
     ];
 
-    /// 安全终止插件进程
+    /// 安全终止插件进程（重构 spec §3.4：sysinfo 原生实现，替代 wmic/taskkill）
     ///
     /// 策略：
-    /// 1. 如果命令名不是通用运行时 → 直接按映像名 `taskkill /F /IM /T`
-    /// 2. 如果是通用运行时 → 用 `wmic process where "commandline like '%dir%'" get processid` 找 PID 后逐个杀
-    /// 3. 始终优先用命令行包含插件目录的方式匹配
+    /// 1. 专用二进制 → 按映像名精确匹配
+    /// 2. 通用运行时 / 兜底 → 按命令行包含插件目录匹配（Rust 原生枚举，
+    ///    无外部命令依赖；wmic 在 Win11 已移除、WMI 有抽风返回空集问题）
     fn kill_plugin_processes_safe(command_entries: &[CommandEntry], plugin_dir: &str) {
+        let snapshot = crate::services::supervisor::proc_kill::ProcessSnapshot::capture();
+        let entries = snapshot.entries();
+
         for entry in command_entries {
             if entry.image_name.is_empty() {
                 continue;
             }
-
-            // 检查是否是通用运行时
+            // 专用二进制：映像名精确匹配（排除目录匹配覆盖面之外更精准的候选）
             let is_generic = Self::GENERIC_RUNTIMES
                 .iter()
                 .any(|r| r.eq_ignore_ascii_case(&entry.image_name));
-
-            if is_generic {
-                // 通用运行时：按命令行包含插件目录搜索 PID
-                Self::kill_processes_by_command_line(plugin_dir);
-            } else {
-                // 专用二进制：直接按映像名终止
-                Self::kill_processes_by_image_name(&entry.image_name);
+            if !is_generic {
+                let name_hits: Vec<u32> = entries
+                    .iter()
+                    .filter(|p| p.name.eq_ignore_ascii_case(&entry.image_name))
+                    .map(|p| p.pid)
+                    .collect();
+                for pid in name_hits {
+                    crate::services::supervisor::proc_kill::kill_pid(pid);
+                }
             }
         }
 
-        // 额外兜底：按命令行包含插件目录搜索所有进程（确保覆盖多种可能性）
-        Self::kill_processes_by_command_line(plugin_dir);
+        // 主策略 + 兜底合一：命令行含插件目录即杀（通用运行时无法按映像名区分）
+        for pid in snapshot.find_by_cmd_fragment(plugin_dir, &[]) {
+            crate::services::supervisor::proc_kill::kill_pid(pid);
+        }
     }
 
     /// 收集插件 manifest 中所有命令条目（命令名 + 完整命令）
@@ -1156,158 +1162,6 @@ impl PluginService {
         entries.sort_by(|a, b| a.image_name.cmp(&b.image_name));
         entries.dedup_by(|a, b| a.image_name == b.image_name);
         entries
-    }
-
-    /// 按映像名终止进程（安全适用：非通用运行时）
-    ///
-    /// Windows：`taskkill /F /IM <name> /T`
-    /// Unix：`pkill -9 <name>`
-    fn kill_processes_by_image_name(image_name: &str) {
-        let result = if cfg!(windows) {
-            Command::new("taskkill")
-                .args(["/F", "/IM", image_name, "/T"])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-        } else {
-            Command::new("pkill")
-                .args(["-9", "-f", image_name])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-        };
-
-        match result {
-            Ok(status) => {
-                if status.success() {
-                    tracing::info!("已终止插件进程: {} (exit: {:?})", image_name, status.code());
-                } else {
-                    tracing::debug!("未找到匹配进程: {} (exit: {:?})", image_name, status.code());
-                }
-            }
-            Err(e) => {
-                tracing::warn!("终止进程 {} 失败: {}", image_name, e);
-            }
-        }
-    }
-
-    /// 按命令行包含插件目录路径终止进程（安全匹配）
-    ///
-    /// Windows：`wmic process where "commandline like '%dir%'" get processid` → 逐个 taskkill /F /PID
-    /// Unix：`pgrep -f <dir>` → `kill -9`
-    fn kill_processes_by_command_line(plugin_dir: &str) {
-        if plugin_dir.is_empty() {
-            return;
-        }
-
-        let pids: Vec<u32> = if cfg!(windows) {
-            // Windows 用 wmic 按命令行匹配
-            // 转义 LIKE 中的特殊字符：% → [%], _ → [_]
-            let escaped = plugin_dir
-                .replace('\\', "\\\\")
-                .replace('%', "[%]")
-                .replace('_', "[_]");
-            let filter = format!("commandline like '%{}%'", escaped);
-            let output = Command::new("wmic")
-                .args([
-                    "process",
-                    "where",
-                    &filter,
-                    "get",
-                    "processid",
-                    "/format:csv",
-                ])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .output();
-
-            match output {
-                Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    stdout
-                        .lines()
-                        .filter_map(|line| {
-                            let trimmed = line.trim();
-                            // CSV 格式：Node,ProcessId 或空行
-                            if trimmed.is_empty() || !trimmed.contains(',') {
-                                return None;
-                            }
-                            // 取逗号后部分（ProcessId）
-                            let pid_str = trimmed.split(',').next_back()?.trim();
-                            if pid_str.is_empty() || pid_str == "ProcessId" {
-                                return None;
-                            }
-                            pid_str.parse::<u32>().ok()
-                        })
-                        .collect()
-                }
-                Err(e) => {
-                    tracing::warn!("wmic 查询失败: {}", e);
-                    Vec::new()
-                }
-            }
-        } else {
-            // Unix 用 pgrep -f
-            let output = Command::new("pgrep")
-                .args(["-f", plugin_dir])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .output();
-
-            match output {
-                Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    stdout
-                        .lines()
-                        .filter_map(|line| line.trim().parse::<u32>().ok())
-                        .collect()
-                }
-                Err(e) => {
-                    tracing::warn!("pgrep 查询失败: {}", e);
-                    Vec::new()
-                }
-            }
-        };
-
-        if pids.is_empty() {
-            return;
-        }
-
-        tracing::info!(
-            "找到 {} 个进程匹配插件目录 {}，终止中...",
-            pids.len(),
-            plugin_dir
-        );
-
-        // 逐个 PID 终止
-        for pid in pids {
-            let result = if cfg!(windows) {
-                Command::new("taskkill")
-                    .args(["/F", "/T", "/PID", &pid.to_string()])
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status()
-            } else {
-                Command::new("kill")
-                    .args(["-9", &pid.to_string()])
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status()
-            };
-
-            match result {
-                Ok(status) => {
-                    if status.success() {
-                        tracing::info!("已终止进程 PID={} (含插件目录: {})", pid, plugin_dir);
-                    } else {
-                        tracing::debug!("终止 PID={} 失败 (exit: {:?})", pid, status.code());
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("终止 PID={} 失败: {}", pid, e);
-                }
-            }
-        }
     }
 
     /// 带重试的目录删除

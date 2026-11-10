@@ -1195,6 +1195,7 @@ mod tests {
                 skills: Vec::new(),
                 config_schema: Vec::new(),
                 executors: Vec::new(),
+                ui_templates: Vec::new(),
             },
             permissions: PluginManifestPermissions::default(),
             origin: PluginOriginMetadata::default(),
