@@ -567,8 +567,11 @@ pub fn resolve_external_plugin_mcp_servers(
 
         // 健康门控：有后台服务声明且服务无一在管 → 跳过该插件全部 MCP server
         if let Some(running) = &running_gate {
-            // 粒度=插件级：任一服务在管即放行（MCP server 独立于具体服务）
-            if !plugin.contributes.services.is_empty() && !running.contains(&plugin.id) {
+            if should_skip_for_service_gate(
+                !plugin.contributes.services.is_empty(),
+                Some(running),
+                &plugin.id,
+            ) {
                 tracing::info!(
                     "[MCP] 插件 {} 的后台服务未运行，MCP server 暂不注册（服务恢复后自动补注册）",
                     plugin.id
@@ -643,6 +646,21 @@ pub fn resolve_external_plugin_mcp_servers(
     }
 
     resolved
+}
+
+/// MCP 健康门控判定（纯函数，重构 spec §3.5）：
+/// - 插件未声明后台服务 → 不门控（纯 MCP 插件不受影响）；
+/// - 有快照但插件无在管服务 → 跳过（服务恢复后 tick 联动补注册）；
+/// - 无快照（无 supervisor 场景）→ 放行（降级，与旧行为一致）。
+fn should_skip_for_service_gate(
+    has_services: bool,
+    running: Option<&std::collections::HashSet<String>>,
+    plugin_id: &str,
+) -> bool {
+    match running {
+        None => false,
+        Some(set) => has_services && !set.contains(plugin_id),
+    }
 }
 
 fn external_server_requires_listener(
@@ -1841,4 +1859,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_root);
     }
 
+    /// MCP 健康门控纯函数（重构 spec §3.5 / 验收 A4）：
+    /// 无服务声明不门控；有快照且无在管服务跳过；无快照降级放行。
+    #[test]
+    fn service_gate_matrix() {
+        use std::collections::HashSet as Hs;
+        let running: Hs<String> = ["feed-radar".to_string()].into();
+
+        // 无服务声明的插件：不门控（纯 MCP 插件不受影响）
+        assert!(!should_skip_for_service_gate(false, Some(&running), "some-mcp-plugin"));
+        // 有服务且在管：放行
+        assert!(!should_skip_for_service_gate(true, Some(&running), "feed-radar"));
+        // 有服务且无在管：跳过
+        assert!(should_skip_for_service_gate(true, Some(&running), "quote-sentinel"));
+        // 无快照（无 supervisor）：降级放行
+        assert!(!should_skip_for_service_gate(true, None, "quote-sentinel"));
+    }
 }

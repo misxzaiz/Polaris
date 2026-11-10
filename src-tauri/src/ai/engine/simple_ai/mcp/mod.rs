@@ -302,6 +302,7 @@ mod tests {
             clients: RwLock::new(HashMap::new()),
             tool_index: HashMap::new(),
             cached_specs: Vec::new(),
+            failed: Vec::new(),
         }
     }
 }
