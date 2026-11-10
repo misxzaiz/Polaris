@@ -19,9 +19,18 @@
 //!
 //! ## 解析顺序
 //!
-//! 1. 读 `%APPDATA%\Polaris\anchor.json`
-//! 2. `dataRoot` 字段非空 → 用自定义路径
-//! 3. 否则 → 默认 `%APPDATA%\Polaris\`
+//! 1. 读锚点文件（锚点目录：`POLARIS_ANCHOR_DIR` env 重定向 > `%APPDATA%\Polaris\`）
+//! 2. `POLARIS_DATA_ROOT` env 非空 → 用 env 路径（dev/测试注入，最高优先级）
+//! 3. `anchor.dataRoot` 字段非空 → 用自定义路径
+//! 4. 否则 → 默认 `%APPDATA%\Polaris\`
+//!
+//! ## 锚点写读对称不变式
+//!
+//! 进程写的锚点必须等于进程下次启动读的锚点。dev 会话若读 env 却写生产锚点，
+//! 会出现「改路径重启后变回去」+ 生产锚点被污染的双重事故
+//! （plans/data-root-dev-anchor-spec.md §1，2026-11-11 实发）。
+//! 因此 `set_root` 在「env 决定数据根但 `POLARIS_ANCHOR_DIR` 未重定向锚点目录」时
+//! 直接拒绝（`set_root_blocked_reason`），dev 脚本则负责同时注入两个 env。
 //!
 //! 旧版 `claude-code-pro` 数据**不会**自动接管，仅通过 `scan_legacy_data()`
 //! 暴露给用户在设置中手动迁移。
@@ -56,10 +65,11 @@ pub const APP_NAME: &str = "Polaris-dev";
 /// 旧应用名（仅用于 scan_legacy_data 扫描，不参与默认解析）
 pub const LEGACY_APP_NAME: &str = "claude-code-pro";
 
-/// 锚点目录名（永远在 OS 标准 config_dir 下，永不跟随自定义路径）
+/// 锚点目录名（编译期兜底，永远在 OS 标准 config_dir 下，永不跟随自定义路径）
 ///
 /// 必须与 APP_NAME 同步切换：否则正式版 anchor.json 里残留的自定义 dataRoot
 /// 会把 dev 测试包也导走，数据根隔离将失效。
+/// 运行期可用 `POLARIS_ANCHOR_DIR` env 重定向（dev 专属锚点，见 `ENV_ANCHOR_DIR`）。
 #[cfg(not(feature = "test-profile"))]
 const ANCHOR_DIR_NAME: &str = "Polaris";
 #[cfg(feature = "test-profile")]
@@ -93,8 +103,25 @@ impl Default for Anchor {
     }
 }
 
-/// 获取锚点目录（始终在 OS 标准 config_dir 下，永不可改）
+/// 环境变量名：锚点目录重定向（dev 启动脚本注入，实现 dev 锚点与生产锚点分离）
+///
+/// 背景：dev 进程若读 env（`POLARIS_DATA_ROOT`）却写生产锚点
+/// （`config_dir/Polaris/anchor.json`），会造成改路径不生效 + 生产锚点被污染。
+/// dev 脚本解析 dev 锚点后必须**同时**注入 `POLARIS_DATA_ROOT` 与本变量，
+/// 保证「写的锚点 = 下次启动读的锚点」。
+/// 优先级：`POLARIS_ANCHOR_DIR` env > 编译期 `ANCHOR_DIR_NAME` 兜底。
+const ENV_ANCHOR_DIR: &str = "POLARIS_ANCHOR_DIR";
+
+/// 获取锚点目录
+///
+/// 优先级：`POLARIS_ANCHOR_DIR` env（非空才生效）> OS 标准 config_dir/ANCHOR_DIR_NAME。
 fn anchor_dir() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var(ENV_ANCHOR_DIR) {
+        let dir = dir.trim();
+        if !dir.is_empty() {
+            return Ok(PathBuf::from(dir));
+        }
+    }
     let base = dirs::config_dir()
         .ok_or_else(|| AppError::ConfigError("无法获取系统配置目录".to_string()))?;
     Ok(base.join(ANCHOR_DIR_NAME))
@@ -155,6 +182,51 @@ pub fn is_isolated() -> bool {
         .unwrap_or(false)
 }
 
+/// set_root 守卫：「env 决定数据根但锚点目录未同步重定向」时返回拒绝原因
+///
+/// 此时写锚点必然无效（下次启动 env 仍覆盖优先级 1）且会写错锚点文件
+/// （2026-11-11 事故：dev 会话把自定义路径写进生产锚点，安装版被劫持）。
+/// 返回 `Some(原因)` 表示调用方（validate_target / set_root）应拒绝执行。
+pub fn set_root_blocked_reason() -> Option<String> {
+    let env_set = std::env::var(ENV_DATA_ROOT)
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+    let anchor_redirected = std::env::var(ENV_ANCHOR_DIR)
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+    if env_set && !anchor_redirected {
+        Some(format!(
+            "当前数据根由环境变量 {} 决定，且未设置 {} 锚点重定向；此时切换锚点不会生效\
+（下次启动仍被 env 覆盖）且会写错锚点文件，已拒绝。请通过启动脚本 \
+（pnpm tauri:dev:web / pnpm tauri:prod:web）管理数据根。",
+            ENV_DATA_ROOT, ENV_ANCHOR_DIR
+        ))
+    } else {
+        None
+    }
+}
+
+/// 数据根来源（决策层透明：get_info 暴露给 UI，展示当前路径由谁决定）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DataRootSource {
+    /// `POLARIS_DATA_ROOT` env 注入（dev/测试隔离链）
+    Env,
+    /// anchor.dataRoot 自定义（锚点链）
+    Anchor,
+    /// 默认目录（无 env、无锚点自定义）
+    Default,
+}
+
+impl DataRootSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DataRootSource::Env => "env",
+            DataRootSource::Anchor => "anchor",
+            DataRootSource::Default => "default",
+        }
+    }
+}
+
 /// 获取默认数据根（无自定义时使用）
 fn default_data_root() -> Result<PathBuf> {
     let base = dirs::config_dir()
@@ -171,6 +243,8 @@ fn default_data_root() -> Result<PathBuf> {
 pub struct DataRoot {
     root: PathBuf,
     is_custom: bool,
+    /// 决策层来源（resolve 时捕获，OnceLock 后不可变）
+    source: DataRootSource,
 }
 
 impl DataRoot {
@@ -183,6 +257,7 @@ impl DataRoot {
                 let dr = Self {
                     root: PathBuf::from(env_root),
                     is_custom: true,
+                    source: DataRootSource::Env,
                 };
                 dr.ensure()?;
                 return Ok(dr);
@@ -199,20 +274,33 @@ impl DataRoot {
         });
 
         // 优先级 2：anchor.dataRoot 自定义；优先级 3：默认目录
-        let (root, is_custom) = match anchor.data_root.filter(|p| !p.as_os_str().is_empty()) {
-            Some(custom) => (custom, true),
-            None => (default_data_root()?, false),
+        let (root, is_custom, source) = match anchor.data_root.filter(|p| !p.as_os_str().is_empty())
+        {
+            Some(custom) => (custom, true, DataRootSource::Anchor),
+            None => (default_data_root()?, false, DataRootSource::Default),
         };
 
-        let dr = Self { root, is_custom };
+        let dr = Self {
+            root,
+            is_custom,
+            source,
+        };
         dr.ensure()?;
         Ok(dr)
     }
 
-    /// 仅用于测试：直接构造
+    /// 仅用于测试：直接构造（source 按 is_custom 推导，测试不关心决策层）
     #[cfg(test)]
     pub fn for_test(root: PathBuf, is_custom: bool) -> Self {
-        Self { root, is_custom }
+        Self {
+            root,
+            is_custom,
+            source: if is_custom {
+                DataRootSource::Anchor
+            } else {
+                DataRootSource::Default
+            },
+        }
     }
 
     /// 创建所有标准子目录
@@ -238,6 +326,11 @@ impl DataRoot {
 
     pub fn is_custom(&self) -> bool {
         self.is_custom
+    }
+
+    /// 决策层来源（env / anchor / default）
+    pub fn source(&self) -> DataRootSource {
+        self.source
     }
 
     /// 配置根目录（等同 root，保持与下游 `app_config_dir` 语义兼容）
@@ -561,8 +654,41 @@ mod tests {
     }
 
     #[test]
+    fn test_anchor_dir_env_override() {
+        // POLARIS_ANCHOR_DIR 非空 → 锚点目录重定向（dev 专属锚点的基础，
+        // 保证「写的锚点 = 下次启动读的锚点」）
+        let tmp = TempDir::new().unwrap();
+        unsafe { std::env::set_var(ENV_ANCHOR_DIR, tmp.path()) };
+        let path = anchor_path().unwrap();
+        unsafe { std::env::remove_var(ENV_ANCHOR_DIR) };
+        assert_eq!(path, tmp.path().join(ANCHOR_FILE));
+    }
+
+    #[test]
+    fn test_set_root_blocked_reason_matrix() {
+        // env 有 + 锚点未重定向 → 拒绝（写了必然无效且污染生产锚点，2026-11-11 事故形态）
+        unsafe { std::env::set_var(ENV_DATA_ROOT, "C:\\tmp\\polaris-guard-test") };
+        unsafe { std::env::remove_var(ENV_ANCHOR_DIR) };
+        let blocked = set_root_blocked_reason();
+        unsafe { std::env::remove_var(ENV_DATA_ROOT) };
+        assert!(blocked.is_some(), "env 有值且锚点未重定向时必须拒绝");
+
+        // env 有 + 锚点已重定向 → 放行（dev 脚本同注双 env 的正常形态）
+        unsafe { std::env::set_var(ENV_DATA_ROOT, "C:\\tmp\\polaris-guard-test") };
+        unsafe { std::env::set_var(ENV_ANCHOR_DIR, "C:\\tmp\\polaris-anchor-test") };
+        let ok = set_root_blocked_reason();
+        unsafe { std::env::remove_var(ENV_DATA_ROOT) };
+        unsafe { std::env::remove_var(ENV_ANCHOR_DIR) };
+        assert!(ok.is_none(), "双 env 齐备时放行");
+
+        // env 无 → 放行（生产/锚点链正常形态）
+        assert!(set_root_blocked_reason().is_none(), "无 env 时放行");
+    }
+
+    #[test]
     fn test_resolve_env_priority() {
-        // POLARIS_DATA_ROOT env 存在时优先于默认目录（但不覆盖 anchor 自定义）。
+        // POLARIS_DATA_ROOT env 存在时为最高优先级（高于 anchor 自定义），
+        // 因此 dev 会话里 set_root 写锚点不会生效——守卫见 test_set_root_blocked_reason_matrix。
         // 用随机 TempDir 路径，避免与真实环境变量冲突。
         let tmp = TempDir::new().unwrap();
         let env_root = tmp.path().join("Polaris-dev");

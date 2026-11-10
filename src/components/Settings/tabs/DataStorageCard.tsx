@@ -220,6 +220,27 @@ export function DataStorageCard() {
     [legacy],
   )
 
+  // 决策层徽标：source 缺省（旧后端）时退回 isCustom 二值展示。
+  // env=启动环境变量决定（UI 切换走启动脚本）；anchor=锚点自定义；default=默认目录。
+  const sourceLabel = info?.source
+    ? info.source === 'env'
+      ? t('dataStorage.sourceEnv', '启动环境变量')
+      : info.source === 'anchor'
+        ? t('dataStorage.sourceAnchor', '锚点自定义')
+        : t('dataStorage.sourceDefault', '默认目录')
+    : info?.isCustom
+      ? t('dataStorage.custom', '自定义路径')
+      : t('dataStorage.default', '默认路径')
+  const sourceBadgeClass = info?.source
+    ? info.source === 'env'
+      ? 'bg-sky-500/15 text-sky-500'
+      : info.source === 'anchor'
+        ? 'bg-amber-500/15 text-amber-500'
+        : 'bg-emerald-500/15 text-emerald-500'
+    : info?.isCustom
+      ? 'bg-amber-500/15 text-amber-500'
+      : 'bg-emerald-500/15 text-emerald-500'
+
   return (
     <div className="p-4 bg-surface rounded-lg border border-border space-y-4">
       <div className="flex items-center justify-between">
@@ -245,20 +266,23 @@ export function DataStorageCard() {
       {/* 当前数据根 */}
       {info && (
         <div className="space-y-2">
+          {/* 开发构建跑在安装版锚点链上：此处改数据根会写安装版锚点文件，显式提示 */}
+          {info.debugBuild && info.source === 'anchor' && (
+            <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded text-xs text-amber-500">
+              {t(
+                'dataStorage.devOnInstalledAnchor',
+                '开发构建正运行在安装版数据链上：在此更改数据根会修改安装版锚点文件，重启后生效。',
+              )}
+            </div>
+          )}
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <div className="text-xs text-text-secondary mb-1">
                 {t('dataStorage.currentLocation', '当前位置')}
                 <span
-                  className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] ${
-                    info.isCustom
-                      ? 'bg-amber-500/15 text-amber-500'
-                      : 'bg-emerald-500/15 text-emerald-500'
-                  }`}
+                  className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] ${sourceBadgeClass}`}
                 >
-                  {info.isCustom
-                    ? t('dataStorage.custom', '自定义路径')
-                    : t('dataStorage.default', '默认路径')}
+                  {sourceLabel}
                 </span>
               </div>
               <div

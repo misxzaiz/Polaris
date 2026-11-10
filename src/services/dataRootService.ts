@@ -43,6 +43,13 @@ export interface DataRootInfo {
   anchorFile: string
   /** 是否使用了用户自定义路径 */
   isCustom: boolean
+  /**
+   * 数据根决策层：env（启动环境变量覆盖）/ anchor（锚点自定义）/ default（默认目录）。
+   * 旧后端可能不下发，消费方须按缺省处理（视为 default）。
+   */
+  source?: 'env' | 'anchor' | 'default'
+  /** 是否为 debug 构建（dev）；UI 据此提示「开发构建跑在生产数据链」。旧后端不下发。 */
+  debugBuild?: boolean
   /** 数据根总占用字节数 */
   totalSizeBytes: number
   /** 数据根总文件数 */

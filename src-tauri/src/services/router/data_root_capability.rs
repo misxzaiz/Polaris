@@ -30,7 +30,9 @@ use crate::contracts::{
     standard_describe, unsupported_action, Capability, CapabilityId, Context, Value,
 };
 use crate::error::AppError;
-use crate::services::data_root::{data_root, dir_stats, scan_legacy_data, DataRoot, LegacySource};
+use crate::services::data_root::{
+    data_root, dir_stats, scan_legacy_data, set_root_blocked_reason, DataRoot, LegacySource,
+};
 use crate::error::Result;
 
 // ============================================================================
@@ -55,6 +57,10 @@ pub struct DataRootInfo {
     pub anchor_file: PathBuf,
     /// 是否使用了用户自定义路径
     pub is_custom: bool,
+    /// 数据根决策层：env（启动环境变量覆盖）/ anchor（锚点自定义）/ default（默认目录）
+    pub source: String,
+    /// 是否为 debug 构建（dev）；UI 据此提示「开发构建跑在生产数据链」
+    pub debug_build: bool,
     /// 数据根总占用（递归字节数）
     pub total_size_bytes: u64,
     /// 总文件数
@@ -211,6 +217,8 @@ pub fn data_root_info_inner() -> Result<DataRootInfo> {
         root,
         anchor_file,
         is_custom: dr.is_custom(),
+        source: dr.source().as_str().to_string(),
+        debug_build: cfg!(debug_assertions),
         total_size_bytes,
         total_file_count,
         subdirs,
@@ -527,6 +535,12 @@ pub fn validate_target_inner(opts: &SetDataRootOptions) -> Result<TargetValidati
     let mut errors: Vec<String> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
 
+    // 守卫前置：env 决定数据根且锚点未重定向时，切换必然无效——
+    // 让向导在确认前就看到拒绝原因（与 set_data_root_inner 同一守卫，单一权威）
+    if let Some(reason) = set_root_blocked_reason() {
+        errors.push(reason);
+    }
+
     // 1. 必须绝对路径
     if !resolved.is_absolute() {
         errors.push(format!("路径必须是绝对路径: {}", resolved.display()));
@@ -654,6 +668,12 @@ fn move_root_contents(src_root: &Path, dst_root: &Path, ts: u64) -> MoveReport {
 }
 
 pub fn set_data_root_inner(options: SetDataRootOptions) -> Result<SetDataRootReport> {
+    // 0. 守卫：env 决定数据根且锚点未重定向时拒绝（消除「静默假成功」——
+    //    写了下次启动必被 env 覆盖，且会写错锚点文件；2026-11-11 事故根因）
+    if let Some(reason) = set_root_blocked_reason() {
+        return Err(AppError::ValidationError(reason));
+    }
+
     // 1. 校验
     let validation = validate_target_inner(&options)?;
     if !validation.ok {
@@ -771,7 +791,7 @@ impl Capability for DataRootCapability {
                  cap_dispatch）默认放行——2026-10-26 起 Plugin 审批名单全量停用，不再逐次审批",
             ),
             serde_json::json!({
-                "get_info": { "params": {}, "returns": "DataRootInfo（root/anchorFile/isCustom/totalSizeBytes/totalFileCount/subdirs[]，裸对象无包装键）" },
+                "get_info": { "params": {}, "returns": "DataRootInfo（root/anchorFile/isCustom/source/debugBuild/totalSizeBytes/totalFileCount/subdirs[]，裸对象无包装键）" },
                 "scan_legacy": { "params": {}, "returns": "LegacySource[]（旧版残留数据源裸数组；路径供 migrate 的 options.sources 使用）" },
                 "migrate": { "params": { "options": "MigrateOptions（必填）：{ sources: string[]（必填，须为 scan_legacy 返回路径之一）, overwrite?: bool（默认 false；true=冲突时覆盖目标，不可逆） }" }, "returns": "MigrateReport（successCount/skippedCount/conflictCount/errorCount/logFile/items[]）" },
                 "validate_target": { "params": { "options": "SetDataRootOptions（必填）：{ newPath: string|null（null=恢复默认）, mode: \"switch_only\"|\"move_data\"（必填枚举） }" }, "returns": "TargetValidation（ok/errors[]/warnings[]/resolvedPath/currentSizeBytes）" },
