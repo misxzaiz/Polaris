@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window and floating window",
-  "webviews": ["main", "floating", "pet-overlay", "pet-overlay-2", "pet-overlay-3", "pet-overlay-4", "pet-overlay-5", "pet-overlay-6", "pet-overlay-7", "pet-overlay-8"],
+  "webviews": ["main", "floating"],
   "permissions": [
     "core:default",
     "core:window:allow-center",
@@ -24,7 +24,6 @@
     "core:window:allow-set-position",
     "core:window:allow-start-dragging",
     "core:webview:allow-create-webview",
-    "core:webview:allow-create-webview-window",
     "core:webview:allow-webview-close",
     "core:webview:allow-webview-hide",
     "core:webview:allow-webview-show",

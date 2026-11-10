@@ -53,66 +53,6 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
   return invoke(cmd, args)
 }
 
-// ============================================================================
-// R1 宠物悬浮窗桥（spike，plans/pet-overlay-spike.md）：
-// 插件面板经此打开/关闭「ds大肥鱼」桌面透明悬浮窗。零 Rust 改动——建窗走
-// @tauri-apps/api WebviewWindow（capabilities/default.json 已放行
-// core:webview:allow-create-webview-window；pet-overlay webview 继承窗口操作权限）。
-// 配置全部固定（透明/置顶/无边框/skipTaskbar/不可缩放，label 锁死 pet-overlay），
-// 面板无法借道创建任意窗口；纯 Web / 移动无 Tauri IPC，桥不暴露（面板按存在性降级）。
-// ============================================================================
-if ('__TAURI_INTERNALS__' in globalThis) {
-  ;(window as any).__POLARIS_PET_OVERLAY__ = {
-    open: async (opts?: { slot?: number }): Promise<string> => {
-      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      const slot = opts?.slot && opts.slot > 1 ? Math.min(opts.slot, 8) : 0;
-      const label = slot ? `pet-overlay-${slot}` : 'pet-overlay';
-      // 先关旧窗再建新窗：悬浮页固定走最新代码（也顺带治愈任何"卡死旧窗"——
-      // v0.4.0 教训：内容空白的窗口无法自救，✕ 按钮也不可见）。
-      const existing = await WebviewWindow.getByLabel(label);
-      if (existing) {
-        await existing.close().catch(() => {});
-        await new Promise((r) => setTimeout(r, 350));
-      }
-      const win = new WebviewWindow(label, {
-        url: 'index.html?petOverlay=1',
-        title: 'ds大肥鱼',
-        width: 360,
-        height: 360,
-        center: slot === 0,
-        x: slot ? 120 + slot * 56 : undefined,
-        y: slot ? 120 + slot * 42 : undefined,
-        transparent: true,
-        decorations: false,
-        alwaysOnTop: true,
-        skipTaskbar: true,
-        resizable: false,
-        shadow: false,
-      });
-      return await new Promise<string>((resolve) => {
-        win.once('tauri://created', () => resolve('created'));
-        win.once('tauri://error', (e) => resolve(`error:${(e as unknown as Error)?.message ?? 'unknown'}`));
-      });
-    },
-    // 多开同屏（dsh-pet multi 同款）：扫描 pet-overlay 与 pet-overlay-2..8 找第一个空位
-    openNext: async (): Promise<string> => {
-      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      for (let slot = 0; slot <= 8; slot++) {
-        const label = slot ? `pet-overlay-${slot}` : 'pet-overlay';
-        const existing = await WebviewWindow.getByLabel(label);
-        if (!existing) return await (window as any).__POLARIS_PET_OVERLAY__.open(slot ? { slot } : undefined);
-      }
-      return 'full';
-    },
-    close: async (opts?: { slot?: number }): Promise<void> => {
-      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      const slot = opts?.slot && opts.slot > 1 ? Math.min(opts.slot, 8) : 0;
-      const win = await WebviewWindow.getByLabel(slot ? `pet-overlay-${slot}` : 'pet-overlay');
-      if (win) await win.close();
-    },
-  };
-}
-
 ;(window as any).__POLARIS_HOST_LISTEN__ = (
   event: string,
   handler: (payload: unknown) => void,
@@ -209,33 +149,8 @@ function RootApp() {
   return <App />;
 }
 
-// R1 宠物悬浮窗（spike）：?petOverlay=1 的独立窗口只渲染悬浮宠物页，
-// 不挂整套 App（动态 import，不进主 bundle；页面自管理资源/拖拽/位置记忆）。
-// import 失败必须可见（dev 下 vite 依赖预构建竞态会吃掉首次 import）——
-// 兜底直接往 #root 写纯 DOM 错误并自动重试，绝不允许"窗口在、内容空"。
-if (new URLSearchParams(window.location.search).has('petOverlay')) {
-  const mountOverlay = (attempt: number) => {
-    void import('./petOverlay/OverlayApp')
-      .then(({ PetOverlayApp }) => {
-        ReactDOM.createRoot(root).render(
-          <React.StrictMode>
-            <PetOverlayApp />
-          </React.StrictMode>,
-        );
-      })
-      .catch((e) => {
-        if (attempt < 4) {
-          setTimeout(() => mountOverlay(attempt + 1), 2000);
-          return;
-        }
-        root.innerHTML = `<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(8,15,30,0.9);color:#ffb86b;font:13px/1.6 sans-serif;padding:16px;text-align:center">悬浮页加载失败：${String((e as Error)?.message ?? e).slice(0, 200)}</div>`;
-      });
-  };
-  mountOverlay(0);
-} else {
-  ReactDOM.createRoot(root).render(
-    <React.StrictMode>
-      <RootApp />
-    </React.StrictMode>,
-  );
-}
+ReactDOM.createRoot(root).render(
+  <React.StrictMode>
+    <RootApp />
+  </React.StrictMode>,
+);
