@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>交互面板全屏原型 · 应用内覆盖层 + 顶部操作栏</title>
+<style>
+  /* 真实 token：取自 src/index.css（暗色） */
+  :root {
+    --c-bg-base: 0 0 0;
+    --c-bg-elev: 26 26 31;
+    --c-bg-surface: 37 37 43;
+    --c-bg-hover: 45 45 52;
+    --c-border: 255 255 255;
+    --c-text-primary: 248 248 248;
+    --c-text-secondary: 180 180 184;
+    --c-text-muted: 109 109 112;
+    --c-text-tertiary: 92 96 114;
+    --c-primary: 59 130 246;
+    --c-status-info: 96 165 250;
+    --c-status-success: 52 211 153;
+    --c-status-warning: 251 191 36;
+    --c-status-danger: 248 113 113;
+    --c-accent-ai: 167 139 250;
+    --c-cyan: 34 211 238;
+    --z-overlay: 40;
+    --mono: "Consolas", "SF Mono", "Cascadia Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: rgb(var(--c-bg-base));
+    color: rgb(var(--c-text-primary));
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 13px; line-height: 1.55;
+    padding: 24px 20px 40px;
+  }
+  .page { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 600; }
+  .sub { color: rgb(var(--c-text-muted)); font-size: 12px; margin: 4px 0 20px; }
+  .sub code { font-family: var(--mono); color: rgb(var(--c-status-info)); }
+
+  /* ===== 控制台 ===== */
+  .console {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    margin-bottom: 16px;
+  }
+  .panel {
+    background: rgb(var(--c-bg-elev));
+    border: 1px solid rgb(var(--c-border) / .10);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .panel h2 {
+    font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: rgb(var(--c-text-tertiary)); font-weight: 600; margin-bottom: 10px;
+  }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .seg:last-child { margin-bottom: 0; }
+  .seg-label { font-size: 11px; color: rgb(var(--c-text-muted)); width: 100%; margin-bottom: 2px; }
+  .seg button {
+    font: inherit; font-size: 12px; padding: 5px 11px; cursor: pointer;
+    color: rgb(var(--c-text-secondary));
+    background: rgb(var(--c-bg-surface));
+    border: 1px solid rgb(var(--c-border) / .12);
+    border-radius: 6px; transition: .12s;
+  }
+  .seg button:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .seg button.on {
+    background: rgb(var(--c-primary) / .16);
+    border-color: rgb(var(--c-primary) / .55);
+    color: rgb(var(--c-status-info));
+  }
+  .seg button.on.warn {
+    background: rgb(var(--c-status-danger) / .14);
+    border-color: rgb(var(--c-status-danger) / .5);
+    color: rgb(var(--c-status-danger));
+  }
+  .notes { font-size: 11.5px; color: rgb(var(--c-text-secondary)); line-height: 1.7; }
+  .notes b { color: rgb(var(--c-text-primary)); font-weight: 600; }
+  .notes .bad { color: rgb(var(--c-status-danger)); }
+  .notes .good { color: rgb(var(--c-status-success)); }
+  .notes ol { padding-left: 16px; }
+  .notes li { margin: 1px 0; }
+
+  /* ===== 状态条 ===== */
+  .statusbar {
+    display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+    padding: 8px 12px; margin-bottom: 12px;
+    background: rgb(var(--c-bg-elev));
+    border: 1px solid rgb(var(--c-border) / .10);
+    border-radius: 8px; font-size: 11.5px;
+    font-family: var(--mono);
+  }
+  .statusbar .k { color: rgb(var(--c-text-muted)); }
+  .statusbar .v { color: rgb(var(--c-text-primary)); }
+  .statusbar .v.hot { color: rgb(var(--c-status-warning)); }
+  .statusbar .logline { flex: 1; min-width: 200px; color: rgb(var(--c-status-info)); font-family: inherit; }
+
+  /* ===== 仿真宿主窗口 ===== */
+  .app-shell {
+    position: relative; overflow: hidden;
+    height: min(72vh, 660px); min-height: 460px;
+    background: rgb(var(--c-bg-base));
+    border: 1px solid rgb(var(--c-border) / .14);
+    border-radius: 12px;
+    box-shadow: 0 18px 60px rgba(0,0,0,.6);
+    display: flex; flex-direction: column;
+  }
+  /* 宿主 TopMenuBar：h-10 = 40px */
+  .topbar {
+    height: 40px; flex: 0 0 40px;
+    background: rgb(var(--c-bg-elev));
+    border-bottom: 1px solid rgb(var(--c-border) / .09);
+    display: flex; align-items: center; gap: 10px; padding: 0 12px;
+    font-size: 12px; color: rgb(var(--c-text-secondary));
+  }
+  .topbar .logo {
+    width: 20px; height: 20px; border-radius: 6px;
+    background: rgb(var(--c-primary) / .22); color: rgb(var(--c-status-info));
+    display: grid; place-items: center; font-weight: 700; font-size: 11px;
+  }
+  .topbar .crumb { color: rgb(var(--c-text-muted)); }
+  .topbar .spacer { flex: 1; }
+  .topbar .winbtn { width: 10px; height: 10px; border-radius: 50%; background: rgb(var(--c-border) / .16); }
+  .topbar .tag {
+    font-size: 10px; padding: 2px 7px; border-radius: 999px;
+    background: rgb(var(--c-status-success) / .12); color: rgb(var(--c-status-success));
+  }
+
+  .workspace { flex: 1; min-height: 0; display: flex; }
+  .activitybar {
+    width: 48px; flex: 0 0 48px;
+    background: rgb(var(--c-bg-elev));
+    border-right: 1px solid rgb(var(--c-border) / .08);
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 10px;
+  }
+  .activitybar i {
+    width: 30px; height: 30px; border-radius: 7px;
+    background: rgb(var(--c-border) / .05); color: rgb(var(--c-text-muted));
+    display: grid; place-items: center; font-style: normal; font-size: 12px;
+  }
+  .activitybar i.active { background: rgb(var(--c-cyan) / .14); color: rgb(var(--c-cyan)); }
+
+  .chat { flex: 1; min-width: 0; overflow-y: auto; padding: 18px 20px; }
+  .msg { max-width: 620px; }
+  .msg .who { font-size: 11px; color: rgb(var(--c-accent-ai)); margin-bottom: 6px; }
+  .msg .text {
+    display: inline-block; padding: 9px 12px; border-radius: 12px;
+    background: rgb(var(--c-bg-surface) / .55);
+    color: rgb(var(--c-text-secondary)); font-size: 12.5px; margin-bottom: 10px;
+  }
+
+  /* 交互面板卡片（内嵌态）—— 复刻 card.tsx 工具栏 */
+  .ic-card {
+    border: 1px solid rgb(var(--c-border) / .12);
+    border-radius: 10px; overflow: hidden;
+    background: rgb(var(--c-bg-elev));
+  }
+  .ic-toolbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 6px 12px; border-bottom: 1px solid rgb(var(--c-border) / .10);
+    background: rgb(var(--c-bg-surface));
+  }
+  .ic-toolbar .left { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .chip {
+    font-size: 10px; padding: 2px 7px; border-radius: 5px;
+    background: rgb(var(--c-cyan) / .12); color: rgb(var(--c-cyan)); font-weight: 500; white-space: nowrap;
+  }
+  .ic-toolbar .title { font-size: 12px; font-weight: 500; color: rgb(var(--c-text-primary)); }
+  .ic-toolbar .ver { font-size: 10px; color: rgb(var(--c-text-tertiary)); }
+  .ic-toolbar .right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .lnk {
+    font-size: 10px; color: rgb(var(--c-text-tertiary)); cursor: pointer;
+    background: none; border: none; font-family: inherit; padding: 2px 0;
+  }
+  .lnk:hover { color: rgb(var(--c-text-primary)); }
+  .lnk.primary { color: rgb(var(--c-status-info)); }
+  .ic-frame { height: 300px; background: #fff; }
+  .ic-frame iframe, .fs-content iframe {
+    width: 100%; height: 100%; border: 0; display: block; background: #fff;
+  }
+
+  .rightpane {
+    width: 210px; flex: 0 0 210px;
+    background: rgb(var(--c-bg-elev));
+    border-left: 1px solid rgb(var(--c-border) / .08);
+    padding: 14px; font-size: 11.5px; color: rgb(var(--c-text-muted));
+  }
+  .rightpane .ph { height: 8px; border-radius: 4px; background: rgb(var(--c-border) / .07); margin: 10px 0; }
+  .rightpane .ph.w60 { width: 60%; } .rightpane .ph.w85 { width: 85%; }
+
+  /* ===== 全屏覆盖层 ===== */
+  /* 原型用 absolute 模拟「应用内覆盖层」；实现为 fixed + createPortal 到 body */
+  .overlay {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; flex-direction: column;
+    background: rgb(var(--c-bg-base));
+    z-index: var(--z-overlay);
+  }
+  .overlay.legacy { top: 0; z-index: 9999; }
+  .overlay.proposed { top: 40px; }
+  .fs-bar {
+    height: 48px; flex: 0 0 48px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 0 14px;
+    border-bottom: 1px solid rgb(var(--c-border) / .10);
+    background: rgb(var(--c-bg-elev));
+  }
+  .fs-bar .left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .fs-bar .fname { font-size: 13px; font-weight: 500; color: rgb(var(--c-text-primary)); }
+  .fs-bar .right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .btn-exit {
+    display: inline-flex; align-items: center; gap: 6px;
+    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+    padding: 6px 12px; border-radius: 6px;
+    background: rgb(var(--c-status-danger)); color: #fff;
+    border: 1px solid rgb(var(--c-status-danger));
+  }
+  .btn-exit:hover { filter: brightness(1.1); }
+  .btn-exit.ghost {
+    background: transparent; color: rgb(var(--c-text-secondary));
+    border-color: rgb(var(--c-border) / .22); font-weight: 500;
+  }
+  .btn-exit.ghost:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .fs-content { flex: 1; min-height: 0; overflow: hidden; }
+  .fs-hint {
+    flex: 0 0 auto; padding: 5px 12px;
+    border-top: 1px solid rgb(var(--c-border) / .10);
+    font-size: 10px; color: rgb(var(--c-text-tertiary));
+    background: rgb(var(--c-bg-elev));
+  }
+  .fs-hint .covered {
+    display: block; margin-top: 2px; color: rgb(var(--c-status-warning));
+  }
+  .esc-badge {
+    position: absolute; top: 8px; right: 12px;
+    font-size: 10px; color: rgb(var(--c-status-warning));
+    background: rgb(var(--c-status-warning) / .12);
+    border: 1px solid rgb(var(--c-status-warning) / .35);
+    border-radius: 5px; padding: 3px 8px; pointer-events: none;
+  }
+  .hintbar {
+    margin-top: 12px; font-size: 11.5px; color: rgb(var(--c-text-muted));
+  }
+  .hintbar b { color: rgb(var(--c-text-secondary)); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>交互面板全屏原型 · 应用内覆盖层 + 顶部操作栏</h1>
+  <p class="sub">
+    非浏览器真全屏；<code>top:40px</code> 保留宿主 TopMenuBar，覆盖层顶部常驻一条操作栏。
+    切换「方案 / 现状」对照，并用真实 <code>sandbox iframe</code> 复现焦点与 Esc 的关系。
+  </p>
+
+  <div class="console">
+    <div class="panel">
+      <h2>对照与样式</h2>
+      <div class="seg">
+        <span class="seg-label">模式</span>
+        <button id="m-proposed" class="on" onclick="setMode('proposed')">方案（顶部留栏）</button>
+        <button id="m-legacy" onclick="setMode('legacy')">现状（退不出）</button>
+      </div>
+      <div class="seg">
+        <span class="seg-label">退出按钮样式（仅方案模式）</span>
+        <button id="v-A" class="on" onclick="setVariant('A')">A · 醒目主按钮</button>
+        <button id="v-B" onclick="setVariant('B')">B · 轻量次级</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>方案要点 / 现状差异</h2>
+      <div class="notes" id="notes"></div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span><span class="k">模式 </span><span class="v" id="s-mode">方案</span></span>
+    <span><span class="k">全屏 </span><span class="v" id="s-fs">否</span></span>
+    <span><span class="k">焦点 </span><span class="v" id="s-focus">宿主</span></span>
+    <span class="logline" id="s-log">就绪 · 点卡片工具栏「全屏」开始</span>
+  </div>
+
+  <div class="app-shell" id="shell">
+    <div class="topbar">
+      <span class="logo">P</span>
+      <span>Polaris</span>
+      <span class="crumb">/ 工作区 / 交互面板演示</span>
+      <span class="spacer"></span>
+      <span class="tag" id="topbar-tag">宿主顶栏可见</span>
+      <span class="winbtn"></span><span class="winbtn"></span><span class="winbtn"></span>
+    </div>
+    <div class="workspace">
+      <div class="activitybar">
+        <i>💬</i><i class="active">◧</i><i>⌘</i><i>⚙</i>
+      </div>
+      <div class="chat">
+        <div class="msg">
+          <div class="who">Polaris · AI</div>
+          <div class="text">我已经把「用户反馈收集」做成一个可交互组件，点开下面的卡片就能直接试用。</div>
+          <div class="ic-card" id="card">
+            <div class="ic-toolbar">
+              <span class="left">
+                <span class="chip">交互面板</span>
+                <span class="title">用户反馈收集</span>
+                <span class="ver">v2</span>
+              </span>
+              <span class="right">
+                <button class="lnk" onclick="log('静音（示意）')">静音</button>
+                <button class="lnk" onclick="log('复制源码路径（示意）')">复制源码路径</button>
+                <button class="lnk primary" onclick="enterFs()">全屏</button>
+                <button class="lnk" onclick="log('展开/收起（示意）')">展开</button>
+              </span>
+            </div>
+            <div class="ic-frame" id="inline-frame"></div>
+          </div>
+        </div>
+      </div>
+      <div class="rightpane">
+        <div>会话设置</div>
+        <div class="ph w85"></div><div class="ph w60"></div>
+        <div class="ph"></div><div class="ph w85"></div><div class="ph w60"></div>
+        <div style="margin-top:18px;color:rgb(var(--c-text-tertiary))">右侧 AI 栏（占位）</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="hintbar">
+    <b>操作：</b>① 点卡片「全屏」 → ② 在应用输入框里点一下（焦点进 iframe） → ③ 按 <b>Esc</b>，看右上角状态与日志 →
+    ④ 切到「方案」点顶部「退出全屏」。现状模式若退不出，直接切模式即可（控制台不受覆盖层影响）。
+  </p>
+</div>
+
+<script>
+  // 模拟应用：真实 sandbox iframe，用来演示「焦点在 iframe 内 → 宿主 window 收不到 Esc」
+  const APP_HTML = [
+    '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">',
+    '<style>',
+    'body{margin:0;padding:22px;font:13px/1.6 -apple-system,"Segoe UI","PingFang SC",sans-serif;color:#1f2937;background:#fff}',
+    'h3{margin:0 0 4px;font-size:16px} p{margin:0 0 16px;color:#6b7280;font-size:12px}',
+    '.row{display:flex;gap:8px;margin-bottom:12px}',
+    'input{flex:1;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font:inherit;outline:none}',
+    'input:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.15)}',
+    'button{padding:8px 14px;border:0;border-radius:6px;background:#3b82f6;color:#fff;font:inherit;cursor:pointer}',
+    '.ok{margin-top:10px;padding:8px 10px;border-radius:6px;background:#ecfdf5;color:#059669;font-size:12px;display:none}',
+    '.badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#eff6ff;color:#2563eb;font-size:10px;margin-bottom:10px}',
+    '</style></head><body>',
+    '<span class="badge">沙箱 iframe · 独立 document</span>',
+    '<h3>用户反馈收集</h3>',
+    '<p>在这里点输入框获得焦点，然后按 Esc —— 键盘事件留在本 iframe 内，不会冒泡到宿主 window。</p>',
+    '<div class="row"><input id="f" placeholder="点我输入，焦点进 iframe…"><button onclick="go()">提交</button></div>',
+    '<div class="ok" id="ok">已提交，谢谢反馈（组件内交互状态）</div>',
+    '<script>',
+    'function go(){document.getElementById("ok").style.display="block";parent.postMessage({t:"app-submit"},"*")}',
+    'document.getElementById("f").addEventListener("focus",function(){parent.postMessage({t:"focus",v:true},"*")});',
+    'document.getElementById("f").addEventListener("blur",function(){parent.postMessage({t:"focus",v:false},"*")});',
+    'window.addEventListener("keydown",function(e){if(e.key==="Escape"){e.preventDefault();parent.postMessage({t:"esc-in-iframe"},"*")}});',
+    '<\/script></body></html>'
+  ].join('');
+
+  const state = { mode: 'proposed', variant: 'A', fullscreen: false, focusInIframe: false };
+  const frames = [];
+  const shell = document.getElementById('shell');
+  const notes = document.getElementById('notes');
+
+  function log(msg) {
+    document.getElementById('s-log').textContent = msg;
+  }
+  function renderStatus() {
+    document.getElementById('s-mode').textContent = state.mode === 'proposed' ? '方案' : '现状';
+    document.getElementById('s-fs').textContent = state.fullscreen ? '是' : '否';
+    const f = document.getElementById('s-focus');
+    f.textContent = state.focusInIframe ? 'iframe 内' : '宿主';
+    f.className = 'v' + (state.focusInIframe ? ' hot' : '');
+    document.getElementById('topbar-tag').textContent = (state.fullscreen && state.mode === 'legacy')
+      ? '宿主顶栏被覆盖' : '宿主顶栏可见';
+    document.getElementById('topbar-tag').style.color = (state.fullscreen && state.mode === 'legacy')
+      ? 'rgb(var(--c-status-danger))' : '';
+
+    for (const k of ['m-proposed', 'm-legacy']) {
+      const el = document.getElementById(k);
+      el.className = (k === 'm-' + state.mode) ? 'on' : '';
+    }
+    for (const k of ['v-A', 'v-B']) {
+      document.getElementById(k).className = (k === 'v-' + state.variant) ? 'on' : '';
+    }
+    notes.innerHTML = state.mode === 'proposed'
+      ? '<ol>' +
+        '<li><b>应用内覆盖层</b>，不是浏览器 / 窗口级真全屏。</li>' +
+        '<li><span class="good">top:40px</span> 保留宿主 TopMenuBar；对齐 <span class="good">--z-overlay(40)</span>，不压 z-popover / z-modal。</li>' +
+        '<li>顶部常驻 <b>48px 操作栏</b>：标题 + 静音 / 复制源码路径 + <b>退出全屏</b>。</li>' +
+        '<li>退出按钮在覆盖层 DOM、<b>iframe 之外</b> → <span class="good">焦点在 iframe 内也点得到</span>，不再依赖 Esc。</li>' +
+        '<li>实现用 <code>createPortal</code> 到 body，规避 virtuoso transform 劫持（原型用 absolute 模拟）。</li>' +
+        '<li>退出回原位、iframe 不重载（原型未复刻双挂载，实施阶段保证）。</li>' +
+        '</ol>'
+      : '<ol>' +
+        '<li><span class="bad">fixed inset-0 z-[9999]</span>，顶部无按钮。</li>' +
+        '<li>卡片工具栏（含「退出全屏」）被覆盖层<span class="bad">完全盖住</span>。</li>' +
+        '<li>覆盖层内只有 iframe + 一行「按 Esc 退出全屏」文字。</li>' +
+        '<li>唯一出口 Esc 挂在宿主 <code>window</code>；焦点在 sandbox iframe 内时<span class="bad">收不到</span> → 退不出。</li>' +
+        '</ol>';
+  }
+
+  function mountFrame(container) {
+    const f = document.createElement('iframe');
+    f.setAttribute('sandbox', 'allow-scripts allow-forms');
+    f.setAttribute('title', '交互面板应用');
+    f.srcdoc = APP_HTML;
+    container.appendChild(f);
+    frames.push(f);
+    return f;
+  }
+
+  function buildOverlay() {
+    document.getElementById('ov')?.remove();
+    // 覆盖层重建 = 换了新 iframe，旧的 iframe 焦点自然失效
+    state.focusInIframe = false;
+    const ov = document.createElement('div');
+    ov.id = 'ov';
+    ov.className = 'overlay ' + state.mode;
+
+    if (state.mode === 'proposed') {
+      const bar = document.createElement('div');
+      bar.className = 'fs-bar';
+      const left = document.createElement('div');
+      left.className = 'left';
+      left.innerHTML = '<span class="chip">交互面板</span><span class="fname">用户反馈收集</span><span class="ver">v2</span>';
+      const right = document.createElement('div');
+      right.className = 'right';
+      const mute = document.createElement('button');
+      mute.className = 'lnk'; mute.textContent = '静音';
+      mute.onclick = () => log('静音（示意，不影响退出）');
+      const copy = document.createElement('button');
+      copy.className = 'lnk'; copy.textContent = '复制源码路径';
+      copy.onclick = () => log('复制源码路径（示意）');
+      const exit = document.createElement('button');
+      exit.className = 'btn-exit' + (state.variant === 'B' ? ' ghost' : '');
+      exit.innerHTML = '✕ 退出全屏';
+      exit.onclick = () => { exitFs(); log('点顶部「退出全屏」→ 已退出，回到卡片原位'); };
+      right.append(mute, copy, exit);
+      bar.append(left, right);
+      ov.appendChild(bar);
+    } else {
+      const badge = document.createElement('div');
+      badge.className = 'esc-badge';
+      badge.textContent = '顶部无操作栏 · 试试按 Esc';
+      ov.appendChild(badge);
+    }
+
+    const content = document.createElement('div');
+    content.className = 'fs-content';
+    mountFrame(content);
+    ov.appendChild(content);
+
+    if (state.mode === 'legacy') {
+      const hint = document.createElement('div');
+      hint.className = 'fs-hint';
+      hint.innerHTML = '按 Esc 退出全屏 · 沙箱 iframe（allow-scripts allow-forms）' +
+        '<span class="covered">↑ 卡片工具栏的「退出全屏」按钮被 z-[9999] 覆盖层盖住，看不见也点不到</span>';
+      ov.appendChild(hint);
+    }
+    shell.appendChild(ov);
+  }
+
+  function enterFs() {
+    if (state.fullscreen) return;
+    state.fullscreen = true;
+    buildOverlay();
+    renderStatus();
+    log(state.mode === 'proposed'
+      ? '进入全屏：顶部操作栏常驻，宿主顶栏仍可见'
+      : '进入全屏：inset-0 盖住一切，无退出按钮');
+  }
+  function exitFs() {
+    state.fullscreen = false;
+    state.focusInIframe = false;
+    document.getElementById('ov')?.remove();
+    // 内嵌 iframe 保持挂载（未卸载）→ 组件内状态保留
+    renderStatus();
+  }
+  function setMode(m) {
+    state.mode = m;
+    if (state.fullscreen) buildOverlay();
+    renderStatus();
+    log(state.fullscreen
+      ? (m === 'proposed' ? '切到方案：顶部出现「退出全屏」，可直接点' : '切到现状：无按钮，仅剩 Esc（焦点在 iframe 内时失效）')
+      : '模式已切换为' + (m === 'proposed' ? '方案' : '现状'));
+  }
+  function setVariant(v) {
+    state.variant = v;
+    if (state.fullscreen && state.mode === 'proposed') buildOverlay();
+    renderStatus();
+    log('退出按钮样式切换为 ' + v);
+  }
+
+  // 宿主 window 的 Esc：只有焦点不在 iframe 内时才收得到
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !state.fullscreen) return;
+    if (state.focusInIframe) {
+      log('宿主收到 Esc（但此时焦点标记仍在 iframe，真实场景不会走到这里）');
+    } else {
+      exitFs();
+      log('宿主 window 收到 Esc → 已退出（焦点在宿主时可退）');
+    }
+  });
+
+  // iframe → 宿主 的协议消息
+  window.addEventListener('message', (e) => {
+    if (!frames.some(f => f.contentWindow === e.source)) return;
+    const d = e.data || {};
+    if (d.t === 'focus') {
+      state.focusInIframe = !!d.v;
+      renderStatus();
+      if (d.v) log('焦点进入 iframe：此后按 Esc，宿主 window 收不到');
+    } else if (d.t === 'esc-in-iframe') {
+      log(state.mode === 'proposed'
+        ? 'iframe 内按 Esc：宿主未收到（方案不依赖它）→ 点顶部「退出全屏」即可'
+        : 'iframe 内按 Esc：宿主 window 收不到 → 现状模式退不出 ❌');
+    } else if (d.t === 'app-submit') {
+      log('组件内提交了反馈（iframe 交互正常，不受全屏影响）');
+    }
+  });
+
+  mountFrame(document.getElementById('inline-frame'));
+  renderStatus();
+
+  // URL hash 直达：#fs 看方案全屏，#legacy 看现状全屏（便于截图 / 分享）
+  if (location.hash === '#legacy') { setMode('legacy'); enterFs(); }
+  else if (location.hash === '#fs') { enterFs(); }
+</script>
+</body>
+</html>
