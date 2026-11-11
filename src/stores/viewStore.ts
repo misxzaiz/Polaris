@@ -31,13 +31,11 @@ interface ViewState {
   showSidebar: boolean;
   showEditor: boolean;
   showDeveloperPanel: boolean;
-  showGitPanel: boolean;      // Git 面板（已废弃，由 panelStates 替代，保留兼容）
   showSessionHistory: boolean; // 会话历史面板
   showNotificationCenter: boolean; // 消息中心面板
   sidebarWidth: number;      // 侧边栏宽度（像素）
   editorWidth: number;       // 编辑器宽度百分比（0-100）
   developerPanelWidth: number; // Developer 面板宽度（像素）
-  gitPanelWidth: number;     // Git 面板宽度（已废弃，保留兼容）
   // 插件面板状态（key: panelType, value: { visible, width }）
   panelStates: Record<string, { visible: boolean; width: number }>;
   // 新布局相关状态
@@ -67,14 +65,12 @@ interface ViewActions {
   toggleSidebar: () => void;
   toggleEditor: () => void;
   toggleDeveloperPanel: () => void;
-  toggleGitPanel: () => void;
   toggleSessionHistory: () => void;
   toggleNotificationCenter: () => void;
   setShowEditor: (show: boolean) => void;
   setSidebarWidth: (width: number) => void;
   setEditorWidth: (width: number) => void;
   setDeveloperPanelWidth: (width: number) => void;
-  setGitPanelWidth: (width: number) => void;
   // 通用插件面板状态管理
   togglePanel: (panelType: string) => void;
   setPanelVisible: (panelType: string, visible: boolean) => void;
@@ -124,13 +120,11 @@ export const useViewStore = create<ViewStore>()(
       showSidebar: true,
       showEditor: false,
       showDeveloperPanel: false,  // 默认关闭 Developer 面板
-      showGitPanel: false,       // 默认关闭 Git 面板（兼容保留）
       showSessionHistory: false,  // 默认关闭会话历史面板
       showNotificationCenter: false, // 默认关闭消息中心面板
       sidebarWidth: 240,
       editorWidth: 50,
       developerPanelWidth: 400,
-      gitPanelWidth: 320,
       panelStates: {
         files: { visible: true, width: 280 },
         git: { visible: false, width: 320 },
@@ -172,18 +166,6 @@ export const useViewStore = create<ViewStore>()(
       // 切换 Developer 面板
       toggleDeveloperPanel: () => set((state) => ({ showDeveloperPanel: !state.showDeveloperPanel })),
 
-      // 切换 Git 面板（兼容保留：委托给通用 panelStates）
-      toggleGitPanel: () => set((state) => {
-        const cur = state.panelStates['git'] ?? { visible: false, width: state.gitPanelWidth };
-        return {
-          panelStates: {
-            ...state.panelStates,
-            git: { ...cur, visible: !cur.visible },
-          },
-          showGitPanel: !cur.visible,
-        };
-      }),
-
       // 切换会话历史面板
       toggleSessionHistory: () => set((state) => ({ showSessionHistory: !state.showSessionHistory })),
 
@@ -200,15 +182,6 @@ export const useViewStore = create<ViewStore>()(
 
       // 设置 Developer 面板宽度
       setDeveloperPanelWidth: (width: number) => set({ developerPanelWidth: width }),
-
-      // 设置 Git 面板宽度（兼容保留：委托给通用 panelStates）
-      setGitPanelWidth: (width: number) => set((state) => ({
-        gitPanelWidth: width,
-        panelStates: {
-          ...state.panelStates,
-          git: { ...(state.panelStates['git'] ?? { visible: false, width }), width },
-        },
-      })),
 
       // === 通用插件面板状态管理 ===
 
