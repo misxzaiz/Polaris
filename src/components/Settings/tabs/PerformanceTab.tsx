@@ -40,13 +40,6 @@ const FEATURES: FeatureToggle[] = [
     fallback: '关闭后代码跳转降级为正则匹配，精度降低但零持续开销',
   },
   {
-    key: 'schedulerDaemon',
-    title: '调度器守护进程',
-    description: '后台轮询定时任务，到期自动触发执行',
-    resource: 'CPU（低）',
-    fallback: '关闭后定时任务不会自动执行，需手动触发',
-  },
-  {
     key: 'syntaxHighlighting',
     title: '语法高亮',
     description: '代码块使用 highlight.js 着色，支持 12+ 种编程语言',

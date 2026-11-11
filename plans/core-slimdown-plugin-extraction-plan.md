@@ -77,7 +77,7 @@
 | ~~B1-3~~ | Requirement | ✅ 已完成（2026-11-09：整域移除，needs 插件承接，主仓不留桥接） | — | ~3.6k | 定案改为直接移除 |
 | ~~B1-4~~ | PersonalHub | ✅ 已完成（2026-11-09：插件仓 personal-hub v1.0.0 新建承接，stdio MCP + 面板） | personal-hub 插件 | ~2.5k | |
 | ~~B1-5~~ | Computer 控制 | ✅ 已完成（2026-11-09：MCP server 面摘除，业务核 computer_control 保留给 SimpleAI 引擎；独立 bin polaris-computer-mcp 随插件 zip 分发） | computer 插件 | ~1.5k | 桌面专属能力，Web 端按不可用声明 |
-| B1-6 | Scheduler | `scheduler/` 3229 + `commands/scheduler.rs` 1055 + `scheduler_daemon.rs` 550 + Scheduler 组件 4906 + `schedulerService.ts` 401 | scheduler 插件（插件仓 `sundial` 为同类先例；daemon 以 `contributes.services` 常驻进程形态落地） | ~10.1k | AI 执行任务经 cap 总线回调；sqlite 存储外迁 |
+| ~~B1-6~~ | Scheduler | ✅ 已完成（2026-11-11：主仓净删 17.9k 行含 executor 子系统连带；插件仓 `ai-scheduler` v1.0.0 承接——MCP 七工具 + 常驻服务(contributes.services, cap.ai.chat 触发 + WS 终态回收) + 面板三件套；顺带修复自动路径裸 start_chat 存量断链；sqlite 数据只读迁移） | — | ~10.1k→17.9k | spec：`scheduler-plugin-extraction-spec.md` |
 | B1-7 | Browser | `commands/browser.rs` 4049 + `browser_scripts.rs` 407 + `browser_mcp_server.rs` 977 + Browser 组件 2707 + `browserService.ts` 774 | browser 插件 | ~8.9k | **最难**：webview 实例属宿主（Tauri 桌面）。路径分两步：①核心保留薄 `cap.browser`（webview 控制原语，按 RouterBus 范式收编 commands/browser.rs）；②脚本库/自动化逻辑/面板/MCP 全部外移。TCB 圈选上下文块与 ChatInput 的联动改走 chatCards/contextBlock 公共机制 |
 
 B1 合计 ~30k 行。外移后同步动作（每项相同，下称「三处同步」）：主仓删码 + `builtinPlugins.ts`/`builtin_plugin_mcp_manifests` 注册表摘除；插件仓新增（plugin.json + dist + update.json + marketplace `index.json`）；`AGENTS.md` §五 cap 清单如有增删同步更新。

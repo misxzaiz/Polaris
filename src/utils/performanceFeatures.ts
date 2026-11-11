@@ -3,7 +3,6 @@
  *
  * 从 configStore 读取 performance 配置，各组件按需调用。
  * 大多数开关默认关闭（false），用户手动开启后即时生效。
- * 例外：schedulerDaemon 默认启用（定时任务是核心功能）。
  *
  * 为避免循环依赖，核心查询函数接受 config 对象作为参数，
  * 而非直接 import configStore。
@@ -81,12 +80,6 @@ export function isLspIndexEnabled(config?: Config | null): boolean {
 export function isFileWatcherEnabled(config?: Config | null): boolean {
   const cfg = config ?? useConfigStore.getState().config;
   return readFlag(cfg, 'fileWatcher');
-}
-
-/** 检查调度器守护进程是否启用 */
-export function isSchedulerDaemonEnabled(config?: Config | null): boolean {
-  const cfg = config ?? useConfigStore.getState().config;
-  return readFlag(cfg, 'schedulerDaemon');
 }
 
 /** 检查插件服务自动启动是否启用 */

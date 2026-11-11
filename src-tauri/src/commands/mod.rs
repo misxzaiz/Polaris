@@ -66,7 +66,6 @@ pub mod history_index;
 pub use history_index::{history_mark, history_query, history_search};
 
 pub mod integration;
-pub mod scheduler;
 pub mod terminal;
 pub mod terminal_script;
 pub mod file_watcher;
@@ -118,10 +117,6 @@ pub mod model_profile;
 pub mod usage;
 #[cfg(feature = "tauri-app")]
 pub use model_profile::{test_model_profile_connection, fetch_models_for_profile};
-
-pub mod executor;
-#[cfg(feature = "tauri-app")]
-pub use executor::{executor_list, executor_execute};
 
 pub mod router;
 #[cfg(feature = "tauri-app")]

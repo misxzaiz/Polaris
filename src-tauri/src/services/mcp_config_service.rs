@@ -154,15 +154,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
             false,
         ),
     );
-    registry.register_plugin_server(
-        SCHEDULER_PLUGIN_ID,
-        PluginMcpServerContribution::builtin(
-            SCHEDULER_MCP_SERVER_NAME,
-            "POLARIS_SCHEDULER_MCP_PATH",
-            McpServerArgsMode::ConfigDirAndWorkspace,
-            false,
-        ),
-    );
     registry
 }
 
@@ -462,7 +453,7 @@ impl WorkspaceMcpConfigService {
     ) -> Vec<ResolvedExternalMcpServer> {
         let mut servers: Vec<ResolvedExternalMcpServer> = Vec::new();
 
-        // 内置 MCP（requirements/scheduler/computer/ask）
+        // 内置 MCP（ask/browser/bus）
         for binary in &self.binaries {
             if is_server_disabled(disabled_server_names, &binary.server_name) {
                 tracing::info!("[MCP] SimpleAI 跳过已禁用内置 MCP: {}", binary.server_name);

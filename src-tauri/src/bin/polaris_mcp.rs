@@ -20,7 +20,6 @@ use std::path::PathBuf;
 use polaris_lib::services::{
     ask_mcp_server::{run_ask_mcp_server, AskMcpConfig},
     browser_mcp_server::{run_browser_mcp_server, BrowserMcpConfig},
-    scheduler_mcp_server::run_scheduler_mcp_server,
 };
 use polaris_lib::{AppError, Result};
 
@@ -39,7 +38,7 @@ fn main_impl() -> Result<()> {
     let subcommand = args.get(1).ok_or_else(|| {
         AppError::ValidationError(
             "缺少子命令。用法：polaris-mcp <subcommand> [args...]\n\
-             可用子命令：bus, scheduler, ask, browser"
+             可用子命令：bus, ask, browser"
                 .to_string(),
         )
     })?;
@@ -59,10 +58,6 @@ fn main_impl() -> Result<()> {
             };
             polaris_lib::services::bus_mcp_server::run_bus_mcp_server(&config_dir)
         }
-        "scheduler" => {
-            let (config_dir, workspace_path) = parse_config_dir_args(sub_args, "scheduler")?;
-            run_scheduler_mcp_server(&config_dir, workspace_path)
-        }
 
         // ── Bridge MCP server（AskListener 模式） ──────────────────
         "ask" => {
@@ -78,7 +73,7 @@ fn main_impl() -> Result<()> {
             })
         }
         other => Err(AppError::ValidationError(format!(
-            "未知子命令：{other}。可用子命令：bus, scheduler, ask, browser"
+            "未知子命令：{other}。可用子命令：bus, ask, browser"
         ))),
     }
 }
@@ -174,7 +169,7 @@ fn parse_ask_listener_args(args: &[String], subcommand: &str) -> Result<AskMcpCo
 /// 获取默认配置目录（单参数旧格式兜底）。
 ///
 /// 根因（spec F3）：旧兜底 `com.polaris.app` 是 Tauri 遗留目录、不在 DataRoot
-/// 体系内——旧格式单参调用会把 requirements/scheduler 等 SQLite 落进遗留根。
+/// 体系内——旧格式单参调用会把 requirements 等 SQLite 落进遗留根。
 /// 新优先级：`POLARIS_DATA_ROOT` env > 双根探测（复用 bridge 同源逻辑：
 /// pid 存活 + started_at tie-break；全部 stale/不可判 → 正式版根 `Polaris`）。
 fn get_default_config_dir() -> Result<String> {

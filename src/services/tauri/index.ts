@@ -31,7 +31,8 @@ export * from './browserService';
 export * from './integrationService';
 
 // 定时任务（CRUD、锁、模板、协议、片段）
-export * from './schedulerService';
 
 // LSP 语言服务器（进程管理、消息转发）
 export * from './lspService';
+
+export * from './snippetService';

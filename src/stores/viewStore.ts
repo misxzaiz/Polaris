@@ -54,7 +54,6 @@ interface ViewState {
   terminalScriptPanelCollapsed: boolean; // 终端脚本面板是否折叠
   // 小屏模式状态
   compactMode: CompactModeState; // 小屏模式
-  schedulerLogDrawerHeight: number; // 日志抽屉高度
   // 多会话窗口模式（只保留多窗口，无单窗口开关）
   multiSessionIds: string[];     // 多会话窗口中显示的会话 ID 列表（最多 16 个）
   multiSessionRows: 1 | 2;       // 行数配置：1 行或 2 行
@@ -99,7 +98,6 @@ interface ViewActions {
   // 小屏模式操作
   updateCompactMode: (state: Partial<CompactModeState>) => void;
   // 日志抽屉高度
-  setSchedulerLogDrawerHeight: (height: number) => void;
   // 多会话窗口操作
   setMultiSessionIds: (ids: string[]) => void;
   addToMultiView: (sessionId: string) => void;
@@ -155,7 +153,6 @@ export const useViewStore = create<ViewStore>()(
         windowWidth: 1200,
         windowHeight: 800,
       },
-      schedulerLogDrawerHeight: 128, // 默认 128px
       // 多会话窗口初始状态
       multiSessionIds: [],          // 默认空列表
       multiSessionRows: 1,          // 默认 1 行
@@ -335,7 +332,6 @@ export const useViewStore = create<ViewStore>()(
       })),
 
       // 设置日志抽屉高度
-      setSchedulerLogDrawerHeight: (height: number) => set({ schedulerLogDrawerHeight: height }),
 
       // === 多会话窗口操作 ===
 

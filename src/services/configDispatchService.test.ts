@@ -15,7 +15,7 @@ vi.mock('@/services/transport', () => ({
 import { configPatchTop, configPatch } from '@/services/configDispatchService';
 
 const FAKE_CONFIG = {
-  performance: { fileWatcher: true, schedulerDaemon: true },
+  performance: { fileWatcher: true },
   workspaces: [],
 };
 

@@ -3,14 +3,13 @@
  *
  * 按来源分组展示数量与健康状态：
  * - 聊天会话：总数 / 运行中
- * - 定时任务：启用数 / 执行中
  * - 机器人集成：各平台连接状态 / 处理中
+ * （定时任务观测随 Scheduler 域出仓至 ai-scheduler 插件，2026-11 迁移）
  */
 
 import { useTranslation } from 'react-i18next'
-import { MessageSquare, Clock, Bot } from 'lucide-react'
+import { MessageSquare, Bot } from 'lucide-react'
 import { useSessionMetadataList } from '@/stores/conversationStore/sessionStoreManager'
-import { useSchedulerStore } from '@/stores/schedulerStore'
 import { useIntegrationStore } from '@/stores/integrationStore'
 import { useExecutionConsoleStore, selectActiveIntegrationRuns } from '@/stores/executionConsoleStore'
 import { useViewStore } from '@/stores/viewStore'
@@ -49,8 +48,6 @@ function SourceCard({ icon, title, detail, runningCount, onClick }: SourceCardPr
 export function SourceOverview() {
   const { t } = useTranslation('executionConsole')
   const sessions = useSessionMetadataList()
-  const tasks = useSchedulerStore((s) => s.tasks)
-  const runningTaskIds = useSchedulerStore((s) => s.runningTaskIds)
   const platforms = useIntegrationStore((s) => s.platforms)
   const activeIntegrationRuns = useExecutionConsoleStore(selectActiveIntegrationRuns)
   const setLeftPanelType = useViewStore((s) => s.setLeftPanelType)
@@ -60,9 +57,6 @@ export function SourceOverview() {
   const runningChatCount = visibleSessions.filter(
     (s) => s.status === 'running' || s.status === 'background-running' || s.status === 'waiting'
   ).length
-
-  // 定时任务统计
-  const enabledTaskCount = tasks.filter((task) => task.enabled).length
 
   // 集成平台状态
   const platformEntries = Object.entries(platforms) as Array<[Platform, typeof platforms[Platform]]>
@@ -75,13 +69,6 @@ export function SourceOverview() {
         title={t('source.chat')}
         detail={t('source.chatDetail', { total: visibleSessions.length, running: runningChatCount })}
         runningCount={runningChatCount}
-      />
-      <SourceCard
-        icon={<Clock size={16} />}
-        title={t('source.scheduler')}
-        detail={t('source.schedulerDetail', { enabled: enabledTaskCount, running: runningTaskIds.size })}
-        runningCount={runningTaskIds.size}
-        onClick={() => setLeftPanelType('scheduler')}
       />
       <SourceCard
         icon={<Bot size={16} />}

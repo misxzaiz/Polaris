@@ -16,8 +16,8 @@ describe('plugin MCP contributions', () => {
 
     expect(servers).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        id: 'polaris-scheduler',
-        pluginId: 'polaris.scheduler',
+        id: 'polaris-ask',
+        pluginId: 'polaris.ask',
         transport: 'stdio',
       }),
     ]))
@@ -25,12 +25,12 @@ describe('plugin MCP contributions', () => {
 
   it('filters a single MCP server when only that server is disabled', () => {
     const pluginStates: PluginStateMap = {
-      'polaris.scheduler': {
+      'polaris.ask': {
         enabled: true,
         uiEnabled: true,
         mcpEnabled: true,
         mcpServers: {
-          'polaris-scheduler': { enabled: false },
+          'polaris-ask': { enabled: false },
         },
       },
     }
@@ -38,40 +38,19 @@ describe('plugin MCP contributions', () => {
     expect(listEnabledPluginMcpServers(pluginStates)).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: 'polaris-scheduler',
+          id: 'polaris-ask',
         }),
       ])
     )
     expect(listEnabledPluginMcpServers(pluginStates)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: 'polaris-ask',
+          id: 'polaris-browser',
         }),
       ])
     )
   })
 
-  it.each([
-    ['polaris.scheduler', 'polaris-scheduler', 'polaris_scheduler_mcp'],
-  ])('keeps %s manifest aligned with the backend MCP registry contract', (
-    pluginId,
-    serverId,
-    command
-  ) => {
-    const plugin = pluginRegistry
-      .listPlugins()
-      .find((plugin) => plugin.id === pluginId)
-
-    expect(plugin).toBeDefined()
-    expect(plugin?.contributes.mcpServers).toEqual([
-      expect.objectContaining({
-        id: serverId,
-        transport: 'stdio',
-        command,
-        argsTemplate: ['{{appConfigDir}}', '{{workspacePath}}'],
-      }),
-    ])
-  })
 
   it('lists installed MCP contributions even when the plugin is disabled by default', () => {
     pluginRegistry.registerInstalled([

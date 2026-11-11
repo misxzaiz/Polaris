@@ -120,7 +120,7 @@ describe('observeTurnEvent 语义', () => {
     expect(store.getState().isStreaming).toBe(true)
   })
 
-  it('无 _turnId 的事件不经闸门（scheduler/dispatch 直投路径不受影响）', () => {
+  it('无 _turnId 的事件不经闸门（dispatch 直投路径不受影响）', () => {
     const store = createConversationStore('s1', createDeps())
     store.getState().observeTurnEvent('turn-1', 'token')
     // manager 逻辑：turnId 缺失时不调 observeTurnEvent、直接投递

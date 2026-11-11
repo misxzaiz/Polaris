@@ -28,7 +28,6 @@ const makeIcon = (name: string) => {
 const PINNED_IDS = ['files', 'git', 'browser', 'terminal'];
 const OVERFLOW_IDS = [
   'translate',
-  'scheduler',
   'developer',
   'integration',
   'aiConsole',
