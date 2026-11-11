@@ -1,17 +1,14 @@
 /**
  * 执行历史时间线 - 控制台第三区
  *
- * 合并两类历史（新→旧）：
- * - 集成执行历史：executionConsoleStore.history（事件驱动写入）
- * - 定时任务执行：schedulerStore.executions 中已结束的条目（success/failed）
- *
- * 聊天会话本身即历史（会话列表），不在此重复展示。
+ * 展示集成执行历史：executionConsoleStore.history（事件驱动写入，新→旧）。
+ * （定时任务历史随 Scheduler 域出仓至 ai-scheduler 插件面板；聊天会话本身即
+ * 历史，不在此重复展示。）
  */
 
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MessageSquare, Clock, Bot, CheckCircle2, XCircle, Trash2 } from 'lucide-react'
-import { useSchedulerStore } from '@/stores/schedulerStore'
 import { useExecutionConsoleStore } from '@/stores/executionConsoleStore'
 import type { ExecutionHistoryEntry } from '@/types/executionConsole'
 import { formatDuration, formatTime } from './consoleUtils'
@@ -26,27 +23,12 @@ export function ExecutionHistoryList() {
   const { t } = useTranslation('executionConsole')
   const history = useExecutionConsoleStore((s) => s.history)
   const clearHistory = useExecutionConsoleStore((s) => s.clearHistory)
-  const executions = useSchedulerStore((s) => s.executions)
 
   const entries = useMemo<ExecutionHistoryEntry[]>(() => {
     const merged: ExecutionHistoryEntry[] = [...history]
 
-    // 定时任务已结束的执行（schedulerStore 内存态，应用启动以来）
-    for (const execution of executions.values()) {
-      if (execution.state !== 'success' && execution.state !== 'failed') continue
-      merged.push({
-        id: `scheduler-${execution.taskId}-${execution.startTime}`,
-        origin: 'scheduler',
-        title: execution.taskName,
-        summary: '',
-        status: execution.state,
-        startedAt: execution.startTime,
-        endedAt: execution.endTime ?? execution.startTime,
-      })
-    }
-
     return merged.sort((a, b) => b.endedAt - a.endedAt)
-  }, [history, executions])
+  }, [history])
 
   if (entries.length === 0) {
     return (

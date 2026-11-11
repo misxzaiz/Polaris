@@ -10,7 +10,6 @@ export * from './fileEditor';
 export * from './context';
 export * from './git';
 export * from './integration';
-export * from './scheduler';
 export * from './terminal';
 export * from './terminalScript';
 export * from './attachment';

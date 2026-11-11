@@ -22,8 +22,6 @@ function getToolDescription(panelType: string): string | undefined {
       return '学习网页、本地预览与 AI 页面上下文'
     case 'translate':
       return '选中文本与消息翻译'
-    case 'scheduler':
-      return '定时任务和执行控制'
     case 'terminal':
       return '命令、脚本与运行环境'
     case 'developer':

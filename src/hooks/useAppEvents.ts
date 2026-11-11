@@ -17,8 +17,6 @@ import { useViewStore } from '@/stores/viewStore';
 import { useNarrowTabStore } from '@/stores/narrowTabStore';
 import { initEditorFileChangeListener } from '@/stores/fileEditorStore';
 import { useTerminalStore } from '@/stores/terminalStore';
-import { useSchedulerStore } from '@/stores/schedulerStore';
-import { useToastStore } from '@/stores/toastStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { getEventRouter } from '@/services/eventRouter';
@@ -27,8 +25,6 @@ import { initPluginLifecycleSubscriber } from '@/stores/pluginLifecycleSubscribe
 import { browserAcquireComplete, normalizeBrowserUrl, type BrowserAcquireRequest } from '@/services/tauri/browserService';
 import { initExecutionConsoleListeners } from '@/stores/executionConsoleStore';
 import { isAIEvent } from '@/ai-runtime';
-import i18n from '@/i18n';
-import type { TaskDueEvent } from '@/types/scheduler';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('AppEvents');
@@ -62,31 +58,6 @@ export function useAppEvents() {
     initExecutionConsoleListeners().catch((e) =>
       log.warn('Execution console listeners init failed', { error: String(e) })
     );
-  }, []);
-
-  // 定时任务到期 → 执行任务（App 级常驻监听，原在 SchedulerPanel 内，
-  // 面板未打开时事件无人消费导致任务不执行；handleTaskDue 自带重入保护）
-  useEffect(() => {
-    const unlistenPromise = listen<TaskDueEvent>('scheduler-task-due', async (event) => {
-      const toast = useToastStore.getState();
-      try {
-        toast.info(
-          i18n.t('scheduler:toast.taskDue'),
-          i18n.t('scheduler:toast.executing', { name: event.taskName })
-        );
-        await useSchedulerStore.getState().handleTaskDue(event);
-      } catch (e) {
-        log.error('定时任务执行失败', e instanceof Error ? e : new Error(String(e)));
-        toast.error(
-          i18n.t('scheduler:toast.executeFailed'),
-          e instanceof Error ? e.message : String(e)
-        );
-      }
-    });
-
-    return () => {
-      unlistenPromise.then(unlisten => unlisten());
-    };
   }, []);
 
   // 派发任务请求（dispatch_task MCP）→ 创建静默后台会话执行

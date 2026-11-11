@@ -3,7 +3,7 @@
  */
 
 import { create } from 'zustand';
-import * as tauri from '@/services/tauri';
+import * as tauri from '@/services/tauri/snippetService';
 import type { PromptSnippet, CreateSnippetParams, UpdateSnippetParams } from '@/types/promptSnippet';
 import { createLogger } from '@/utils/logger';
 

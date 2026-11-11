@@ -13,7 +13,6 @@ import { storeTokenMd5, md5Hex } from '@/services/transport/auth';
 import { useThemeStore } from './themeStore';
 import { getBuiltInThemeByShortName } from '@/data/builtInThemes';
 import { fsWatchStop } from '@/services/tauri/fileService';
-import { schedulerStop, schedulerStart } from '@/services/tauri/schedulerService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 const log = createLogger('ConfigStore');
@@ -341,7 +340,7 @@ function setNeedsToken(): Partial<ConfigState> {
 // 性能开关热切换
 //
 // 监听后端 config-changed 事件，在性能开关从 true → false 时，
-// 停止对应的后端守护服务（file watcher / scheduler / lspIndex）。
+// 停止对应的后端守护服务（file watcher / lspIndex）。
 // 开关从 false → true 时不主动启动服务（避免非预期的后台进程拉起），
 // 由对应功能首次调用时按需启动。
 // ============================================================
@@ -394,21 +393,6 @@ function handlePerfSwitch(prev: PerformanceFeatures, next: PerformanceFeatures):
     perfLog.info('fileWatcher 关闭，停止文件监听');
     fsWatchStop().catch((err) => {
       perfLog.warn('停止文件监听失败', { error: String(err) });
-    });
-  }
-
-  // scheduler daemon：true → false 时停止
-  if (prev.schedulerDaemon && !next.schedulerDaemon) {
-    perfLog.info('schedulerDaemon 关闭，停止调度器守护进程');
-    schedulerStop().catch((err) => {
-      perfLog.warn('停止调度器失败', { error: String(err) });
-    });
-  }
-  // scheduler daemon：false → true 时热启动
-  if (!prev.schedulerDaemon && next.schedulerDaemon) {
-    perfLog.info('schedulerDaemon 开启，热启动调度器守护进程');
-    schedulerStart().catch((err) => {
-      perfLog.warn('热启动调度器失败', { error: String(err) });
     });
   }
 

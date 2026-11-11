@@ -46,7 +46,6 @@ export function getToolGroup(panelType: string): ToolGroupId {
     case 'git':
       return 'changes'
     case 'terminal':
-    case 'scheduler':
     case 'aiConsole':
       return 'run'
     case 'translate':

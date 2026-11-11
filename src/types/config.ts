@@ -393,8 +393,6 @@ export interface PerformanceFeatures {
   fileWatcher?: boolean;
   /** LSP 智能索引 tree-sitter + SQLite（默认关闭） */
   lspIndex?: boolean;
-  /** 调度器守护进程（默认关闭） */
-  schedulerDaemon?: boolean;
   /** 编辑器语法高亮 highlight.js（默认关闭） */
   syntaxHighlighting?: boolean;
   /** Mermaid 图表渲染（默认关闭） */

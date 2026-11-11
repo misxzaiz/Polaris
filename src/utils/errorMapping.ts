@@ -26,28 +26,8 @@ const ERROR_KEYWORD_MAP: Record<string, string> = {
  */
 const SCHEDULER_ERROR_MAP: Record<string, string> = {
   // 任务错误
-  '任务不存在': 'scheduler.errors.taskNotFound',
-  '任务名称不能为空': 'scheduler.errors.taskNameEmpty',
-  '触发表达式不能为空': 'scheduler.errors.triggerValueEmpty',
-  '间隔时间不能为空': 'scheduler.errors.intervalEmpty',
-  '间隔时间格式无效': 'scheduler.errors.intervalFormatInvalid',
-  '间隔时间数字部分无效': 'scheduler.errors.intervalNumberInvalid',
-  '间隔时间不能为零': 'scheduler.errors.intervalZero',
-  '间隔时间单位无效': 'scheduler.errors.intervalUnitInvalid',
-  'Cron 表达式不能为空': 'scheduler.errors.cronEmpty',
-  'Cron 表达式格式无效': 'scheduler.errors.cronFormatInvalid',
-  '触发时间不能为空': 'scheduler.errors.triggerTimeEmpty',
   // 模板错误
-  '模板不存在': 'scheduler.errors.templateNotFound',
-  '模板名称不能为空': 'scheduler.errors.templateNameEmpty',
-  '模板内容不能为空': 'scheduler.errors.templateContentEmpty',
-  '模板已禁用': 'scheduler.errors.templateDisabled',
-  '内置模板不能修改': 'scheduler.errors.builtinTemplateCannotModify',
-  '内置模板不能删除': 'scheduler.errors.builtinTemplateCannotDelete',
-  '内置模板不能禁用': 'scheduler.errors.builtinTemplateCannotDisable',
-  '任务目标模板不能为空': 'scheduler.errors.missionTemplateEmpty',
   // 协议错误
-  '协议错误': 'scheduler.errors.protocolError',
 };
 
 /**
@@ -122,16 +102,4 @@ export function extractErrorMessage(error: unknown): string {
   return String(error);
 }
 
-/**
- * 创建调度器错误处理函数
- * @param setError 错误状态设置函数
- * @returns 错误处理函数
- */
-export function createSchedulerErrorHandler(setError: (error: string | null) => void) {
-  return (error: unknown, fallbackMessage: string) => {
-    const message = extractErrorMessage(error);
-    setError(message || fallbackMessage);
-    return message;
-  };
-}
 

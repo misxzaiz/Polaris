@@ -6,7 +6,6 @@ pub mod plugin;
 pub mod plugin_state;
 pub mod prompt;
 pub mod prompt_snippet;
-pub mod scheduler;
 
 pub use ai_event::{
     AIEvent, ToolCallInfo, ToolCallStatus,

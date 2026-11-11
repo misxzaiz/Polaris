@@ -18,9 +18,7 @@ import {
   sessionStoreManager,
   useSessionMetadataList,
 } from '@/stores/conversationStore/sessionStoreManager'
-import { useSchedulerStore } from '@/stores/schedulerStore'
 import { useExecutionConsoleStore, selectActiveIntegrationRuns } from '@/stores/executionConsoleStore'
-import { useViewStore } from '@/stores/viewStore'
 import type { SessionStatus } from '@/types/session'
 import type { IntegrationRun } from '@/types/executionConsole'
 import { formatDuration } from './consoleUtils'
@@ -61,9 +59,7 @@ function useNowTicker(enabled: boolean): number {
 export function ActiveExecutionList() {
   const { t } = useTranslation('executionConsole')
   const sessions = useSessionMetadataList()
-  const executions = useSchedulerStore((s) => s.executions)
   const integrationRuns = useExecutionConsoleStore(selectActiveIntegrationRuns)
-  const setLeftPanelType = useViewStore((s) => s.setLeftPanelType)
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
 
   const items = useMemo<ActiveItem[]>(() => {
@@ -84,24 +80,6 @@ export function ActiveExecutionList() {
       }
     }
 
-    // 定时任务执行（schedulerStore 自己维护的执行状态；
-    // 若已有同名 scheduler 会话项则跳过，避免重复）
-    for (const execution of executions.values()) {
-      if (execution.state !== 'running') continue
-      const sessionKey = `session-scheduler-${execution.taskId}`
-      if (list.some((item) => item.key === sessionKey)) continue
-      list.push({
-        key: `task-${execution.taskId}`,
-        origin: 'scheduler',
-        title: execution.taskName,
-        status: 'running',
-        startedAt: execution.startTime,
-        jumpSessionId: sessionStoreManager.getState().sessionMetadata.has(`scheduler-${execution.taskId}`)
-          ? `scheduler-${execution.taskId}`
-          : undefined,
-      })
-    }
-
     // 集成执行
     for (const run of integrationRuns) {
       list.push({
@@ -116,7 +94,7 @@ export function ActiveExecutionList() {
 
     // 新开始的在前
     return list.sort((a, b) => b.startedAt - a.startedAt)
-  }, [sessions, executions, integrationRuns])
+  }, [sessions, integrationRuns])
 
   const now = useNowTicker(items.length > 0)
 
@@ -128,10 +106,6 @@ export function ActiveExecutionList() {
     if (item.jumpSessionId) {
       sessionStoreManager.getState().makeSessionVisible(item.jumpSessionId)
       return
-    }
-    if (item.origin === 'scheduler') {
-      // 无会话可跳转时退回定时任务面板
-      setLeftPanelType('scheduler')
     }
   }
 

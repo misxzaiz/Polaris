@@ -25,15 +25,6 @@ export function formatTime(timestamp: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-/** scheduler 执行状态 → StatusSymbol 用的 SessionStatus */
-export function schedulerStateToSessionStatus(state: 'idle' | 'running' | 'success' | 'failed'): SessionStatus {
-  switch (state) {
-    case 'running': return 'running'
-    case 'failed': return 'error'
-    default: return 'idle'
-  }
-}
-
 /** 集成执行状态 → StatusSymbol 用的 SessionStatus */
 export function integrationStatusToSessionStatus(status: 'running' | 'success' | 'failed'): SessionStatus {
   switch (status) {

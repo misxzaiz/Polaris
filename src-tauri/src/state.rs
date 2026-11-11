@@ -19,7 +19,6 @@ use crate::services::lsp::LspManager;
 use crate::services::lsp_config_repository::LspConfigRepository;
 #[cfg(feature = "lsp-index")]
 use crate::services::lsp_index::IndexService;
-use crate::services::scheduler_daemon::SchedulerDaemon;
 use crate::services::plugin_service::PluginService;
 use crate::web::server::WebServerHandle;
 
@@ -281,7 +280,6 @@ pub struct AppState {
     pub pending_plans: Arc<Mutex<HashMap<String, PendingPlan>>>,
     /// 调度器守护进程。用 Arc 包裹以便 Web standalone 模式同时持有本地
     /// 关停句柄与 state 槽位，两者共享同一份运行态供健康探测读取。
-    pub scheduler_daemon: AsyncMutex<Option<Arc<SchedulerDaemon>>>,
     /// LSP 语言服务器管理器
     pub lsp_manager: Mutex<LspManager>,
     /// LSP 配置持久化
@@ -317,7 +315,6 @@ pub struct AppState {
     /// Prompt 权限审批登记表（P1-g；respond_permission_request 回填入口）
     pub permission_prompt: Arc<crate::services::router::permission_prompt::PermissionPromptRegistry>,
     /// 通用执行器注册表 — 统一管理所有执行器（内置 + 插件自定义）
-    pub executor_registry: crate::services::executor::ExecutorRegistry,
     /// 统一转发总线（第三步 RouterBus）— dispatch 唯一入口，共享现有 WS 广播
     /// 通道（event_broadcast），终端命令与 Web API 经同一总线访问契约能力。
     pub router: Arc<crate::services::router::RouterBus>,
@@ -346,25 +343,6 @@ pub fn create_app_state(
                 tracing::warn!("[UsageDb] 初始化失败，用量统计不可用: {}", e);
             }
         }
-    }
-
-    // 创建内置执行器注册表并注册插件声明的执行器
-    let mut executor_registry = crate::services::executor::create_builtin_registry();
-    {
-        // 发现已安装插件（User scope），注册其 contributes.executors
-        let discovery = PluginService::discover_installed_plugins(&config_dir, None);
-        for error in &discovery.errors {
-            tracing::warn!("[ExecutorRegistry] 插件发现诊断 {}: {}", error.path, error.error);
-        }
-        let executor_states =
-            crate::services::plugin_state_service::PluginStateService::new(config_dir.clone())
-                .load()
-                .unwrap_or_default();
-        crate::services::executor::register_plugin_executors(
-            &mut executor_registry,
-            &discovery.plugins,
-            &executor_states,
-        );
     }
 
     // 统一转发总线（第三步 RouterBus）：复用现有 WS 广播通道 + 契约 SqliteStorage。
@@ -738,7 +716,6 @@ pub fn create_app_state(
         dispatched_tasks: Arc::new(Mutex::new(HashMap::new())),
         ask_listener: Arc::new(OnceLock::new()),
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
-        scheduler_daemon: AsyncMutex::new(None),
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
         #[cfg(feature = "lsp-index")]
@@ -765,7 +742,6 @@ pub fn create_app_state(
             Arc::new(tokio::sync::Mutex::new(collector))
         },
         plugin_service_manager: plugin_service_manager.clone(),
-        executor_registry,
         router,
         permission_prompt,
     }
@@ -823,7 +799,6 @@ impl AppState {
             dispatched_tasks: self.dispatched_tasks.clone(),
             ask_listener: self.ask_listener.clone(),
             pending_plans: self.pending_plans.clone(),
-            scheduler_daemon: AsyncMutex::new(None),
             lsp_manager: Mutex::new(LspManager::new()),
             lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
             #[cfg(feature = "lsp-index")]
@@ -844,7 +819,6 @@ impl AppState {
             profile_stats_collector: self.profile_stats_collector.clone(),
             failed_call_collector: self.failed_call_collector.clone(),
             plugin_service_manager: self.plugin_service_manager.clone(),
-            executor_registry: self.executor_registry.clone(),
             router: self.router.clone(),
             permission_prompt: self.permission_prompt.clone(),
         }

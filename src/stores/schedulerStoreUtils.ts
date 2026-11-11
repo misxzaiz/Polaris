@@ -1,4 +1,12 @@
-import type { LogEntryType } from '@/types/scheduler';
+/** 日志条目类型（原 @/types/scheduler，随 Scheduler 域出仓后内联；dispatch 域消费） */
+export type LogEntryType =
+  | 'session_start'
+  | 'message'
+  | 'thinking'
+  | 'tool_call_start'
+  | 'tool_call_end'
+  | 'error'
+  | 'session_end';
 
 /** 生成唯一 ID */
 export function generateLogId(): string {
