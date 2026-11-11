@@ -193,6 +193,12 @@ wsclient ←──────── WS session_end / error（contextId 匹配�
 - **E2E 闭环验证**：建 12s 到期 once 任务 → tick 触发 → cap.ai.chat 会话启动 → WS session_end → 终态回收 `success (reason=completed)` → 历史落账，全程 18s
 - 数据迁移真桥验证：从主仓 scheduler.db 只读导入 1 条用户存量任务（数学世纪难题验证，after_completion 型），保真成功
 
+### 发布记录（2026-11-11 回填）
+- 插件仓 commit `ab056ec`：`index.json` 新增 ai-scheduler 条目（共 132 插件）、`ai-scheduler.zip` 入库、tag `ai-scheduler-v1.0.0`；`git push origin main` 与 `git push origin ai-scheduler-v1.0.0` 均成功。
+- 发布前修掉三处偏差：① `plugins/ai-scheduler/.gitignore` 放行 `ai-scheduler.zip`（原 `*.zip` 规则会让 tag 内无包，CDN downloadUrl 必然 404）；② `plugin.json` / `update.json` 的 `origin.updateUrl` 由误指 `plugin.json` 改指 `update.json`、`origin.downloadUrl` 由 `@main` 改为 `@ai-scheduler-v1.0.0`（对齐 PUBLISHING.md 的 tag 钉住策略）；③ 分发包重打（18 文件 / 66970 B / sha256 `705ecfebceab4c1d8c7979026183a69c04ad9a2a9e352669dda111712f72fbcf`）并回填 `index.json`。
+- `node scripts/validate.js` 通过（132 插件）；zip 内 18 文件结构与修正后的 manifest 已核对。
+- 环境备注：`scripts/publish-plugin.mjs` 在本机被文件删除保护拦截（脚本内 `rmSync` 清理临时目录/旧 zip 时超时），分发包改用 PowerShell `Compress-Archive` 生成、sha256 手工回填；**发布流程与脚本本身未改动**，换到无该保护的机器仍可走脚本一条龙。
+
 ### 遗留（下一轮）
-- CDN 发布链（push + index.json + tag）待用户验收后执行
+- CDN 生效后做一次 `curl -sL <tag zip> | sha256sum` 与 index.json 比对（jsDelivr 首次拉取有传播延迟）。
 - plugin 型执行器 v1 不支持（README 声明 + 面板标记 + 触发跳过）

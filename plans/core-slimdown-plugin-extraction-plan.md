@@ -1,6 +1,6 @@
 # 主仓瘦身：存量功能插件化拆分方案（core-slimdown）
 
-> 状态：**方案待评审，未实施** · 日期：2026-11-06
+> 状态：**实施中**（B1 完成 6/7、B2 完成 1/4；最近一批 B1-6 于 2026-11-11 合入） · 日期：2026-11-06 · 状态复核：2026-11-11
 > 上游定案：`plans/plugin-first-slim-plan.md`（2026-10-30 用户定案「新功能一律插件化」）+ `AGENTS.md` §五功能路由原则。
 > 本方案定位：把该定案从**增量纪律**推进到**存量迁移**——盘点主仓已有功能，判定哪些拆出为 `Polaris-plugin` 仓插件，给出分批路径、验收标准与不拆清单。
 > 数据口径：行数为 2026-11-06 工作区实测（`wc -l`，前端含 .ts/.tsx）；改动热度为 `git log --since=2026-08-01` 文件触碰次数。
@@ -72,7 +72,7 @@
 
 | 序 | 功能 | 主仓删除（约） | 插件仓新建 | 行数 | 耦合点与路径 |
 |---|---|---|---|---|---|
-| B1-1 | PRD 预览 | `prd_preview_mcp_server.rs` 557 + `plugins/prd-preview` 卡片 | prd-preview 插件（MCP stdio + chatCards） | ~1k | 纯 result 卡片，chatCards 契约现成 |
+| ~~B1-1~~ | PRD 预览 | ✅ 已完成（commit `57ad887f` 退役至交互组件插件；2026-11-11 复核主仓零残留） | — | ~1k | 纯 result 卡片，chatCards 契约现成；总纲此前漏回填 |
 | ~~B1-2~~ | Agnes 多模态 | ✅ 已完成（2026-11-09 内置插件清理：主仓删码，插件仓 agnes v0.1.2 承接） | agnes 插件 | ~2.3k | 同上 |
 | ~~B1-3~~ | Requirement | ✅ 已完成（2026-11-09：整域移除，needs 插件承接，主仓不留桥接） | — | ~3.6k | 定案改为直接移除 |
 | ~~B1-4~~ | PersonalHub | ✅ 已完成（2026-11-09：插件仓 personal-hub v1.0.0 新建承接，stdio MCP + 面板） | personal-hub 插件 | ~2.5k | |
@@ -123,9 +123,9 @@ B2 合计 ~17.5k。
 
 ## 6. 地基前置项（B1 开工前完成）
 
-1. **hostInvoke 插件级白名单**：`__POLARIS_HOST_INVOKE__` 按 manifest `permissions` 六布尔裁剪可调 command 面（审计 §2.6.3）。UI 外移的安全前提，主仓内改动，约 1 个 spec 的量。
-2. **manifest 校验补齐**：`validate_manifest_fields` 从 2/11 块扩到覆盖 services / chatCards / panel 等外移将用到的块（防止拆分插件契约漂移）。
-3. **Web 模式插件服务管理放行**（审计 X9）：至少让已鉴权 Remote 可查询服务状态与触发 autostart，否则 Web 端用户装了插件功能不可用，拆分即功能降级。
+1. **hostInvoke 插件级白名单**：⚠️ 部分落地（2026-11-11 复核）——`src/main.tsx:35` 已有宿主级全局 `HOST_INVOKE_ALLOWLIST`（14 条命令），但**未**按 manifest `permissions` 做插件级裁剪（审计 §2.6.3）。UI 外移前需补「插件身份 → 允许命令面」映射。
+2. **manifest 校验补齐**：⚠️ 未落地（2026-11-11 复核：`plugin_service.rs::validate_manifest_fields` 仍只校验 `contributes.views` 与 `contributes.mcpServers` 两块；`models/plugin.rs:154-203` 实为 14 个字段块，前端 `pluginDiscoveryService.ts:582-591` 另只 normalize 8 块）。需从 2/14 块扩到覆盖 services / chatCards / panel 等外移将用到的块（防止拆分插件契约漂移）。
+3. **Web 模式插件服务管理放行**（审计 X9）：✅ 已落地（2026-11-11 复核：`policy_permission.rs:248-254` 以 `require_auth` Allow 后置覆盖放行整个 `cap.pluginServiceManager`，含 `list_status` / `autostart`；`plugin_service_manager_capability.rs:81-82,88` 与单测 372-374 均注明旧「Remote 默认 deny」表述已过时）。`im-integration-extraction-spec.md` D4 / §5 的前置据此解除。
 4. **内置插件禁用语义对账**：外移后 `builtin_plugin_mcp_manifests` 注册表逐项摘除时，核对 `capability_to_builtin_servers` 映射与 trusted 免检逻辑不残留死项。
 
 ---
@@ -141,7 +141,7 @@ B2 合计 ~17.5k。
 
 **整体（全部批次完成后）**：
 - [ ] 主仓前后端合计出仓 ≥ 40k 行；`commands/` 目录剩余为不可拆核心命令。
-- [x] `src/plugins/` 内置插件壳仅剩核心通道（2026-11-10：core/ask/browser/scheduler；contracts 契约浏览器壳已移除，dispatch 已移除，双轨状态消除）。
+- [x] `src/plugins/` 内置插件壳仅剩核心通道（2026-11-10：core/ask/browser/scheduler；contracts 契约浏览器壳已移除，dispatch 已移除，双轨状态消除）。2026-11-11 复核：B1-6 后仅剩 `ask`、`browser` 两个壳。
 - [ ] 新功能全部落在插件仓（既有定案的可验证状态）。
 
 ---
