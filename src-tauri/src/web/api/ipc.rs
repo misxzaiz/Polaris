@@ -228,6 +228,19 @@ pub async fn handle_ipc_bridge(
         cmd if cmd.starts_with("git_") => {
             dispatch_git_via_bus(&state, cmd, &args).await
         }
+        // ── Contract Router: 统一转发总线（契约第三步 P2）──────────────────
+        // 基础设施臂，不属于任何业务域：2026-11-11 提交 a755f3fb「Scheduler 域
+        // 整体出仓」批量删 78 条 scheduler_* 命令臂时，把紧邻的本臂连同注释块
+        // 一并删除，但 dispatch_router_dispatch 实现仍保留在下方（成为无调用点
+        // 死代码）。后果：Web/HTTP 模式（tauri:dev:web）前端所有
+        // invoke('router_dispatch') → /api/router-dispatch 落入 `_ => NotFound`
+        // 「Command not supported via HTTP: router_dispatch」，cap.config /
+        // cap.data_root / cap.pluginDiscovery / cap.kv / cap.help / cap.ai.chat
+        // 同步动作等全线不可用；桌面 tauri 模式不受影响（lib.rs invoke_handler
+        // 仍注册 commands::router::router_dispatch）。
+        // 防复发：以下三条总线臂（dispatch / dispatch_stream / list_caps）是
+        // RouterBus 基础设施，批量删除业务域命令时禁止按注释块连坐删除。
+        "router_dispatch" => dispatch_router_dispatch(&state, &args).await,
         "respond_permission_request" => dispatch_respond_permission_request(&state, &args).await,
         "router_dispatch_stream" => dispatch_router_dispatch_stream(&state, &args).await,
         "audit_tail" => dispatch_audit_tail(&args),
