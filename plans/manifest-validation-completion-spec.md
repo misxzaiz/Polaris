@@ -39,7 +39,8 @@
 
 - `plugin_service.rs::validate_manifest_fields` 已补四块字段级校验（panel / services / chatCards / configSchema），并新增单测 `validates_l1_extraction_contribution_fields`（合规零诊断 + 四类违规精确诊断 + 空 entry）。
 - 离线对拍：按新规则扫描插件仓 **138 个 `plugin.json`**，违规数 **0**，确认不误伤存量已发布插件。
-- 本机按 `AGENTS.md` 约定不可跑 `cargo test --lib`（Tauri DLL 启动问题），单测需由 CI 实跑；本地验证以 `cargo check` + web-only 门控为准。
+- 本机按 `AGENTS.md` 约定不可跑 `cargo test --lib`（Tauri DLL 启动问题），单测需由 CI 实跑。
+- **门禁结果（全绿）**：`cargo check` Finished（21m00s，0 错，仅 24 个与本次改动无关的存量 warning）；`cargo check --no-default-features --bin polaris-web --bin polaris-mcp` Finished（15m12s，0 错）；整体退出码 0。
 
 ## 6. 遗留（不属本批）
 
