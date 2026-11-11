@@ -98,8 +98,8 @@ B2 合计 ~17.5k。
 | 功能 | 行数 | 不拆理由 |
 |---|---|---|
 | Chat / ChatInput / 会话域（session-v2、conversationStore、dialogStorage、turn_persist） | ~40k | 宿主本体，「日志即真相」核心架构 |
-| Git 域（GitPanel 15k + `git/` 8.1k + git_capability 1.6k） | ~25k | cap.git 是 bus 静态注册的 AI 核心工具；GitPanel 深耦合编辑器（gutter/blame/changeNavigator 扩展点）；git-panel P0-P3 演进中。**远期观察项**：待 git-panel 系列收尾、编辑器扩展贡献点对外部插件开放后再评估仅拆 UI |
-| FileExplorer / Terminal / Editor / Diff | ~9k | 开发环境核心面板，cap.fs / cap.bash 宿主能力的原生 UI |
+| Git 域（GitPanel 15k + `git/` 8.1k + git_capability 1.6k） | ~25k | cap.git 是 bus 静态注册的 AI 核心工具；GitPanel 深耦合编辑器（gutter/blame/changeNavigator 扩展点）；git-panel P0-P3 演进中。**远期观察项**：待 git-panel 系列收尾、编辑器扩展贡献点对外部插件开放后再评估仅拆 UI。**【注意】2026-11-11 用户新需求要求「完整插件承接 + 删除内置、功能不变甚至更好」，与本行结论冲突，见 `plans/git-domain-plugin-extraction-requirement.md`；评审批准前本行仍有效，批准后须同步修订本行与 `docs/git-plugin-extraction-plan.md` 的「保留内置」结论。** |
+| FileExplorer / ~~Terminal~~ / Editor / Diff | ~9k | 开发环境核心面板，cap.fs / cap.bash 宿主能力的原生 UI。**【注意】Terminal 已有独立插件化路线**：`plans/terminal-plugin-spec.md`（A/B 已落地）+ `plans/terminal-desk-optimization-and-removal-plan.md`（2026-11-11 优化与拆除定案）；本行「不拆」结论对 Terminal 不再适用，拆除后须同步修订本行。当前插件 `terminal-desk` v0.2.2 样式与功能未达标，评审批准前不得删主仓内置实现。 |
 | Settings / 主题体系 | ~11k | 宿主管理面 |
 | `ai/` + `ai-runtime` + proxy | ~35k | AI 运行时与供应商网关，AGENTS.md 已定核心 |
 | ask / dispatch 插件壳 | — | ask 保留（interaction 卡片伴生通道）；dispatch 已于 2026-11-09 移除（A+B 档，/dispatch 与 /nexus 基础设施保留）——见 plans/builtin-plugin-cleanup-analysis.md |

@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polaris Git 插件 · UI 交互评审原型</title>
+<style>
+:root {
+  color-scheme: dark;
+  --c-bg-base: 12 15 20;
+  --c-bg-subtle: 18 23 31;
+  --c-bg-elevated: 27 34 45;
+  --c-bg-hover: 32 40 52;
+  --c-bg-active: 38 48 63;
+  --c-border: 43 52 66;
+  --c-text-primary: 229 234 242;
+  --c-text-secondary: 157 170 187;
+  --c-text-tertiary: 105 120 140;
+  --c-primary: 108 156 255;
+  --c-primary-hover: 137 176 255;
+  --c-success: 99 199 149;
+  --c-danger: 242 125 136;
+  --c-warning: 217 173 99;
+  --c-info: 121 180 232;
+  --shadow: 0 18px 50px rgb(0 0 0 / .38);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --c-bg-base: 246 248 251;
+  --c-bg-subtle: 255 255 255;
+  --c-bg-elevated: 255 255 255;
+  --c-bg-hover: 235 239 245;
+  --c-bg-active: 225 233 246;
+  --c-border: 214 221 231;
+  --c-text-primary: 30 39 52;
+  --c-text-secondary: 84 98 116;
+  --c-text-tertiary: 122 135 151;
+  --c-primary: 55 110 210;
+  --c-primary-hover: 42 91 181;
+  --c-success: 34 139 91;
+  --c-danger: 196 66 79;
+  --c-warning: 157 105 28;
+  --c-info: 45 117 175;
+  --shadow: 0 18px 50px rgb(34 48 68 / .18);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; }
+body {
+  overflow: hidden;
+  background: rgb(var(--c-bg-base));
+  color: rgb(var(--c-text-primary));
+  font: 13px/20px "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+button, input, textarea, select { font: inherit; }
+button { color: inherit; }
+button, [role="button"] { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid rgb(var(--c-primary));
+  outline-offset: 2px;
+}
+button:disabled { opacity: .45; cursor: not-allowed !important; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--c-border)); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+.svg-icon { width: 16px; height: 16px; flex: none; display: block; }
+.prototype-bar {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-bg-subtle));
+  flex: none;
+}
+.prototype-title { display: flex; align-items: center; gap: 10px; min-width: 255px; }
+.prototype-mark {
+  width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+  background: rgb(var(--c-primary) / .14); color: rgb(var(--c-primary));
+}
+.prototype-title strong { display: block; font-size: 13px; line-height: 17px; }
+.prototype-title small { display: block; color: rgb(var(--c-text-tertiary)); font-size: 11px; line-height: 14px; }
+.prototype-controls { display: flex; align-items: center; gap: 8px; flex: 1; flex-wrap: wrap; }
+.control-group {
+  display: inline-flex; align-items: center; gap: 2px; padding: 2px;
+  border: 1px solid rgb(var(--c-border)); border-radius: 7px; background: rgb(var(--c-bg-base));
+}
+.control-group button {
+  min-height: 26px; padding: 2px 8px; border: 0; border-radius: 5px; cursor: pointer;
+  background: transparent; color: rgb(var(--c-text-secondary)); font-size: 11px;
+}
+.control-group button:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.control-group button.active { background: rgb(var(--c-bg-active)); color: rgb(var(--c-primary)); }
+.prototype-select {
+  height: 32px; padding: 0 28px 0 9px; border: 1px solid rgb(var(--c-border)); border-radius: 7px;
+  background: rgb(var(--c-bg-base)); color: rgb(var(--c-text-primary)); font-size: 12px;
+}
+.prototype-badge {
+  padding: 3px 8px; border: 1px solid rgb(var(--c-warning) / .35); border-radius: 999px;
+  color: rgb(var(--c-warning)); background: rgb(var(--c-warning) / .08); font-size: 11px; white-space: nowrap;
+}
+.prototype-wrap { height: calc(100% - 58px); padding: 16px; min-height: 0; }
+.host-shell {
+  height: 100%; min-height: 0; display: grid; grid-template-columns: 46px auto minmax(320px, 1fr);
+  overflow: hidden; border: 1px solid rgb(var(--c-border)); border-radius: 12px;
+  background: rgb(var(--c-bg-base)); box-shadow: var(--shadow);
+}
+.activity-bar {
+  display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 10px 0;
+  background: rgb(var(--c-bg-subtle)); border-right: 1px solid rgb(var(--c-border));
+}
+.activity-logo { width: 25px; height: 25px; border-radius: 7px; display: grid; place-items: center; color: rgb(var(--c-primary)); margin-bottom: 12px; }
+.activity-item {
+  width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 7px;
+  color: rgb(var(--c-text-tertiary)); background: transparent; cursor: pointer; position: relative;
+}
+.activity-item:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.activity-item.active { color: rgb(var(--c-primary)); background: rgb(var(--c-primary) / .1); }
+.activity-item.active::before { content: ""; position: absolute; left: -6px; width: 2px; height: 20px; background: rgb(var(--c-primary)); border-radius: 2px; }
+.activity-spacer { flex: 1; }
+.git-panel {
+  width: 360px; height: 100%; min-height: 0; display: flex; flex-direction: column;
+  background: rgb(var(--c-bg-subtle)); border-right: 1px solid rgb(var(--c-border));
+  container-type: inline-size; position: relative; transition: width .18s ease;
+}
+.panel-header {
+  min-height: 46px; padding: 7px 9px 6px 12px; display: flex; align-items: center; gap: 7px;
+  border-bottom: 1px solid rgb(var(--c-border)); flex: none;
+}
+.repo-button {
+  display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; padding: 3px 4px;
+  border: 0; background: transparent; border-radius: 5px; cursor: pointer; text-align: left;
+}
+.repo-button:hover { background: rgb(var(--c-bg-hover)); }
+.repo-button .repo-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.repo-button .repo-path { color: rgb(var(--c-text-tertiary)); font-size: 10px; line-height: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icon-btn {
+  width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; display: inline-grid; place-items: center;
+  background: transparent; color: rgb(var(--c-text-secondary)); cursor: pointer; flex: none; position: relative;
+}
+.icon-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.icon-btn.small { width: 26px; height: 26px; }
+.icon-btn.active { color: rgb(var(--c-primary)); background: rgb(var(--c-primary) / .1); }
+.icon-btn.danger:hover { color: rgb(var(--c-danger)); background: rgb(var(--c-danger) / .1); }
+.branch-pill {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 150px; min-width: 0;
+  height: 26px; padding: 0 8px; border: 1px solid rgb(var(--c-border)); border-radius: 6px;
+  background: rgb(var(--c-bg-base)); color: rgb(var(--c-text-secondary)); cursor: pointer; font-size: 11px;
+}
+.branch-pill:hover { border-color: rgb(var(--c-primary) / .6); color: rgb(var(--c-text-primary)); }
+.branch-pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel-tabs {
+  display: flex; align-items: stretch; min-height: 38px; padding: 0 5px; flex: none;
+  overflow-x: auto; border-bottom: 1px solid rgb(var(--c-border)); scrollbar-width: none;
+}
+.panel-tabs::-webkit-scrollbar { display: none; }
+.panel-tab {
+  min-width: 39px; flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 0 6px; border: 0; border-bottom: 2px solid transparent; background: transparent;
+  color: rgb(var(--c-text-tertiary)); cursor: pointer; position: relative;
+}
+.panel-tab:hover { color: rgb(var(--c-text-primary)); background: rgb(var(--c-bg-hover)); }
+.panel-tab.active { color: rgb(var(--c-primary)); border-bottom-color: rgb(var(--c-primary)); background: rgb(var(--c-primary) / .05); }
+.tab-count {
+  min-width: 15px; height: 15px; padding: 0 4px; display: inline-grid; place-items: center;
+  border-radius: 8px; background: rgb(var(--c-primary) / .14); color: rgb(var(--c-primary)); font-size: 9px;
+}
+.panel-status {
+  flex: none; min-height: 34px; display: flex; align-items: center; gap: 6px; padding: 5px 11px;
+  border-bottom: 1px solid rgb(var(--c-border)); color: rgb(var(--c-text-secondary)); font-size: 11px;
+}
+.panel-status .status-spacer { flex: 1; }
+.sync-action { border: 0; background: transparent; color: rgb(var(--c-text-secondary)); cursor: pointer; display: flex; align-items: center; gap: 3px; padding: 2px 4px; border-radius: 4px; }
+.sync-action:hover { color: rgb(var(--c-primary)); background: rgb(var(--c-primary) / .08); }
+.conflict-banner, .error-banner, .info-banner {
+  flex: none; margin: 8px 9px 0; padding: 8px 9px; border-radius: 7px; display: flex; align-items: flex-start; gap: 8px;
+  font-size: 11px; line-height: 16px;
+}
+.conflict-banner { color: rgb(var(--c-danger)); background: rgb(var(--c-danger) / .08); border: 1px solid rgb(var(--c-danger) / .25); }
+.error-banner { color: rgb(var(--c-danger)); background: rgb(var(--c-danger) / .07); border: 1px solid rgb(var(--c-danger) / .22); }
+.info-banner { color: rgb(var(--c-info)); background: rgb(var(--c-info) / .07); border: 1px solid rgb(var(--c-info) / .2); }
+.banner-copy { flex: 1; min-width: 0; }
+.banner-copy strong { display: block; font-size: 12px; margin-bottom: 1px; }
+.text-button { border: 0; padding: 0; background: transparent; color: rgb(var(--c-primary)); cursor: pointer; white-space: nowrap; font-size: 11px; }
+.text-button:hover { text-decoration: underline; }
+.selection-bar {
+  flex: none; display: flex; align-items: center; gap: 5px; padding: 5px 9px;
+  border-bottom: 1px solid rgb(var(--c-primary) / .25); background: rgb(var(--c-primary) / .06); font-size: 11px;
+}
+.selection-bar span { flex: 1; color: rgb(var(--c-text-secondary)); }
+.panel-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.change-group { padding: 4px 0 3px; }
+.group-header {
+  height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 10px;
+  color: rgb(var(--c-text-secondary)); font-size: 11px; cursor: pointer; user-select: none;
+}
+.group-header:hover { background: rgb(var(--c-bg-hover) / .55); }
+.group-header strong { color: rgb(var(--c-text-primary)); font-weight: 500; }
+.group-header .group-count { color: rgb(var(--c-text-tertiary)); }
+.group-header .group-actions { margin-left: auto; display: flex; gap: 2px; }
+.file-row {
+  min-height: 32px; display: flex; align-items: center; gap: 5px; padding: 1px 7px 1px 10px;
+  color: rgb(var(--c-text-secondary)); position: relative;
+}
+.file-row:hover, .file-row:focus-within { background: rgb(var(--c-bg-hover) / .72); color: rgb(var(--c-text-primary)); }
+.file-row.selected { background: rgb(var(--c-primary) / .07); }
+.file-check { width: 14px; height: 14px; margin: 0; accent-color: rgb(var(--c-primary)); flex: none; cursor: pointer; }
+.file-main {
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 5px; padding: 5px 0;
+  border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left;
+}
+.file-name { font-size: 12px; color: rgb(var(--c-text-primary)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-dir { font-size: 10px; color: rgb(var(--c-text-tertiary)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; direction: rtl; text-align: left; }
+.file-status { width: 17px; text-align: center; font: 600 10px/16px Consolas, monospace; flex: none; }
+.status-m { color: rgb(var(--c-warning)); }
+.status-a { color: rgb(var(--c-success)); }
+.status-d, .status-u { color: rgb(var(--c-danger)); }
+.status-r { color: rgb(var(--c-info)); }
+.file-actions { display: flex; align-items: center; gap: 1px; flex: none; opacity: 0; }
+.file-row:hover .file-actions, .file-row:focus-within .file-actions { opacity: 1; }
+.commit-dock {
+  flex: none; padding: 8px 10px 9px; border-top: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-bg-subtle)); position: relative;
+}
+.ai-suggestion {
+  margin-bottom: 7px; padding: 7px 8px; border: 1px solid rgb(var(--c-primary) / .28); border-radius: 7px;
+  background: rgb(var(--c-primary) / .055); animation: slide-in .16s ease;
+}
+.ai-title { display: flex; align-items: center; gap: 5px; color: rgb(var(--c-primary)); font-size: 11px; margin-bottom: 3px; }
+.ai-title .ai-state { margin-left: auto; color: rgb(var(--c-text-tertiary)); font-size: 10px; }
+.ai-text { color: rgb(var(--c-text-secondary)); font-size: 11px; line-height: 16px; max-height: 32px; overflow: hidden; }
+.ai-actions { display: flex; align-items: center; gap: 9px; margin-top: 5px; }
+.commit-input-wrap { position: relative; }
+.commit-input {
+  width: 100%; min-height: 56px; max-height: 110px; resize: vertical; padding: 7px 35px 7px 9px;
+  border: 1px solid rgb(var(--c-border)); border-radius: 7px; background: rgb(var(--c-bg-base));
+  color: rgb(var(--c-text-primary)); font-size: 12px; line-height: 17px; outline: none;
+}
+.commit-input:focus { border-color: rgb(var(--c-primary)); box-shadow: 0 0 0 2px rgb(var(--c-primary) / .12); }
+.commit-input::placeholder { color: rgb(var(--c-text-tertiary)); }
+.ai-trigger { position: absolute; right: 4px; top: 4px; color: rgb(var(--c-primary)); }
+.commit-footer { min-height: 29px; display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.commit-scope { flex: 1; min-width: 0; color: rgb(var(--c-text-tertiary)); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.amend-label { display: flex; align-items: center; gap: 4px; color: rgb(var(--c-text-tertiary)); font-size: 10px; white-space: nowrap; cursor: pointer; }
+.amend-label input { width: 13px; height: 13px; margin: 0; accent-color: rgb(var(--c-primary)); }
+.primary-btn, .secondary-btn, .danger-btn {
+  min-height: 29px; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; white-space: nowrap;
+}
+.primary-btn { border: 1px solid rgb(var(--c-primary)); background: rgb(var(--c-primary)); color: rgb(var(--c-bg-subtle)); font-weight: 600; }
+.primary-btn:hover { background: rgb(var(--c-primary-hover)); border-color: rgb(var(--c-primary-hover)); }
+.secondary-btn { border: 1px solid rgb(var(--c-border)); background: rgb(var(--c-bg-base)); color: rgb(var(--c-text-secondary)); }
+.secondary-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.danger-btn { border: 1px solid rgb(var(--c-danger)); background: rgb(var(--c-danger)); color: rgb(var(--c-bg-subtle)); font-weight: 600; }
+.diff-head { flex: none; padding: 7px 9px; border-bottom: 1px solid rgb(var(--c-border)); }
+.diff-head-row { display: flex; align-items: center; gap: 4px; }
+.diff-path { flex: 1; min-width: 0; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.diff-stats { display: flex; gap: 7px; padding: 5px 28px 0; font-size: 10px; color: rgb(var(--c-text-tertiary)); }
+.diff-stats .add { color: rgb(var(--c-success)); }
+.diff-stats .del { color: rgb(var(--c-danger)); }
+.diff-code { flex: 1; min-height: 0; overflow: auto; padding: 8px 0; font: 11px/19px Consolas, "Courier New", monospace; background: rgb(var(--c-bg-base)); }
+.diff-line { min-width: 480px; display: grid; grid-template-columns: 34px 34px 18px 1fr; padding-right: 10px; white-space: pre; }
+.diff-line .ln { color: rgb(var(--c-text-tertiary)); text-align: right; padding-right: 8px; user-select: none; }
+.diff-line.add { background: rgb(var(--c-success) / .08); color: rgb(var(--c-success)); }
+.diff-line.del { background: rgb(var(--c-danger) / .07); color: rgb(var(--c-danger)); }
+.diff-line.hunk { background: rgb(var(--c-info) / .07); color: rgb(var(--c-info)); margin: 4px 0; }
+.diff-line.context { color: rgb(var(--c-text-secondary)); }
+.diff-footer { flex: none; display: flex; align-items: center; gap: 6px; padding: 7px 9px; border-top: 1px solid rgb(var(--c-border)); }
+.diff-footer .spacer { flex: 1; }
+.search-row { display: flex; gap: 5px; padding: 8px 9px; border-bottom: 1px solid rgb(var(--c-border)); }
+.search-wrap { flex: 1; min-width: 0; position: relative; }
+.search-wrap .svg-icon { position: absolute; left: 8px; top: 7px; width: 14px; height: 14px; color: rgb(var(--c-text-tertiary)); }
+.search-input { width: 100%; height: 29px; padding: 4px 8px 4px 27px; border: 1px solid rgb(var(--c-border)); border-radius: 6px; background: rgb(var(--c-bg-base)); color: rgb(var(--c-text-primary)); font-size: 11px; outline: none; }
+.search-input:focus { border-color: rgb(var(--c-primary)); }
+.commit-row { display: flex; gap: 6px; min-height: 58px; padding: 7px 9px; cursor: pointer; border-left: 2px solid transparent; }
+.commit-row:hover { background: rgb(var(--c-bg-hover) / .65); }
+.commit-row.active { background: rgb(var(--c-primary) / .07); border-left-color: rgb(var(--c-primary)); }
+.lane { width: 14px; flex: none; position: relative; display: flex; justify-content: center; }
+.lane::before { content: ""; position: absolute; top: -7px; bottom: -7px; width: 1px; background: rgb(var(--c-primary) / .45); }
+.lane-dot { width: 8px; height: 8px; margin-top: 7px; border: 2px solid rgb(var(--c-primary)); border-radius: 50%; background: rgb(var(--c-bg-subtle)); z-index: 1; }
+.commit-info { flex: 1; min-width: 0; }
+.commit-subject { color: rgb(var(--c-text-primary)); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.commit-meta { color: rgb(var(--c-text-tertiary)); font-size: 10px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ref-chip { display: inline-block; padding: 0 5px; margin-right: 4px; border-radius: 4px; background: rgb(var(--c-primary) / .1); color: rgb(var(--c-primary)); font-size: 9px; line-height: 15px; }
+.section-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 6px; color: rgb(var(--c-text-secondary)); font-size: 11px; }
+.section-head strong { flex: 1; color: rgb(var(--c-text-primary)); font-weight: 600; }
+.list-card { margin: 4px 8px; border: 1px solid rgb(var(--c-border)); border-radius: 7px; background: rgb(var(--c-bg-base)); overflow: hidden; }
+.list-card-row { display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 6px 8px; border-bottom: 1px solid rgb(var(--c-border) / .7); }
+.list-card-row:last-child { border-bottom: 0; }
+.list-card-row:hover { background: rgb(var(--c-bg-hover) / .6); }
+.list-card-copy { flex: 1; min-width: 0; }
+.list-card-title { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-card-sub { color: rgb(var(--c-text-tertiary)); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.current-badge { padding: 1px 5px; border-radius: 4px; color: rgb(var(--c-success)); background: rgb(var(--c-success) / .1); font-size: 9px; }
+.empty-state, .loading-state { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; color: rgb(var(--c-text-secondary)); }
+.empty-state .empty-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; background: rgb(var(--c-success) / .08); color: rgb(var(--c-success)); margin-bottom: 10px; }
+.empty-state strong { color: rgb(var(--c-text-primary)); margin-bottom: 3px; }
+.empty-state p { margin: 0 0 12px; color: rgb(var(--c-text-tertiary)); font-size: 11px; }
+.skeleton { width: 100%; height: 30px; border-radius: 6px; margin: 5px 0; background: linear-gradient(90deg, rgb(var(--c-bg-hover)), rgb(var(--c-bg-active)), rgb(var(--c-bg-hover))); background-size: 200% 100%; animation: shimmer 1.3s infinite; }
+.gitignore-editor { width: calc(100% - 18px); min-height: 240px; margin: 8px 9px; padding: 9px; resize: vertical; border: 1px solid rgb(var(--c-border)); border-radius: 7px; background: rgb(var(--c-bg-base)); color: rgb(var(--c-text-primary)); font: 11px/18px Consolas, monospace; }
+.popover {
+  position: absolute; top: 43px; right: 7px; z-index: 20; min-width: 190px; padding: 5px;
+  border: 1px solid rgb(var(--c-border)); border-radius: 8px; background: rgb(var(--c-bg-elevated)); box-shadow: var(--shadow);
+}
+.menu-item { width: 100%; min-height: 31px; display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 0; border-radius: 5px; background: transparent; color: rgb(var(--c-text-secondary)); cursor: pointer; text-align: left; font-size: 11px; }
+.menu-item:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.menu-item.danger { color: rgb(var(--c-danger)); }
+.menu-separator { height: 1px; background: rgb(var(--c-border)); margin: 4px; }
+.center-stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: rgb(var(--c-bg-base)); }
+.center-tabs { height: 40px; flex: none; display: flex; align-items: center; border-bottom: 1px solid rgb(var(--c-border)); background: rgb(var(--c-bg-subtle)); }
+.center-tab { height: 100%; display: flex; align-items: center; gap: 7px; padding: 0 13px; border: 0; border-right: 1px solid rgb(var(--c-border)); border-top: 2px solid rgb(var(--c-primary)); background: rgb(var(--c-bg-base)); color: rgb(var(--c-text-primary)); font-size: 11px; }
+.center-toolbar { margin-left: auto; display: flex; align-items: center; gap: 4px; padding: 0 8px; }
+.center-toolbar button { height: 25px; padding: 2px 7px; border: 0; border-radius: 5px; background: transparent; color: rgb(var(--c-text-tertiary)); cursor: pointer; font-size: 10px; }
+.center-toolbar button:hover, .center-toolbar button.active { color: rgb(var(--c-primary)); background: rgb(var(--c-primary) / .08); }
+.editor-breadcrumbs { height: 32px; flex: none; display: flex; align-items: center; gap: 5px; padding: 0 14px; color: rgb(var(--c-text-tertiary)); font-size: 10px; border-bottom: 1px solid rgb(var(--c-border) / .65); }
+.editor-code { flex: 1; min-height: 0; overflow: auto; padding: 12px 0; font: 12px/23px Consolas, "Courier New", monospace; }
+.code-row { min-width: 600px; display: grid; grid-template-columns: 44px 5px 1fr; padding-right: 20px; white-space: pre; color: rgb(var(--c-text-secondary)); }
+.code-row:hover { background: rgb(var(--c-bg-hover) / .5); }
+.code-number { text-align: right; padding-right: 13px; color: rgb(var(--c-text-tertiary)); user-select: none; }
+.code-gutter { background: transparent; }
+.code-gutter.added { background: rgb(var(--c-success)); }
+.code-gutter.modified { background: rgb(var(--c-warning)); }
+.code-keyword { color: rgb(var(--c-primary)); }
+.code-string { color: rgb(var(--c-success)); }
+.code-comment { color: rgb(var(--c-text-tertiary)); }
+.chat-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.chat-context { flex: none; padding: 11px 16px; border-bottom: 1px solid rgb(var(--c-border)); }
+.chat-context-title { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; margin-bottom: 7px; }
+.context-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.context-chip { padding: 2px 7px; border-radius: 5px; border: 1px solid rgb(var(--c-border)); background: rgb(var(--c-bg-subtle)); color: rgb(var(--c-text-secondary)); font-size: 10px; }
+.chat-messages { flex: 1; min-height: 0; overflow: auto; padding: 18px; }
+.chat-message { max-width: 680px; margin: 0 auto 16px; display: flex; gap: 10px; }
+.chat-avatar { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; flex: none; background: rgb(var(--c-bg-active)); color: rgb(var(--c-text-secondary)); }
+.chat-message.assistant .chat-avatar { background: rgb(var(--c-primary) / .12); color: rgb(var(--c-primary)); }
+.chat-bubble { flex: 1; min-width: 0; color: rgb(var(--c-text-secondary)); font-size: 12px; }
+.chat-bubble strong { display: block; color: rgb(var(--c-text-primary)); margin-bottom: 3px; }
+.chat-answer { padding: 10px 12px; border: 1px solid rgb(var(--c-border)); border-radius: 8px; background: rgb(var(--c-bg-subtle)); color: rgb(var(--c-text-primary)); }
+.chat-actions { display: flex; gap: 7px; margin-top: 8px; }
+.chat-input-row { flex: none; display: flex; gap: 7px; padding: 12px 18px; border-top: 1px solid rgb(var(--c-border)); }
+.chat-input { flex: 1; min-width: 0; height: 34px; padding: 6px 10px; border: 1px solid rgb(var(--c-border)); border-radius: 7px; background: rgb(var(--c-bg-subtle)); color: rgb(var(--c-text-primary)); outline: none; }
+.merge-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.merge-toolbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid rgb(var(--c-border)); }
+.merge-toolbar strong { flex: 1; }
+.merge-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr 1fr; }
+.merge-pane { min-width: 0; display: flex; flex-direction: column; border-right: 1px solid rgb(var(--c-border)); }
+.merge-pane:last-child { border-right: 0; }
+.merge-pane-title { flex: none; padding: 7px 10px; background: rgb(var(--c-bg-subtle)); color: rgb(var(--c-text-secondary)); font-size: 11px; border-bottom: 1px solid rgb(var(--c-border)); }
+.merge-code { flex: 1; padding: 12px; overflow: auto; white-space: pre-wrap; font: 11px/20px Consolas, monospace; color: rgb(var(--c-text-secondary)); }
+.merge-conflict { padding: 8px; border: 1px solid rgb(var(--c-danger) / .25); border-radius: 6px; background: rgb(var(--c-danger) / .06); color: rgb(var(--c-text-primary)); }
+.merge-choices { display: flex; gap: 5px; padding: 8px 10px; border-top: 1px solid rgb(var(--c-border)); }
+.workbench { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, 1.5fr) minmax(220px, 1fr); }
+.workbench-main { min-width: 0; overflow: auto; border-right: 1px solid rgb(var(--c-border)); }
+.workbench-side { min-width: 0; overflow: auto; }
+.dialog-mask { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / .5); }
+.dialog { width: min(440px, 100%); border: 1px solid rgb(var(--c-border)); border-radius: 11px; background: rgb(var(--c-bg-elevated)); box-shadow: var(--shadow); animation: dialog-in .16s ease; }
+.dialog-head { display: flex; align-items: center; gap: 8px; padding: 15px 17px 8px; }
+.dialog-head .danger-icon { color: rgb(var(--c-danger)); }
+.dialog-head strong { font-size: 14px; }
+.dialog-body { padding: 2px 17px 14px; color: rgb(var(--c-text-secondary)); font-size: 12px; }
+.dialog-body p { margin: 5px 0 10px; }
+.impact-box { padding: 9px 10px; border: 1px solid rgb(var(--c-danger) / .22); border-radius: 7px; background: rgb(var(--c-danger) / .055); }
+.impact-box div { margin: 2px 0; }
+.safety-note { display: flex; gap: 6px; margin-top: 9px; color: rgb(var(--c-success)); font-size: 11px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 7px; padding: 11px 17px 15px; }
+.toast-zone { position: fixed; left: 50%; bottom: 28px; z-index: 150; transform: translateX(-50%); display: flex; flex-direction: column; gap: 7px; align-items: center; pointer-events: none; }
+.toast { display: flex; align-items: center; gap: 10px; max-width: 520px; padding: 8px 12px; border: 1px solid rgb(var(--c-border)); border-radius: 8px; background: rgb(var(--c-bg-elevated)); box-shadow: var(--shadow); color: rgb(var(--c-text-primary)); font-size: 11px; pointer-events: auto; animation: slide-in .16s ease; }
+.toast .text-button { pointer-events: auto; }
+.prototype-note { position: fixed; right: 24px; bottom: 21px; z-index: 40; color: rgb(var(--c-text-tertiary)); font-size: 10px; pointer-events: none; }
+.spin { animation: spin 1s linear infinite; }
+@container (max-width: 279px) {
+  .panel-header { padding-left: 8px; }
+  .repo-button .repo-path, .branch-pill .svg-icon, .commit-btn-label, .file-dir, .amend-label { display: none; }
+  .repo-button { gap: 4px; }
+  .branch-pill { max-width: 82px; padding: 0 6px; }
+  .panel-status { padding-left: 8px; padding-right: 8px; }
+  .file-row { padding-left: 7px; padding-right: 4px; gap: 3px; }
+  .file-actions { opacity: 1; }
+  .file-actions .secondary-action { display: none; }
+  .commit-dock { padding-left: 8px; padding-right: 8px; }
+  .commit-scope { max-width: 120px; }
+  .primary-btn, .secondary-btn, .danger-btn { padding-left: 7px; padding-right: 7px; }
+  .diff-line { min-width: 450px; }
+}
+@container (min-width: 421px) {
+  .file-name { font-size: 12px; }
+  .file-row { padding-left: 12px; padding-right: 9px; }
+  .panel-header { padding-left: 13px; }
+  .commit-dock { padding: 10px 12px; }
+}
+@media (max-width: 1050px) {
+  .prototype-title { min-width: 210px; }
+  .prototype-title small, .prototype-badge { display: none; }
+  .prototype-wrap { padding: 8px; }
+}
+@media (max-width: 800px) {
+  .center-stage { display: none; }
+  .host-shell { grid-template-columns: 42px auto; }
+  .prototype-controls .control-group:first-child { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@keyframes slide-in { from { opacity: 0; transform: translateY(5px); } }
+@keyframes dialog-in { from { opacity: 0; transform: scale(.98) translateY(5px); } }
+</style>
+</head>
+<body>
+<header class="prototype-bar">
+  <div class="prototype-title">
+    <div class="prototype-mark" id="brand-icon"></div>
+    <div><strong>Git 与版本管理插件</strong><small>UI / 交互评审原型 · v1.0</small></div>
+  </div>
+  <div class="prototype-controls">
+    <div class="control-group" aria-label="侧栏宽度">
+      <button data-action="width" data-value="240">240px</button>
+      <button data-action="width" data-value="360" class="active">360px</button>
+      <button data-action="width" data-value="560">560px</button>
+    </div>
+    <select class="prototype-select" id="scenario" aria-label="演示场景">
+      <option value="normal">正常变更</option>
+      <option value="conflict">冲突场景</option>
+      <option value="loading">加载状态</option>
+      <option value="error">读取失败</option>
+      <option value="empty">干净仓库</option>
+    </select>
+    <button class="secondary-btn" data-action="theme" id="theme-button">切换浅色</button>
+  </div>
+  <span class="prototype-badge">模拟数据 · 不执行 Git 操作</span>
+</header>
+<div class="prototype-wrap">
+  <div class="host-shell">
+    <nav class="activity-bar" aria-label="宿主活动栏">
+      <div class="activity-logo" id="activity-logo"></div>
+      <button class="activity-item" data-icon="files" title="文件"></button>
+      <button class="activity-item active" data-icon="git" title="Git 与版本管理"></button>
+      <button class="activity-item" data-icon="search" title="搜索"></button>
+      <button class="activity-item" data-icon="terminal" title="终端"></button>
+      <div class="activity-spacer"></div>
+      <button class="activity-item" data-icon="settings" title="设置"></button>
+    </nav>
+    <section class="git-panel" id="git-panel" aria-label="Git 插件面板"></section>
+    <main class="center-stage" id="center-stage"></main>
+  </div>
+</div>
+<div id="dialog-root"></div>
+<div class="toast-zone" id="toast-zone" aria-live="polite"></div>
+<div class="prototype-note">交互评审原型 · 生产可行性须由真宿主纵切验证</div>
+<script>
+'use strict';
+
+const ICONS = {
+  git: '<circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><circle cx="6" cy="19" r="2"/><path d="M6 7v10M8 7c5 0 3 7 8 7h2"/>',
+  branch: '<circle cx="6" cy="5" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="19" r="2"/><path d="M6 7v10M18 8c0 5-4 5-8 6"/>',
+  refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+  more: '<circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/>',
+  chevron: '<path d="m9 6 6 6-6 6"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  up: '<path d="m6 15 6-6 6 6"/>',
+  files: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>',
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
+  tag: '<path d="M20 13 13 20l-10-10V3h7Z"/><circle cx="7" cy="7" r="1"/>',
+  archive: '<path d="M4 7v13h16V7M3 3h18v4H3ZM9 11h6"/>',
+  ignore: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 15l8-4M8 11l8 4"/>',
+  sparkles: '<path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4ZM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8ZM5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8Z"/>',
+  check: '<path d="m5 12 4 4L19 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  close: '<path d="m6 6 12 12M18 6 6 18"/>',
+  expand: '<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>',
+  back: '<path d="m15 18-6-6 6-6"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  alert: '<path d="M12 3 2 21h20ZM12 9v5M12 18h.01"/>',
+  trash: '<path d="M3 6h18M8 6V3h8v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/>',
+  undo: '<path d="m9 7-5 5 5 5M4 12h9a7 7 0 0 1 7 7"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4ZM22 2 11 13"/>',
+  message: '<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/>',
+  terminal: '<path d="m4 5 6 6-6 6M12 17h8"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',
+  cloud: '<path d="M17.5 19H6a4 4 0 0 1-.5-8 6 6 0 0 1 11.4-1.6A4.8 4.8 0 0 1 17.5 19Z"/>',
+  commit: '<circle cx="12" cy="12" r="3"/><path d="M3 12h6M15 12h6"/>'
+};
+function icon(name, cls = '') {
+  return '<svg class="svg-icon ' + cls + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[name] || ICONS.files) + '</svg>';
+}
+function esc(value) {
+  return String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+function splitPath(path) {
+  const i = path.lastIndexOf('/');
+  return i < 0 ? { dir: '', name: path } : { dir: path.slice(0, i + 1), name: path.slice(i + 1) };
+}
+
+const BASE_FILES = {
+  staged: [
+    { path: 'src/host/capGit.ts', status: 'A', area: 'staged', additions: 86, deletions: 0 },
+    { path: 'src/components/CommitDock.tsx', status: 'M', area: 'staged', additions: 24, deletions: 8 }
+  ],
+  unstaged: [
+    { path: 'src/components/ChangesList.tsx', status: 'M', area: 'unstaged', additions: 17, deletions: 4 },
+    { path: 'src/styles/panel.css', status: 'M', area: 'unstaged', additions: 31, deletions: 12 },
+    { path: 'docs/host-contract.md', status: 'R', area: 'unstaged', additions: 5, deletions: 2 }
+  ],
+  untracked: [
+    { path: 'tests/workspace-switch.test.ts', status: 'A', area: 'untracked', additions: 42, deletions: 0 }
+  ],
+  conflicted: []
+};
+const COMMITS = [
+  { sha: 'a81f2c7', subject: 'feat: 增加插件宿主能力发现', author: '林墨', time: '12 分钟前', refs: ['main', 'origin/main'] },
+  { sha: '72c9e10', subject: 'fix: 修复工作区切换后的旧请求回写', author: '陈屿', time: '1 小时前', refs: [] },
+  { sha: '4b66d21', subject: 'refactor: 收拢 Git 数据访问入口', author: '林墨', time: '昨天 18:42', refs: ['v0.8.0'] },
+  { sha: 'c310a9e', subject: 'test: 补齐危险操作快照回归', author: '周宁', time: '昨天 16:08', refs: [] },
+  { sha: '981af3d', subject: 'feat: 支持提交历史泳道图', author: '陈屿', time: '2 天前', refs: [] }
+];
+const DIFF_LINES = [
+  ['hunk', '', '', '@@ -18,6 +18,10 @@ export function createGateway() {'],
+  ['context', '18', '18', '  const invoke = getHostInvoke();'],
+  ['del', '19', '', '-  return invoke("git_get_status", { workspacePath });'],
+  ['add', '', '19', '+  return invoke("router_dispatch", {'],
+  ['add', '', '20', '+    req: { target: "cap.git", payload: { action, ...params } }'],
+  ['add', '', '21', '+  }).then(unwrapReply);'],
+  ['context', '20', '22', ' }'],
+  ['context', '21', '23', ''],
+  ['context', '22', '24', ' export function getStatus(path: string) {']
+];
+
+const state = {
+  width: 360,
+  theme: 'dark',
+  scenario: 'normal',
+  tab: 'changes',
+  files: structuredClone(BASE_FILES),
+  selected: new Set(['src/host/capGit.ts']),
+  collapsed: new Set(),
+  message: '',
+  amend: false,
+  ai: 'idle',
+  aiText: 'feat: 增加 Git 插件宿主网关并完善提交交互',
+  aiRevision: 1,
+  panelDiff: null,
+  currentFile: 'src/host/capGit.ts',
+  center: 'editor',
+  menu: false,
+  branchMenu: false,
+  busy: false,
+  dialog: null,
+  lastDiscarded: null,
+  mergeResolved: false,
+  task: null,
+  activeCommit: 'a81f2c7',
+  hostContext: 'editor'
+};
+let aiTimer = null;
+let taskTimer = null;
+
+function allFiles() {
+  return [...state.files.conflicted, ...state.files.staged, ...state.files.unstaged, ...state.files.untracked];
+}
+function changeCount() { return allFiles().length; }
+function findFile(path) { return allFiles().find(f => f.path === path); }
+function removeFile(path) {
+  for (const area of ['conflicted', 'staged', 'unstaged', 'untracked']) {
+    const idx = state.files[area].findIndex(f => f.path === path);
+    if (idx >= 0) return state.files[area].splice(idx, 1)[0];
+  }
+  return null;
+}
+function addFile(file, area) {
+  state.files[area].push({ ...file, area, status: area === 'untracked' ? 'A' : file.status });
+}
+function toast(message, action) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = '<span>' + esc(message) + '</span>' + (action ? '<button class="text-button" data-action="' + action.id + '">' + esc(action.label) + '</button>' : '');
+  document.getElementById('toast-zone').appendChild(el);
+  setTimeout(() => el.remove(), action ? 6000 : 3200);
+}
+function iconButton(action, name, label, extra = '') {
+  return '<button class="icon-btn ' + extra + '" data-action="' + action + '" aria-label="' + esc(label) + '" title="' + esc(label) + '">' + icon(name) + '</button>';
+}
+function renderHeader() {
+  return '<div class="panel-header">' +
+    '<button class="repo-button" data-action="workspace-info" title="当前工作区自动绑定；点击查看仓库信息">' + icon('git') + '<span style="min-width:0"><span class="repo-name">Polaris</span><span class="repo-path">D:/space/base/Polaris</span></span>' + icon('down') + '</button>' +
+    '<button class="branch-pill" data-action="branch-menu" title="切换分支">' + icon('branch') + '<span>main</span></button>' +
+    iconButton('refresh', 'refresh', '刷新仓库状态（F5）', state.busy ? 'spin' : '') +
+    iconButton('more-menu', 'more', '更多操作', state.menu ? 'active' : '') +
+  '</div>';
+}
+function renderTabs() {
+  const tabs = [
+    ['changes', 'files', '变更', changeCount()],
+    ['history', 'history', '历史', 0],
+    ['branch', 'branch', '分支', 0],
+    ['remote', 'globe', '远程', 0],
+    ['tags', 'tag', '标签', 0],
+    ['stash', 'archive', 'Stash', 2],
+    ['gitignore', 'ignore', 'Gitignore', 0]
+  ];
+  return '<div class="panel-tabs" role="tablist" aria-label="Git 功能页">' + tabs.map(t =>
+    '<button class="panel-tab ' + (state.tab === t[0] ? 'active' : '') + '" role="tab" aria-selected="' + (state.tab === t[0]) + '" data-action="tab" data-value="' + t[0] + '" title="' + t[2] + '">' + icon(t[1]) + (t[3] ? '<span class="tab-count">' + t[3] + '</span>' : '') + '</button>'
+  ).join('') + '</div>';
+}
+function renderStatus() {
+  if (state.tab !== 'changes' || state.scenario === 'empty') return '';
+  return '<div class="panel-status"><span>' + changeCount() + ' 个改动</span><span class="status-spacer"></span>' +
+    '<button class="sync-action" data-action="pull" title="拉取 origin/main">' + icon('down') + '2</button>' +
+    '<button class="sync-action" data-action="push" title="推送 main">' + icon('up') + '1</button></div>';
+}
+function renderBanners() {
+  // 由真实冲突文件列表驱动，而非演示场景标志：解决后横幅必须消失，避免状态不一致
+  const conflictCount = state.files.conflicted.length;
+  if (conflictCount > 0) {
+    return '<div class="conflict-banner">' + icon('alert') + '<div class="banner-copy"><strong>合并冲突 · ' + conflictCount + ' 个文件</strong>解决所有冲突后再继续合并。</div><button class="text-button" data-action="open-merge">解决冲突</button></div>';
+  }
+  if (state.scenario === 'error') {
+    return '<div class="error-banner">' + icon('alert') + '<div class="banner-copy"><strong>无法读取仓库状态</strong>宿主能力网关返回权限错误。</div><button class="text-button" data-action="refresh">重试</button></div>';
+  }
+  return '';
+}
+function renderSelection() {
+  if (!state.selected.size || state.tab !== 'changes' || state.panelDiff) return '';
+  return '<div class="selection-bar"><span>已选 ' + state.selected.size + ' 项</span>' +
+    '<button class="text-button" data-action="batch-stage">暂存</button>' +
+    '<button class="text-button" data-action="batch-discard" style="color:rgb(var(--c-danger))">丢弃</button>' +
+    iconButton('clear-selection', 'close', '清除选择', 'small') + '</div>';
+}
+function renderFile(file) {
+  const p = splitPath(file.path);
+  const selected = state.selected.has(file.path);
+  const primaryAction = file.area === 'staged' ? 'unstage' : 'stage';
+  const primaryLabel = file.area === 'staged' ? '取消暂存' : '暂存';
+  return '<div class="file-row ' + (selected ? 'selected' : '') + '">' +
+    '<input class="file-check" type="checkbox" data-action="select-file" data-path="' + esc(file.path) + '" ' + (selected ? 'checked' : '') + ' aria-label="选择 ' + esc(file.path) + '">' +
+    '<span class="file-status status-' + file.status.toLowerCase() + '" title="状态 ' + file.status + '">' + file.status + '</span>' +
+    '<button class="file-main" data-action="open-diff" data-path="' + esc(file.path) + '" title="' + esc(file.path) + '"><span class="file-name">' + esc(p.name) + '</span><span class="file-dir">' + esc(p.dir) + '</span></button>' +
+    '<div class="file-actions">' +
+      '<button class="icon-btn small secondary-action" data-action="central-diff" data-path="' + esc(file.path) + '" title="在中央打开 diff" aria-label="在中央打开 diff">' + icon('expand') + '</button>' +
+      '<button class="icon-btn small" data-action="' + primaryAction + '" data-path="' + esc(file.path) + '" title="' + primaryLabel + '" aria-label="' + primaryLabel + '">' + icon(file.area === 'staged' ? 'minus' : 'plus') + '</button>' +
+      '<button class="icon-btn small danger secondary-action" data-action="discard" data-path="' + esc(file.path) + '" title="丢弃变更" aria-label="丢弃变更">' + icon('trash') + '</button>' +
+    '</div></div>';
+}
+function renderGroup(area, title) {
+  const files = state.files[area];
+  if (!files.length) return '';
+  const collapsed = state.collapsed.has(area);
+  return '<section class="change-group"><div class="group-header" data-action="collapse" data-value="' + area + '" role="button" tabindex="0" aria-expanded="' + (!collapsed) + '">' +
+    icon(collapsed ? 'chevron' : 'down') + '<strong>' + title + '</strong><span class="group-count">' + files.length + '</span>' +
+    '<span class="group-actions">' + (area !== 'conflicted' ? '<button class="text-button" data-action="stage-group" data-value="' + area + '">' + (area === 'staged' ? '全部取消' : '全部暂存') + '</button>' : '') + '</span></div>' +
+    (collapsed ? '' : files.map(renderFile).join('')) + '</section>';
+}
+function renderChanges() {
+  if (state.scenario === 'loading') {
+    return '<div style="padding:10px">' + Array(7).fill('<div class="skeleton"></div>').join('') + '</div>';
+  }
+  if (state.scenario === 'error') {
+    return '<div class="empty-state"><div class="empty-icon" style="color:rgb(var(--c-danger));background:rgb(var(--c-danger)/.08)">' + icon('alert') + '</div><strong>暂时无法获取变更</strong><p>请检查宿主权限或仓库路径后重试。</p><button class="secondary-btn" data-action="refresh">重新加载</button></div>';
+  }
+  if (!changeCount()) {
+    return '<div class="empty-state"><div class="empty-icon">' + icon('check') + '</div><strong>工作区是干净的</strong><p>没有未提交改动。可以从历史页查看最近提交。</p><button class="secondary-btn" data-action="tab" data-value="history">查看提交历史</button></div>';
+  }
+  return renderGroup('conflicted', '冲突') + renderGroup('staged', '已暂存') + renderGroup('unstaged', '未暂存') + renderGroup('untracked', '未跟踪');
+}
+function commitScope() {
+  if (state.selected.size) return '提交已选 ' + state.selected.size + ' 个文件';
+  if (state.files.staged.length) return '提交 ' + state.files.staged.length + ' 个已暂存文件';
+  return '请先选择或暂存文件';
+}
+function renderAiSuggestion() {
+  if (state.ai === 'idle') return '';
+  const loading = state.ai === 'loading';
+  return '<div class="ai-suggestion"><div class="ai-title">' + icon('sparkles', loading ? 'spin' : '') + '<span>AI 提交信息</span><span class="ai-state">' + (loading ? '生成中…' : '独立会话 · 可追问') + '</span></div>' +
+    '<div class="ai-text">' + (loading ? '正在分析已选变更与 diff 上下文…' : esc(state.aiText)) + '</div>' +
+    (loading ? '' : '<div class="ai-actions"><button class="text-button" data-action="ai-adopt">采用到提交框</button><button class="text-button" data-action="ai-open">在对话中继续</button><button class="text-button" data-action="ai-generate">重新生成</button></div>') + '</div>';
+}
+function renderCommitDock() {
+  if (state.tab !== 'changes' || state.panelDiff || !changeCount() || ['loading','error'].includes(state.scenario)) return '';
+  const canCommit = (state.message.trim() || state.amend) && (state.selected.size || state.files.staged.length) && !state.busy;
+  return '<div class="commit-dock">' + renderAiSuggestion() +
+    '<div class="commit-input-wrap"><textarea class="commit-input" id="commit-message" placeholder="输入提交信息（Ctrl+Enter 提交）" aria-label="提交信息">' + esc(state.message) + '</textarea>' +
+    '<button class="icon-btn ai-trigger" data-action="ai-generate" aria-label="使用 AI 生成提交信息" title="使用 AI 生成提交信息">' + icon('sparkles') + '</button></div>' +
+    '<div class="commit-footer"><span class="commit-scope" title="' + esc(commitScope()) + '">' + esc(commitScope()) + '</span>' +
+    '<label class="amend-label" title="修改上一次提交"><input type="checkbox" id="amend" ' + (state.amend ? 'checked' : '') + '>amend</label>' +
+    '<button class="primary-btn" id="commit-button" data-action="commit" ' + (!canCommit ? 'disabled' : '') + '>' + icon('send') + '<span class="commit-btn-label">' + (state.busy ? '提交中…' : state.amend ? '修改提交' : '提交') + '</span></button></div></div>';
+}
+function renderDiff() {
+  const file = findFile(state.panelDiff.path) || { path: state.panelDiff.path, additions: 12, deletions: 3, area: 'unstaged' };
+  return '<div class="diff-head"><div class="diff-head-row">' + iconButton('close-diff', 'back', '返回变更列表', 'small') +
+    '<span class="diff-path" title="' + esc(file.path) + '">' + esc(file.path) + '</span>' +
+    iconButton('central-current', 'expand', '在中央打开', 'small') + iconButton('open-file', 'files', '在编辑器打开', 'small') + '</div>' +
+    '<div class="diff-stats"><span>工作区 diff</span><span class="add">+' + (file.additions || 12) + '</span><span class="del">−' + (file.deletions || 3) + '</span></div></div>' +
+    '<div class="diff-code">' + DIFF_LINES.map(l => '<div class="diff-line ' + l[0] + '"><span class="ln">' + l[1] + '</span><span class="ln">' + l[2] + '</span><span>' + (l[0] === 'add' ? '+' : l[0] === 'del' ? '−' : '') + '</span><span>' + esc(l[3]) + '</span></div>').join('') + '</div>' +
+    '<div class="diff-footer"><button class="secondary-btn" data-action="open-file">打开文件</button><span class="spacer"></span><button class="primary-btn" data-action="stage" data-path="' + esc(file.path) + '">' + icon('plus') + '暂存文件</button></div>';
+}
+function renderHistory() {
+  return '<div class="search-row"><div class="search-wrap">' + icon('search') + '<input class="search-input" placeholder="搜索提交信息、SHA 或作者" aria-label="搜索提交历史"></div>' +
+    '<button class="secondary-btn" data-action="history-filter">筛选</button></div>' +
+    COMMITS.map(c => '<div class="commit-row ' + (state.activeCommit === c.sha ? 'active' : '') + '" data-action="commit-detail" data-value="' + c.sha + '" tabindex="0"><div class="lane"><span class="lane-dot"></span></div><div class="commit-info"><div class="commit-subject">' + esc(c.subject) + '</div><div class="commit-meta">' + c.refs.map(r => '<span class="ref-chip">' + esc(r) + '</span>').join('') + esc(c.author) + ' · ' + esc(c.time) + ' · ' + c.sha + '</div></div></div>').join('') +
+    '<div style="padding:8px;text-align:center"><button class="text-button" data-action="load-more">加载更多（每页 500）</button></div>';
+}
+function renderBranches() {
+  const branches = [
+    ['main', '当前分支 · origin/main · ↑1 ↓2', true],
+    ['feature/plugin-host', '2 分钟前 · 领先 main 4 个提交', false],
+    ['fix/workspace-race', '昨天 · 已合并', false],
+    ['release/0.8', '3 天前 · origin/release/0.8', false]
+  ];
+  return '<div class="section-head"><strong>分支</strong><button class="secondary-btn" data-action="new-branch">' + icon('plus') + '新建分支</button></div>' +
+    '<div class="search-row"><div class="search-wrap">' + icon('search') + '<input class="search-input" placeholder="搜索本地或远程分支" aria-label="搜索分支"></div></div>' +
+    '<div class="list-card">' + branches.map(b => '<div class="list-card-row">' + icon('branch') + '<div class="list-card-copy"><div class="list-card-title">' + b[0] + '</div><div class="list-card-sub">' + b[1] + '</div></div>' + (b[2] ? '<span class="current-badge">当前</span>' : '<button class="text-button" data-action="checkout">切换</button>') + '</div>').join('') + '</div>' +
+    '<div class="section-head"><strong>远程分支</strong></div><div class="list-card"><div class="list-card-row">' + icon('cloud') + '<div class="list-card-copy"><div class="list-card-title">origin/main</div><div class="list-card-sub">a81f2c7 · 12 分钟前</div></div></div></div>';
+}
+function renderRemote() {
+  const task = state.task ? '<div class="info-banner">' + icon('refresh', state.task === 'running' ? 'spin' : '') + '<div class="banner-copy"><strong>' + (state.task === 'running' ? '正在推送到 origin/main' : '推送完成') + '</strong>' + (state.task === 'running' ? '写操作执行中；不会显示虚假取消。' : '远程状态已刷新。') + '</div></div>' : '';
+  return task + '<div class="section-head"><strong>同步</strong></div><div style="display:flex;gap:6px;padding:0 9px 10px"><button class="secondary-btn" data-action="fetch">Fetch</button><button class="secondary-btn" data-action="pull">Pull</button><button class="primary-btn" data-action="push">Push</button></div>' +
+    '<div class="section-head"><strong>远程仓库</strong><button class="icon-btn small" data-action="add-remote" aria-label="添加远程">' + icon('plus') + '</button></div>' +
+    '<div class="list-card"><div class="list-card-row">' + icon('globe') + '<div class="list-card-copy"><div class="list-card-title">origin</div><div class="list-card-sub">github.com/misxzaiz/Polaris.git</div></div><button class="text-button" data-action="copy">复制</button></div></div>' +
+    '<div class="info-banner">' + icon('shield') + '<div class="banner-copy"><strong>安全推送</strong>需要强制推送时默认使用 force-with-lease。</div></div>';
+}
+function renderTags() {
+  return '<div class="section-head"><strong>标签</strong><button class="secondary-btn" data-action="new-tag">' + icon('plus') + '创建标签</button></div><div class="list-card">' +
+    [['v0.8.0','4b66d21 · 稳定版本'],['v0.8.0-rc.1','c310a9e · 预发布'],['v0.7.2','e92b7a1 · 补丁版本']].map(t => '<div class="list-card-row">' + icon('tag') + '<div class="list-card-copy"><div class="list-card-title">' + t[0] + '</div><div class="list-card-sub">' + t[1] + '</div></div><button class="text-button" data-action="commit-detail">详情</button></div>').join('') + '</div>';
+}
+function renderStash() {
+  return '<div class="section-head"><strong>Stash</strong><button class="secondary-btn" data-action="stash-save">' + icon('plus') + '保存当前改动</button></div><div class="list-card">' +
+    [['stash@{0}','WIP: 插件面板响应式布局','32 分钟前'],['stash@{1}','实验：AI 原子提交分组','昨天']].map(s => '<div class="list-card-row">' + icon('archive') + '<div class="list-card-copy"><div class="list-card-title">' + s[1] + '</div><div class="list-card-sub">' + s[0] + ' · ' + s[2] + '</div></div><button class="text-button" data-action="stash-apply">应用</button><button class="text-button" data-action="stash-pop">Pop</button></div>').join('') + '</div>' +
+    '<div class="info-banner">' + icon('archive') + '<div class="banner-copy">「应用」保留 Stash；「Pop」在成功后移除对应记录。</div></div>';
+}
+function renderGitignore() {
+  return '<div class="section-head"><strong>.gitignore</strong><button class="secondary-btn" data-action="ignore-template">插入模板</button></div>' +
+    '<textarea class="gitignore-editor" aria-label=".gitignore 内容">node_modules/\ndist/\n.target/\n*.log\n\n# Polaris local state\n.polaris/tmp/\n</textarea>' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:0 9px 12px"><span class="commit-scope">与磁盘内容同步 · 无未保存修改</span><button class="primary-btn" data-action="ignore-save">保存</button></div>';
+}
+function renderPanelBody() {
+  if (state.panelDiff) return renderDiff();
+  let content = '';
+  if (state.tab === 'changes') content = renderChanges();
+  else if (state.tab === 'history') content = renderHistory();
+  else if (state.tab === 'branch') content = renderBranches();
+  else if (state.tab === 'remote') content = renderRemote();
+  else if (state.tab === 'tags') content = renderTags();
+  else if (state.tab === 'stash') content = renderStash();
+  else content = renderGitignore();
+  const scroll = ['history','branch','remote','tags','stash','gitignore'].includes(state.tab) ? '' : 'panel-scroll';
+  return scroll ? '<div class="' + scroll + '">' + content + '</div>' : '<div class="panel-scroll">' + content + '</div>';
+}
+function renderMenu() {
+  if (!state.menu) return '';
+  return '<div class="popover" role="menu"><button class="menu-item" data-action="operations">' + icon('history') + '操作流水</button>' +
+    '<button class="menu-item" data-action="undo-list">' + icon('undo') + '撤销快照</button>' +
+    '<button class="menu-item" data-action="workbench">' + icon('expand') + '全屏工作台</button><div class="menu-separator"></div>' +
+    '<button class="menu-item" data-action="shortcuts">' + icon('settings') + '快捷键与插件信息</button></div>';
+}
+function renderPanel() {
+  const panel = document.getElementById('git-panel');
+  panel.style.width = state.width + 'px';
+  panel.innerHTML = renderHeader() + renderTabs() + renderStatus() + renderBanners() + renderSelection() + renderPanelBody() + renderCommitDock() + renderMenu();
+  const message = document.getElementById('commit-message');
+  if (message) {
+    message.addEventListener('input', e => {
+      state.message = e.target.value;
+      const button = document.getElementById('commit-button');
+      if (button) button.disabled = !((state.message.trim() || state.amend) && (state.selected.size || state.files.staged.length) && !state.busy);
+    });
+  }
+  const amend = document.getElementById('amend');
+  if (amend) amend.addEventListener('change', e => { state.amend = e.target.checked; renderPanel(); });
+}
+function centerTabs(title, type) {
+  return '<div class="center-tabs"><div class="center-tab">' + icon(type) + esc(title) + '</div><div class="center-toolbar">' +
+    '<button data-action="center-editor" class="' + (state.center === 'editor' ? 'active' : '') + '">编辑器</button>' +
+    '<button data-action="center-chat" class="' + (state.center === 'chat' ? 'active' : '') + '">AI 会话</button>' +
+    (state.center !== 'editor' ? '<button data-action="center-editor">关闭</button>' : '') + '</div></div>';
+}
+function renderEditor() {
+  const lines = [
+    ['', '<span class="code-keyword">import</span> { unwrapReply } <span class="code-keyword">from</span> <span class="code-string">"./reply"</span>;'],
+    ['', ''],
+    ['modified', '<span class="code-keyword">export async function</span> capGit(action, params) {'],
+    ['modified', '  <span class="code-keyword">const</span> invoke = getHostInvoke();'],
+    ['added', '  <span class="code-keyword">const</span> reply = <span class="code-keyword">await</span> invoke(<span class="code-string">"router_dispatch"</span>, {'],
+    ['added', '    req: { target: <span class="code-string">"cap.git"</span>, payload: { action, ...params } }'],
+    ['added', '  });'],
+    ['modified', '  <span class="code-keyword">return</span> unwrapReply(reply);'],
+    ['', '}'],
+    ['', ''],
+    ['', '<span class="code-comment">// 工作区由宿主快照自动绑定，不接受手填路径</span>'],
+    ['', '<span class="code-keyword">export function</span> getStatus(workspacePath) {']
+  ];
+  return centerTabs('capGit.ts', 'files') + '<div class="editor-breadcrumbs">src <span>›</span> host <span>›</span> capGit.ts <span style="margin-left:auto;color:rgb(var(--c-warning))">编辑器 Git gutter 已接入</span></div>' +
+    '<div class="editor-code">' + lines.map((l, i) => '<div class="code-row"><span class="code-number">' + (i + 1) + '</span><span class="code-gutter ' + l[0] + '"></span><span>' + l[1] + '</span></div>').join('') + '</div>';
+}
+function renderChat() {
+  const loading = state.ai === 'loading';
+  return centerTabs('AI · 提交信息', 'message') + '<div class="chat-view"><div class="chat-context"><div class="chat-context-title">' + icon('sparkles') + '提交信息生成 · 独立 kind 会话<span class="context-chip">Claude</span></div><div class="context-chips"><span class="context-chip">工作区：Polaris</span><span class="context-chip">仓库：main</span><span class="context-chip">范围：' + (state.selected.size || state.files.staged.length) + ' 个文件</span><span class="context-chip">diff revision #' + state.aiRevision + '</span></div></div>' +
+    '<div class="chat-messages"><div class="chat-message"><div class="chat-avatar">' + icon('files') + '</div><div class="chat-bubble"><strong>你</strong>请根据选中的变更生成简洁的 Conventional Commit 提交信息。</div></div>' +
+    '<div class="chat-message assistant"><div class="chat-avatar">' + icon('sparkles') + '</div><div class="chat-bubble"><strong>AI 助手</strong><div class="chat-answer">' + (loading ? '正在读取结构化变更摘要并生成建议…' : esc(state.aiText)) + '</div>' +
+    (loading ? '' : '<div class="chat-actions"><button class="primary-btn" data-action="ai-adopt">采用到提交框</button><button class="secondary-btn" data-action="ai-followup">继续追问</button></div>') + '</div></div></div>' +
+    '<div class="chat-input-row"><input class="chat-input" placeholder="追问，例如：改成更简短的中文描述" aria-label="追问 AI"><button class="primary-btn" data-action="ai-followup">' + icon('send') + '发送</button></div></div>';
+}
+function renderCentralDiff() {
+  const file = findFile(state.currentFile) || { path: state.currentFile, additions: 12, deletions: 3 };
+  return centerTabs('Diff · ' + splitPath(file.path).name, 'files') + '<div class="editor-breadcrumbs">' + esc(file.path) + '<span style="margin-left:auto">Unified · 字级高亮 · 宿主 DiffViewer</span></div>' +
+    '<div class="diff-code">' + DIFF_LINES.concat(DIFF_LINES).map(l => '<div class="diff-line ' + l[0] + '"><span class="ln">' + l[1] + '</span><span class="ln">' + l[2] + '</span><span>' + (l[0] === 'add' ? '+' : l[0] === 'del' ? '−' : '') + '</span><span>' + esc(l[3]) + '</span></div>').join('') + '</div>';
+}
+function renderMerge() {
+  return centerTabs('冲突解决 · ChangesList.tsx', 'alert') + '<div class="merge-view"><div class="merge-toolbar"><strong>' + (state.mergeResolved ? '冲突已编辑，等待标记解决' : state.files.conflicted.length + ' 个未解决冲突') + '</strong><button class="secondary-btn" data-action="merge-choice" data-value="current">接受当前</button><button class="secondary-btn" data-action="merge-choice" data-value="incoming">接受传入</button><button class="primary-btn" data-action="merge-resolve" ' + (!state.mergeResolved ? 'disabled' : '') + '>标记已解决</button></div>' +
+    '<div class="merge-grid"><section class="merge-pane"><div class="merge-pane-title">当前（Current）</div><div class="merge-code"><div class="merge-conflict">const mode = "sidebar";</div><br>return renderPanel(mode);</div></section>' +
+    '<section class="merge-pane"><div class="merge-pane-title">传入（Incoming）</div><div class="merge-code"><div class="merge-conflict">const mode = "workbench";</div><br>return renderPanel(mode);</div></section>' +
+    '<section class="merge-pane"><div class="merge-pane-title">结果（Result）</div><div class="merge-code"><div class="merge-conflict">' + (state.mergeResolved ? 'const mode = useAdaptiveLayout();' : '<<<<<<< 请选择或手动编辑 >>>>>>>') + '</div><br>return renderPanel(mode);</div><div class="merge-choices"><button class="text-button" data-action="merge-choice" data-value="both">保留双方</button><button class="text-button" data-action="merge-choice" data-value="ai">AI 建议（需确认）</button></div></section></div></div>';
+}
+function renderWorkbench() {
+  return centerTabs('Git · 全屏工作台', 'git') + '<div class="workbench"><section class="workbench-main"><div class="section-head"><strong>提交历史与分支关系</strong><span class="context-chip">500 / 页</span></div>' + renderHistory() + '</section><aside class="workbench-side"><div class="section-head"><strong>当前改动</strong></div>' + (allFiles().map(renderFile).join('') || '<div class="empty-state"><strong>没有改动</strong></div>') + '</aside></div>';
+}
+function renderCenter() {
+  const center = document.getElementById('center-stage');
+  if (state.center === 'chat') center.innerHTML = renderChat();
+  else if (state.center === 'diff') center.innerHTML = renderCentralDiff();
+  else if (state.center === 'merge') center.innerHTML = renderMerge();
+  else if (state.center === 'workbench') center.innerHTML = renderWorkbench();
+  else center.innerHTML = renderEditor();
+}
+function renderDialog() {
+  const root = document.getElementById('dialog-root');
+  if (!state.dialog) { root.innerHTML = ''; return; }
+  const batch = state.dialog.type === 'batch';
+  const count = batch ? state.selected.size : 1;
+  root.innerHTML = '<div class="dialog-mask" role="presentation"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div class="dialog-head"><span class="danger-icon">' + icon('alert') + '</span><strong id="dialog-title">丢弃 ' + count + ' 个文件的变更？</strong></div>' +
+    '<div class="dialog-body"><p>此操作会覆盖工作区内容，提交框草稿不会受影响。</p><div class="impact-box"><div>影响范围：' + count + ' 个文件</div><div>' + (batch ? '包括已选中的暂存与未暂存变更' : esc(state.dialog.path)) + '</div><div>未跟踪文件将单独检查可恢复性</div></div><div class="safety-note">' + icon('shield') + '执行前创建快照；成功后可从通知中撤销。</div></div>' +
+    '<div class="dialog-actions"><button class="secondary-btn" data-action="dialog-cancel">取消</button><button class="danger-btn" data-action="dialog-confirm">丢弃 ' + count + ' 个文件</button></div></div></div>';
+  const cancel = root.querySelector('[data-action="dialog-cancel"]');
+  if (cancel) cancel.focus();
+}
+function renderControls() {
+  document.querySelectorAll('[data-action="width"]').forEach(b => b.classList.toggle('active', Number(b.dataset.value) === state.width));
+  document.getElementById('scenario').value = state.scenario;
+  document.getElementById('theme-button').textContent = state.theme === 'dark' ? '切换浅色' : '切换深色';
+  document.documentElement.dataset.theme = state.theme;
+}
+function renderAll() { renderControls(); renderPanel(); renderCenter(); renderDialog(); }
+
+function resetScenario(name) {
+  clearTimeout(aiTimer);
+  clearTimeout(taskTimer);
+  state.scenario = name;
+  state.files = structuredClone(BASE_FILES);
+  if (name === 'conflict') state.files.conflicted = [{ path: 'src/components/ChangesList.tsx', status: 'U', area: 'conflicted', additions: 8, deletions: 8 }];
+  if (name === 'empty') state.files = { staged: [], unstaged: [], untracked: [], conflicted: [] };
+  state.selected.clear();
+  state.ai = 'idle';
+  state.panelDiff = null;
+  state.center = 'editor';
+  state.mergeResolved = false;
+  state.task = null;
+  state.menu = false;
+}
+function generateAi() {
+  clearTimeout(aiTimer);
+  state.ai = 'loading';
+  state.center = 'chat';
+  state.menu = false;
+  renderAll();
+  const revision = ++state.aiRevision;
+  aiTimer = setTimeout(() => {
+    if (state.ai !== 'loading' || revision !== state.aiRevision) return;
+    state.aiText = state.selected.size > 1 ? 'refactor: 收拢 Git 插件数据通道并补充工作区测试' : 'feat: 增加 Git 插件宿主网关并完善提交交互';
+    state.ai = 'ready';
+    renderAll();
+    toast('AI 建议已生成，采用后仍需人工提交');
+  }, 900);
+}
+function stageFile(path, targetArea) {
+  const file = removeFile(path);
+  if (!file) return;
+  const area = targetArea || (file.area === 'staged' ? 'unstaged' : 'staged');
+  addFile(file, area);
+  state.panelDiff = null;
+  renderAll();
+  toast(area === 'staged' ? '已暂存 ' + splitPath(path).name : '已取消暂存 ' + splitPath(path).name);
+}
+function openDiff(path, central = false) {
+  state.currentFile = path;
+  state.menu = false;
+  if (central || state.width < 280) {
+    state.center = 'diff';
+    state.panelDiff = null;
+  } else {
+    state.panelDiff = { path };
+  }
+  renderAll();
+}
+function commit() {
+  const canCommit = (state.message.trim() || state.amend) && (state.selected.size || state.files.staged.length);
+  if (!canCommit || state.busy) return;
+  state.busy = true;
+  renderAll();
+  setTimeout(() => {
+    const paths = state.selected.size ? Array.from(state.selected) : state.files.staged.map(f => f.path);
+    paths.forEach(removeFile);
+    state.selected.clear();
+    state.message = '';
+    state.amend = false;
+    state.busy = false;
+    state.ai = 'idle';
+    renderAll();
+    toast('原型：提交完成 · ' + paths.length + ' 个文件（未执行真实 Git）');
+  }, 700);
+}
+
+document.addEventListener('click', event => {
+  const el = event.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  const path = el.dataset.path;
+  if (!['select-file'].includes(action)) event.preventDefault();
+  switch (action) {
+    case 'width': state.width = Number(el.dataset.value); state.panelDiff = null; renderAll(); break;
+    case 'theme': state.theme = state.theme === 'dark' ? 'light' : 'dark'; renderControls(); break;
+    case 'tab': state.tab = el.dataset.value; state.panelDiff = null; state.menu = false; renderAll(); break;
+    case 'refresh':
+      state.busy = true; state.menu = false; renderAll();
+      setTimeout(() => { state.busy = false; if (state.scenario === 'error') state.scenario = 'normal'; renderAll(); toast('仓库状态已刷新（模拟）'); }, 600);
+      break;
+    case 'workspace-info': toast('工作区由宿主自动绑定：Polaris / main'); break;
+    case 'branch-menu': state.tab = 'branch'; state.menu = false; renderAll(); break;
+    case 'more-menu': state.menu = !state.menu; renderPanel(); break;
+    case 'collapse': {
+      const area = el.dataset.value;
+      if (state.collapsed.has(area)) state.collapsed.delete(area); else state.collapsed.add(area);
+      renderPanel(); break;
+    }
+    case 'select-file': {
+      if (el.checked) state.selected.add(path); else state.selected.delete(path);
+      renderPanel(); break;
+    }
+    case 'clear-selection': state.selected.clear(); renderPanel(); break;
+    case 'open-diff': openDiff(path); break;
+    case 'central-diff': openDiff(path, true); break;
+    case 'central-current': openDiff(state.currentFile, true); break;
+    case 'close-diff': state.panelDiff = null; renderPanel(); break;
+    case 'open-file': state.center = 'editor'; state.panelDiff = null; renderAll(); break;
+    case 'stage': case 'unstage': stageFile(path); break;
+    case 'stage-group': {
+      event.stopPropagation();
+      const area = el.dataset.value;
+      const files = [...state.files[area]];
+      files.forEach(f => stageFile(f.path, area === 'staged' ? 'unstaged' : 'staged'));
+      break;
+    }
+    case 'batch-stage': {
+      const paths = Array.from(state.selected);
+      paths.forEach(p => { const f = findFile(p); if (f && f.area !== 'staged') stageFile(p, 'staged'); });
+      renderAll(); break;
+    }
+    case 'discard': state.dialog = { type: 'single', path }; renderDialog(); break;
+    case 'batch-discard': state.dialog = { type: 'batch' }; renderDialog(); break;
+    case 'dialog-cancel': state.dialog = null; renderDialog(); break;
+    case 'dialog-confirm': {
+      const paths = state.dialog.type === 'batch' ? Array.from(state.selected) : [state.dialog.path];
+      state.lastDiscarded = paths.map(removeFile).filter(Boolean);
+      paths.forEach(p => state.selected.delete(p));
+      state.dialog = null;
+      renderAll();
+      toast('已丢弃变更；快照已创建（模拟）', { id: 'undo-discard', label: '撤销' });
+      break;
+    }
+    case 'undo-discard': if (state.lastDiscarded) { state.lastDiscarded.forEach(f => addFile(f, f.area)); state.lastDiscarded = null; renderAll(); toast('已从快照恢复（模拟）'); } break;
+    case 'ai-generate': generateAi(); break;
+    case 'ai-adopt':
+      if (state.ai !== 'ready') break;
+      state.message = state.aiText; state.tab = 'changes'; state.panelDiff = null; renderAll();
+      toast('建议已写入提交框，尚未提交');
+      setTimeout(() => { const input = document.getElementById('commit-message'); if (input) input.focus(); }, 0);
+      break;
+    case 'ai-open': state.center = 'chat'; renderCenter(); break;
+    case 'ai-followup': toast('追问将保留在同一独立 kind 会话（原型演示）'); break;
+    case 'commit': commit(); break;
+    case 'open-merge': state.center = 'merge'; state.mergeResolved = false; renderCenter(); break;
+    case 'merge-choice': state.mergeResolved = true; renderCenter(); toast(el.dataset.value === 'ai' ? 'AI 草稿已放入结果，需人工确认' : '选择已写入结果窗格'); break;
+    case 'merge-resolve': {
+      if (!state.mergeResolved) break;
+      const conflict = state.files.conflicted[0];
+      if (conflict) { removeFile(conflict.path); addFile({ ...conflict, status: 'M' }, 'staged'); }
+      state.center = 'diff'; renderAll(); toast('冲突已解决并进入已暂存（模拟）'); break;
+    }
+    case 'commit-detail': state.activeCommit = el.dataset.value || state.activeCommit; state.center = 'diff'; renderAll(); break;
+    case 'workbench': state.center = 'workbench'; state.menu = false; renderAll(); break;
+    case 'center-editor': state.center = 'editor'; renderCenter(); break;
+    case 'center-chat': if (state.ai === 'idle') generateAi(); else { state.center = 'chat'; renderCenter(); } break;
+    case 'push':
+      clearTimeout(taskTimer); state.tab = 'remote'; state.task = 'running'; renderAll();
+      taskTimer = setTimeout(() => { state.task = 'done'; renderAll(); toast('Push 已完成（模拟）'); }, 1200); break;
+    case 'pull': case 'fetch': toast((action === 'pull' ? 'Pull' : 'Fetch') + ' 长任务已创建，进度由宿主事件驱动（模拟）'); break;
+    case 'new-branch': case 'new-tag': case 'add-remote': case 'stash-save': case 'ignore-template': toast('已打开对应创建/编辑流程（原型占位）'); break;
+    case 'checkout': toast('切换前将检查本地改动风险（模拟）'); break;
+    case 'stash-apply': toast('Stash 已应用，记录保留（模拟）'); break;
+    case 'stash-pop': toast('Stash 成功后移除记录（模拟）'); break;
+    case 'ignore-save': toast('.gitignore 已保存（模拟）'); break;
+    case 'copy': toast('远程地址已复制（模拟）'); break;
+    case 'load-more': toast('下一页提交将追加到列表，不替换已有数据'); break;
+    case 'history-filter': toast('筛选条件：分支 / 作者 / 路径 / 日期'); break;
+    case 'operations': case 'undo-list': case 'shortcuts': state.menu = false; renderPanel(); toast('对应面板入口已触发（原型演示）'); break;
+  }
+});
+document.getElementById('scenario').addEventListener('change', e => { resetScenario(e.target.value); renderAll(); });
+document.addEventListener('keydown', event => {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && event.target.id === 'commit-message') {
+    event.preventDefault(); commit(); return;
+  }
+  if (event.key === 'F5' && !event.target.closest('input, textarea, [role="dialog"]')) {
+    event.preventDefault(); document.querySelector('[data-action="refresh"]')?.click(); return;
+  }
+  if (event.key === 'Escape') {
+    if (state.dialog) { state.dialog = null; renderDialog(); }
+    else if (state.menu) { state.menu = false; renderPanel(); }
+    else if (state.panelDiff) { state.panelDiff = null; renderPanel(); }
+    else if (state.selected.size) { state.selected.clear(); renderPanel(); }
+  }
+});
+document.addEventListener('click', event => {
+  if (state.menu && !event.target.closest('.popover') && !event.target.closest('[data-action="more-menu"]')) {
+    state.menu = false; renderPanel();
+  }
+});
+
+document.getElementById('brand-icon').innerHTML = icon('git');
+document.getElementById('activity-logo').innerHTML = icon('git');
+document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
+renderAll();
+</script>
+</body>
+</html>
