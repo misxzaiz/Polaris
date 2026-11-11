@@ -369,6 +369,10 @@ pub fn create_app_state(
     // 对账循环由各 bin 启动路径在 tokio runtime 内 spawn（lib.rs / polaris-web）。
     plugin_service_manager
         .set_data_root(crate::services::data_root::data_root().root().to_path_buf());
+    // 孤儿清杀降级排除表数据源（spec plans/supervisor-orphan-kill-false-positive-fix.md）：
+    // Job Object 不可用时 supervisor 读注册表逐引擎收集活跃适配器 PID，
+    // 防误杀 codebuddy/qoder 等引擎适配器进程。
+    plugin_service_manager.set_engine_registry(engine_registry.clone());
     let router = {
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
         use crate::services::router::{
@@ -704,7 +708,7 @@ pub fn create_app_state(
         sessions: Arc::new(Mutex::new(HashMap::new())),
         context_store: state_context_store.clone(),
         integration_manager: AsyncMutex::new(integration_manager),
-        engine_registry,
+        engine_registry: engine_registry.clone(),
             terminal_manager: Mutex::new(TerminalManager::new()),
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
         pending_questions: Arc::new(Mutex::new(HashMap::new())),

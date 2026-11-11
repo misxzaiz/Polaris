@@ -892,6 +892,16 @@ impl AIEngine for PluginProcessEngine {
     fn has_active_session(&self, session_id: &str) -> bool {
         self.sessions.get(session_id).is_some()
     }
+
+    /// 孤儿清杀降级排除表（spec plans/supervisor-orphan-kill-false-positive-fix.md）：
+    /// 适配器进程命令行含 `<dataRoot>\plugins\` 路径特征，Job Object 不可用时
+    /// 须由本引擎申报活跃 PID，避免被 supervisor 误杀（codebuddy 11-11 事故根因）。
+    fn active_adapter_pids(&self) -> Vec<u32> {
+        match self.sessions.shared().lock() {
+            Ok(sessions) => sessions.values().map(|info| info.pid).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]

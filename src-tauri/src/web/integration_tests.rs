@@ -84,7 +84,8 @@ let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/
         dispatched_tasks: Arc::new(Mutex::new(HashMap::new())),
         ask_listener: Arc::new(OnceLock::new()),
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
-        scheduler_daemon: AsyncMutex::new(None),
+        // B1-6 调度器域出仓：scheduler_daemon / executor_registry 字段已随
+        // scheduler 域迁移删除（2026-11-11），此处同步移除字面量。
         lsp_manager: Mutex::new(LspManager::new()),
         lsp_config: Mutex::new(LspConfigRepository::new(&std::path::PathBuf::from("/tmp"))),
         #[cfg(feature = "lsp-index")] // 字段本身按 feature 门控（state.rs lsp_index_service），测试字面量同步门控，保 no-default 测试车道可编译
@@ -108,7 +109,6 @@ let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/
                 Arc::new(crate::services::router::EventAdapter::new(8)),
             ),
         ),
-        executor_registry: crate::services::executor::create_builtin_registry(),
 router: {
             use crate::contracts::Router as _;
             // 测试使用与生产装配一致的 PolicyPermission（含内置管理面收紧规则），

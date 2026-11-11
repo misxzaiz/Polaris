@@ -40,6 +40,12 @@ impl EngineRegistry {
         self.engines.insert(id, engine);
     }
 
+    /// 遍历全部引擎（supervisor 孤儿清杀降级排除表：逐引擎收集活跃适配器 PID，
+    /// spec plans/supervisor-orphan-kill-false-positive-fix.md §降级路径）。
+    pub fn engines(&self) -> impl Iterator<Item = &dyn AIEngine> {
+        self.engines.values().map(|e| e.as_ref())
+    }
+
     /// 设置默认引擎
     pub fn set_default(&mut self, id: EngineId) -> Result<()> {
         if self.engines.contains_key(&id) {

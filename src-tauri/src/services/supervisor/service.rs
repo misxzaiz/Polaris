@@ -118,6 +118,10 @@ pub struct SupervisorInner {
     data_root: std::sync::OnceLock<PathBuf>,
     /// 最近动作环形日志（短字符串、无 await——std 锁足够）
     recent_actions: std::sync::Mutex<VecDeque<String>>,
+    /// 引擎注册表（孤儿清杀降级排除表数据源）。装配期一次写入，tick 读。
+    engine_registry: std::sync::OnceLock<
+        Arc<tokio::sync::Mutex<crate::ai::registry::EngineRegistry>>,
+    >,
 }
 
 #[derive(Clone)]
@@ -139,6 +143,7 @@ impl ServiceSupervisor {
                 status_tx,
                 data_root: std::sync::OnceLock::new(),
                 recent_actions: std::sync::Mutex::new(VecDeque::new()),
+                engine_registry: std::sync::OnceLock::new(),
             }),
         }
     }
@@ -146,6 +151,15 @@ impl ServiceSupervisor {
     /// 注入数据根（registry 落盘位置 + 孤儿扫描特征）。装配时调用一次（幂等，首次生效）。
     pub fn set_data_root(&self, data_root: PathBuf) {
         let _ = self.inner.data_root.set(data_root);
+    }
+
+    /// 注入引擎注册表（孤儿清杀降级排除表数据源）。装配时调用一次
+    /// （幂等，首次生效）；须在 run_loop spawn 之前完成。
+    pub fn set_engine_registry(
+        &self,
+        registry: Arc<tokio::sync::Mutex<crate::ai::registry::EngineRegistry>>,
+    ) {
+        let _ = self.inner.engine_registry.set(registry);
     }
 
     pub fn subscribe_status(&self) -> broadcast::Receiver<ServiceStatus> {
@@ -414,9 +428,39 @@ impl ServiceSupervisor {
         let data_root = self.inner.data_root.get().cloned();
 
         // ── 1. 观测：OS 进程表快照 + 孤儿扫描 ──
+        // 孤儿排除表（spec plans/supervisor-orphan-kill-false-positive-fix.md）：
+        // 首选 Job Object 成员（宿主认领的进程全集）；不可用（Job 未初始化/
+        // 非 Windows）降级为在管 PID ∪ 引擎活跃适配器 PID。
         let snapshot = ProcessSnapshot::capture();
         let orphan_pids = match &data_root {
-            Some(root) => collect_orphans(&snapshot, root),
+            Some(root) => {
+                let exclude_pids: Vec<u32> = match super::job::job_member_pids() {
+                    Some(job_pids) => {
+                        tracing::debug!("孤儿扫描排除（Job 成员）：{} 个", job_pids.len());
+                        job_pids.into_iter().collect()
+                    }
+                    None => {
+                        // 降级：在管 PID ∪ 引擎申报的活跃适配器 PID
+                        // （registry 锁为微秒级临界区，无长持锁风险）
+                        let mut exclude: Vec<u32> = {
+                            let st = self.inner.state.lock().await;
+                            st.epochs.values().map(|r| r.pid).collect()
+                        };
+                        if let Some(registry_arc) = self.inner.engine_registry.get() {
+                            let registry = registry_arc.lock().await;
+                            for engine in registry.engines() {
+                                exclude.extend(engine.active_adapter_pids());
+                            }
+                        }
+                        tracing::debug!(
+                            "孤儿扫描排除（降级：在管+引擎申报）：{} 个",
+                            exclude.len()
+                        );
+                        exclude
+                    }
+                };
+                collect_orphans(&snapshot, root, &exclude_pids)
+            }
             None => Vec::new(),
         };
 
@@ -514,6 +558,18 @@ impl ServiceSupervisor {
                     self.note_action(msg);
                 }
                 Action::KillOrphan { pid, .. } => {
+                    // 动作前重验（幂等不变式，与 Kill 同范式）：决策与执行之间
+                    // 恰有新进程 spawn 且已收容进 Job（spawn→assign 为同步代码块），
+                    // 该进程已被宿主认领，不再是孤儿——跳过并留痕。
+                    if matches!(super::job::is_job_member(pid), Some(true)) {
+                        let msg = format!(
+                            "孤儿清杀跳过 pid={}：执行时已是 Job 成员（新收容进程）",
+                            pid
+                        );
+                        tracing::info!("supervisor: {}", msg);
+                        self.note_action(msg);
+                        continue;
+                    }
                     let ok = super::proc_kill::kill_pid(pid);
                     let msg = format!(
                         "孤儿清杀 pid={}：{}",
@@ -842,14 +898,23 @@ fn spawn_env(ctx: &StartContext, epoch: u64, key: &ServiceKey) -> Vec<(String, S
     env
 }
 
-/// 孤儿收集：命令行含 `<dataRoot>\plugins\` 且 PID ∉ 在管记录、非自身。
-fn collect_orphans(snapshot: &ProcessSnapshot, data_root: &std::path::Path) -> Vec<u32> {
+/// 孤儿收集：命令行含 `<dataRoot>\plugins\` 且 PID ∉ 排除表的进程。
+///
+/// 排除表语义（spec plans/supervisor-orphan-kill-false-positive-fix.md）：
+/// 「宿主认领的进程」不是孤儿。首选判据 = Job Object 成员（宿主全部直接
+/// 子进程 spawn 即收容，收容即认领——排除表天然完备，新增 spawn 点无需登记）；
+/// Job 不可用时降级 = 在管 epochs PID ∪ 各引擎活跃适配器 PID。
+///
+/// 2026-11-11 事故根因：此前排除表恒空，命令行含 plugins 路径的**在管服务与
+/// 引擎适配器**（codebuddy/qoder 等）被 10s tick 周期性误杀——codebuddy 会话
+/// 100% 失败、supervisor 服务陷入「拉起→自杀→重拉」循环。
+fn collect_orphans(snapshot: &ProcessSnapshot, data_root: &std::path::Path, exclude: &[u32]) -> Vec<u32> {
     let fragment = format!(
         "{root}{sep}plugins{sep}",
         root = data_root.to_string_lossy(),
         sep = std::path::MAIN_SEPARATOR
     );
-    snapshot.find_by_cmd_fragment(&fragment, &[])
+    snapshot.find_by_cmd_fragment(&fragment, exclude)
 }
 
 /// status 推导（对外协议冻结；语义对齐旧版）。

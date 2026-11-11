@@ -465,6 +465,41 @@ mod tests {
         assert!(epochs.get(&key("p", "s")).is_some(), "在管记录保留");
     }
 
+    /// 排除语义契约（spec plans/supervisor-orphan-kill-false-positive-fix.md）：
+    /// `orphan_pids` 必须是**已通过排除判定**的进程（调用方在观测层完成
+    /// Job 成员/引擎 PID 排除）。2026-11-11 事故回归固定用例：旧实现排除表
+    /// 恒空，codebuddy 适配器（命令行含 plugins 路径、Job 成员、随会话生灭）
+    /// 被 10s tick 周期性误杀。本用例固定「排除发生在观测层」的分层契约：
+    /// 观测层传入的 orphan_pids 就是终判名单，reconciler 不做二次排除。
+    #[test]
+    fn t7b_orphan_exclusion_happens_in_observation_layer() {
+        let desires = vec![desire("p", "s", true, 10)];
+        let mut epochs = HashMap::from([(key("p", "s"), rec(100, 0))]);
+        let mut budgets = HashMap::new();
+        // 模拟观测层正确排除后的输入：适配器 PID 500（Job 成员）已被剔除，
+        // 仅剩真孤儿 600。若观测层回归「排除表恒空」，500 会被一并传入。
+        let obs = HashMap::from([(
+            key("p", "s"),
+            Observed {
+                alive: Some(true),
+                healthy: Some(true),
+                orphan_pids: vec![600],
+            },
+        )]);
+        let actions = reconcile(
+            &desires, &obs, &mut epochs, &mut budgets,
+            &ReconcileParams { now_ms: 1000, ..Default::default() },
+        );
+        let orphans: Vec<u32> = actions
+            .iter()
+            .filter_map(|a| match a {
+                Action::KillOrphan { pid, .. } => Some(*pid),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(orphans, vec![600], "仅真孤儿被清杀");
+    }
+
     /// 矩阵行 3：健康连败 ≥3 → 僵死处决 + 退避；未达阈值仅累计。
     #[test]
     fn t8_zombie_killed_after_health_threshold() {

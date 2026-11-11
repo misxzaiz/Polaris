@@ -735,6 +735,16 @@ pub trait AIEngine: Send + Sync {
         false
     }
 
+    /// 本引擎当前活跃的适配器/CLI 进程 PID 集合。
+    ///
+    /// 用途：supervisor 孤儿清杀的降级排除表（Job Object 不可用时的兜底，
+    /// spec plans/supervisor-orphan-kill-false-positive-fix.md §降级路径）——
+    /// 引擎 spawn 的进程不在 supervisor 管表内，须由引擎自行申报，
+    /// 否则会被路径特征误杀。默认空（无子进程的引擎无需实现）。
+    fn active_adapter_pids(&self) -> Vec<u32> {
+        Vec::new()
+    }
+
     fn update_config(&mut self, _new_config: Config) {}
 
     /// 清理引擎资源（动态分发，用于 Box<dyn AIEngine> 场景）

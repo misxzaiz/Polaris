@@ -22,8 +22,8 @@ mod imp {
     use windows_sys::Win32::Foundation::HANDLE;
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        QueryInformationJobObject, SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_PROCESS_ID_LIST,
     };
 
     static JOB: OnceLock<usize> = OnceLock::new();
@@ -69,6 +69,61 @@ mod imp {
         unsafe { AssignProcessToJobObject(job as HANDLE, handle) != 0 }
     }
 
+    /// 枚举本宿主 Job Object 内全部进程 PID。
+    ///
+    /// 用途：孤儿清杀的排除全集（spec plans/supervisor-orphan-kill-false-positive-fix.md）。
+    /// 宿主认领的进程 = Job 成员；孤儿 = 路径特征命中 && ∉ Job。
+    /// 返回 None 表示 Job 未初始化（收容降级）——调用方走降级排除路径。
+    /// 调用方持 std Mutex 时调用安全（本函数零锁、纯 FFI 查询）。
+    pub fn job_member_pids() -> Option<std::collections::HashSet<u32>> {
+        use windows_sys::Win32::System::JobObjects::JobObjectBasicProcessIdList;
+
+        let &job = JOB.get()?;
+        // JOBOBJECT_BASIC_PROCESS_ID_LIST：首字段 NumberOfAssignedProcesses 为
+        // 所需容量提示。先按提示分配查询；缓冲不足（两调用间又有进程加入）则
+        // 按返回的实际需求扩容重试一次。上限防御异常值。
+        let mut capacity: usize = 16;
+        for _ in 0..2 {
+            let mut buf = vec![0u64; 1 + capacity];
+            let ok = unsafe {
+                QueryInformationJobObject(
+                    job as HANDLE,
+                    JobObjectBasicProcessIdList,
+                    buf.as_mut_ptr() as *mut core::ffi::c_void,
+                    (buf.len() * std::mem::size_of::<u64>()) as u32,
+                    std::ptr::null_mut(),
+                )
+            };
+            if ok != 0 {
+                let list = unsafe { &*(buf.as_ptr() as *const JOBOBJECT_BASIC_PROCESS_ID_LIST) };
+                return Some(
+                    list.ProcessIdList
+                        .iter()
+                        .take(list.NumberOfProcessIdsInList as usize)
+                        .map(|&pid| pid as u32)
+                        .collect(),
+                );
+            }
+            // 失败：容量不足时 NumberOfAssignedProcesses 提示所需数量；
+            // 其余错误（job 句柄无效等）重试同样结果，直接退出。
+            let list = unsafe { &*(buf.as_ptr() as *const JOBOBJECT_BASIC_PROCESS_ID_LIST) };
+            let need = list.NumberOfAssignedProcesses as usize;
+            if need > 0 && need < 100_000 {
+                capacity = need;
+            } else {
+                break;
+            }
+        }
+        // Job 存在但查询失败：保守返回空集（不误杀优先于彻底清扫）。
+        Some(std::collections::HashSet::new())
+    }
+
+    /// 判断 PID 是否为本宿主 Job 成员（KillOrphan 动作前重验用）。
+    /// None = Job 判定不可用（调用方按各自语义决定放行/降级）。
+    pub fn is_job_member(pid: u32) -> Option<bool> {
+        job_member_pids().map(|set| set.contains(&pid))
+    }
+
     /// 将 tokio 子进程收进 Job（spawn 成功后立即调用）。
     pub fn assign_child(child: &tokio::process::Child) -> bool {
         match child.raw_handle() {
@@ -108,14 +163,26 @@ mod imp {
     pub fn assign_std_child(_child: &std::process::Child) -> bool {
         true
     }
+
+    /// 非 Windows 无 Job Object：返回 None 表示「Job 成员判定不可用」，
+    /// 调用方降级为在管 PID ∪ 引擎活跃 PID 排除（spec §降级路径）。
+    pub fn job_member_pids() -> Option<std::collections::HashSet<u32>> {
+        None
+    }
+
+    pub fn is_job_member(_pid: u32) -> Option<bool> {
+        None
+    }
 }
 
-pub use imp::{assign_child, assign_std_child, ensure_initialized};
+/// Windows：Job 成员判定可用；None 仅出现在 Job 未初始化（收容降级）。
+#[cfg(windows)]
+pub use imp::{assign_child, assign_std_child, ensure_initialized, is_job_member, job_member_pids};
 
 #[cfg(windows)]
 #[cfg(test)]
 mod tests {
-    use super::imp::{assign_child, ensure_initialized};
+    use super::imp::{assign_child, ensure_initialized, job_member_pids};
 
     /// 收容所可初始化且幂等；真实 spawn 的子进程 assign 成功
     /// （cmd /c exit 即退，无残留）。真实宿主强杀的 OS 级行为由 e2e 冒烟覆盖（验收 B1）。
@@ -130,6 +197,36 @@ mod tests {
             .expect("测试环境可 spawn cmd");
         assert!(assign_child(&child), "真实子进程应收容成功");
         let mut child = child;
+        let _ = child.wait().await;
+    }
+
+    /// Job 成员枚举可用，且 assign 后的子进程 ∈ 成员集合
+    /// （孤儿清杀误杀修复的核心判据，spec
+    /// plans/supervisor-orphan-kill-false-positive-fix.md）。
+    /// 用长驻子进程（ping -n 10）避免退出竞态；测试尾部不等待结束，
+    /// 由 KILL_ON_JOB_CLOSE / 测试进程退出兜底回收。
+    #[tokio::test]
+    async fn job_member_pids_contains_assigned_child() {
+        assert!(ensure_initialized());
+        let child = tokio::process::Command::new("cmd")
+            .args(["/C", "ping -n 10 127.0.0.1 > NUL"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("测试环境可 spawn cmd");
+        assert!(assign_child(&child));
+        let pid = child.id().expect("应有 pid");
+        // assign 是异步生效的 OS 调用，微小间隔后查询
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let members = job_member_pids().expect("Job 已初始化，成员枚举应可用");
+        assert!(
+            members.contains(&pid),
+            "assign 后的子进程 PID={pid} 应在 Job 成员集合中，实际 {members:?}"
+        );
+        // 清理：直接杀掉测试子进程（kill 的是直接子进程 cmd，ping 由 /T 语义随树终止）
+        let mut child = child;
+        let _ = child.start_kill();
         let _ = child.wait().await;
     }
 }
