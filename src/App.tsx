@@ -45,7 +45,8 @@ const ReferencesPanel = lazy(() => import('./components/Editor/ReferencesPanel')
 const DefinitionPeek = lazy(() => import('./components/Editor/DefinitionPeek').then(m => ({ default: m.DefinitionPeek })));
 
 // 懒加载大型面板组件，减少初始 bundle 大小
-const GitPanel = lazy(() => import('./components/GitPanel').then(m => ({ default: m.GitPanel })));
+// Git 面板已插件化（2026-11-12）：内置 GitPanel 移出主仓，git.panel 席位由
+// polaris-git 插件 shadow 接管；未启用插件时渲染 GitPanelPlaceholder 兜底。
 const TranslatePanel = lazy(() => import('./components/Translate/TranslatePanel').then(m => ({ default: m.TranslatePanel })));
 const TerminalPanel = lazy(() => import('./components/Terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
 const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel').then(m => ({ default: m.DemoPluginPanel })));
@@ -57,13 +58,14 @@ const RadioBroadcastPanel = lazy(() => import('./components/RadioBroadcast/Radio
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
 import { useNarrowTabStore } from './stores/narrowTabStore';
+import { initGitStatusWatcher } from './stores/gitStore/fileWatcherSubscriber';
+import { GitPanelPlaceholder } from './components/GitPanelPlaceholder';
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
 import { useSessionMetadataList, useActiveSessionId } from './stores/conversationStore/sessionStoreManager';
 import { useOverlayStore } from './stores/overlayStore';
 import { eventBus } from './services/eventBus';
-import { getFileNameFromPath } from './utils/path';
 import './index.css';
 import './App.css';
 
@@ -181,9 +183,6 @@ function App() {
   const showSessionHistory = useViewStore(state => state.showSessionHistory);
   const showNotificationCenter = useViewStore(state => state.showNotificationCenter);
   const narrowTabId = useNarrowTabStore(state => state.narrowTabId);
-  const openNarrowTab = useNarrowTabStore(state => state.openNarrowTab);
-  const openDiffTab = useTabStore(state => state.openDiffTab);
-  const openEditorTab = useTabStore(state => state.openEditorTab);
   const hasOpenTabs = useTabStore(state => state.tabs.length > 0);
 
   // === 拆分后的 Hooks ===
@@ -279,19 +278,17 @@ function App() {
   // 终端全屏模式优先级更高，由 fullscreen 分支单独处理。
   const leftPanelFillRemaining = !hasCenterStage && rightPanelCollapsed && !terminalFullscreen;
 
-  // 打开 diff tab：窄窗口下 CenterStage 不渲染，tab 静默创建无反馈，
-  // 同步打开窄窗口 tab 覆盖层（NarrowTabOverlay 按 tab.type 分流渲染）。
-  // tab 意图保留，窗口拖宽后 CenterStage 接管同一批 tab。
-  const openDiffTabWithNarrowOverlay = useCallback((diff: Parameters<typeof openDiffTab>[0], options?: Parameters<typeof openDiffTab>[1]) => {
-    const tabId = openDiffTab(diff, options);
-    if (isCompact) {
-      openNarrowTab(tabId);
-    }
-  }, [openDiffTab, openNarrowTab, isCompact]);
-
-  const openFileInEditor = useCallback((filePath: string) => {
-    openEditorTab(filePath, getFileNameFromPath(filePath));
-  }, [openEditorTab]);
+  // Git 面板已插件化（2026-11-12）：gitStore 的 file-system-change → status 自动刷新
+  // 原由内置 GitPanel 挂载时激活（GitPanel/index.tsx FR-P2-2）；面板移除后改在应用层
+  // 激活，供 FileExplorer GitStatusIndicator 徽章与 CenterStage diff tab 消费。
+  // undo/operations 订阅的消费面（UndoBar/OperationsLog）随面板移除，保持休眠不激活。
+  useEffect(() => {
+    return initGitStatusWatcher(() => {
+      const { workspaces, currentWorkspaceId } = useWorkspaceStore.getState();
+      const ws = workspaces.find((w) => w.id === currentWorkspaceId);
+      return ws?.path ?? null;
+    });
+  }, []);
 
   // === 渲染 ===
   const loadingFallback = (
@@ -305,14 +302,7 @@ function App() {
       currentType={leftPanelType}
       activePanelType={activeLeftPanelType}
       filesContent={<FileExplorer />}
-      gitContent={
-        <Suspense fallback={loadingFallback}>
-          <GitPanel
-            onOpenDiffInTab={openDiffTabWithNarrowOverlay}
-            onOpenFileInEditor={openFileInEditor}
-          />
-        </Suspense>
-      }
+      gitContent={<GitPanelPlaceholder />}
       browserContent={<Suspense fallback={loadingFallback}><BrowserSidebarPanel /></Suspense>}
       translateContent={<Suspense fallback={loadingFallback}><TranslatePanel onSendToChat={sendMessage} /></Suspense>}
       terminalContent={<Suspense fallback={loadingFallback}><TerminalPanel /></Suspense>}

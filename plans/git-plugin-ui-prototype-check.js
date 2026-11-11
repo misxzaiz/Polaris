@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports, no-console -- 独立 node 脚本（CommonJS require + 控制台输出是脚本本性），非 src 源码；spec §11/补充约束 17 以 node plans/git-plugin-ui-prototype-check.js 运行 */
 /**
  * Git 插件 UI 交互原型 —— 可复跑的回归检查（44 项断言）
  *
