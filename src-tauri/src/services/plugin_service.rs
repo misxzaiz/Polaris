@@ -1968,6 +1968,62 @@ impl PluginService {
             }
         }
 
+        // §6-2（2026-11-11）：L1 前端外移会用到 panel / services / chatCards /
+        // configSchema 四块。此前只校验 views / mcpServers，字段写错会拖到运行时
+        // 静默失效，故前移到安装期诊断。规则刻意保守：只拦空必填与面板入口路径逃逸，
+        // 不钉死可扩展的 type 值域（插件仓 132 个存量 manifest 离线实测全部合规）。
+        if let Some(panel) = &manifest.contributes.panel {
+            let entry = panel.entry.as_str();
+            if entry.trim().is_empty() {
+                errors.push("contributes.panel.entry is required".to_string());
+            } else if !entry.starts_with("./")
+                || entry.contains("..")
+                || entry.contains(':')
+                || entry.chars().any(|c| c.is_control())
+            {
+                errors.push(format!(
+                    "contributes.panel.entry must be a ./ relative path without '..' or URL scheme: {}",
+                    entry
+                ));
+            }
+        }
+
+        for (index, service) in manifest.contributes.services.iter().enumerate() {
+            let prefix = format!("contributes.services[{}]", index);
+            if service.id.trim().is_empty() {
+                errors.push(format!("{}.id is required", prefix));
+            }
+            if service.service_type.trim().is_empty() {
+                errors.push(format!("{}.type is required", prefix));
+            }
+            if service.command.trim().is_empty() {
+                errors.push(format!("{}.command is required", prefix));
+            }
+        }
+
+        for (index, card) in manifest.contributes.chat_cards.iter().enumerate() {
+            let prefix = format!("contributes.chatCards[{}]", index);
+            if card.id.trim().is_empty() {
+                errors.push(format!("{}.id is required", prefix));
+            }
+            if card.mcp_server_id.trim().is_empty() {
+                errors.push(format!("{}.mcpServerId is required", prefix));
+            }
+        }
+
+        for (index, field) in manifest.contributes.config_schema.iter().enumerate() {
+            let prefix = format!("contributes.configSchema[{}]", index);
+            if field.key.trim().is_empty() {
+                errors.push(format!("{}.key is required", prefix));
+            }
+            if field.label.trim().is_empty() {
+                errors.push(format!("{}.label is required", prefix));
+            }
+            if field.field_type.trim().is_empty() {
+                errors.push(format!("{}.type is required", prefix));
+            }
+        }
+
         errors
     }
 
@@ -2056,6 +2112,89 @@ impl PluginService {
 mod tests {
     use super::*;
     use crate::models::plugin_state::PluginStateMap;
+
+    #[test]
+    fn validates_l1_extraction_contribution_fields() {
+        // 合规：L1 外移插件的四个贡献点齐全，应零诊断
+        let valid: PluginManifestFile = serde_json::from_str(
+            r#"{
+              "id": "example.radio",
+              "name": "Radio",
+              "version": "1.0.0",
+              "contributes": {
+                "panel": { "entry": "./dist/panel.js" },
+                "services": [
+                  { "id": "radio-service", "type": "http", "command": "node" }
+                ],
+                "chatCards": [
+                  { "id": "radio-card", "mcpServerId": "radio-mcp" }
+                ],
+                "configSchema": [
+                  { "key": "voice", "label": "Voice", "type": "string" }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        assert!(PluginService::validate_manifest_fields(&valid).is_empty());
+
+        // 不合规：面板入口逃逸 + 三块空必填，各自应产出精确诊断
+        let invalid: PluginManifestFile = serde_json::from_str(
+            r#"{
+              "id": "example.bad",
+              "name": "Bad",
+              "version": "1.0.0",
+              "contributes": {
+                "panel": { "entry": "../outside/panel.js" },
+                "services": [
+                  { "id": "s", "type": "http", "command": "" }
+                ],
+                "chatCards": [
+                  { "id": "", "mcpServerId": "m" }
+                ],
+                "configSchema": [
+                  { "key": "", "label": "L", "type": "string" }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let errors = PluginService::validate_manifest_fields(&invalid);
+        assert!(
+            errors.iter().any(|e| e.contains("contributes.panel.entry must be")),
+            "{:?}",
+            errors
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("contributes.services[0].command is required")),
+            "{:?}",
+            errors
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("contributes.chatCards[0].id is required")),
+            "{:?}",
+            errors
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("contributes.configSchema[0].key is required")),
+            "{:?}",
+            errors
+        );
+
+        let empty_entry: PluginManifestFile = serde_json::from_str(
+            r#"{"id":"example.empty","name":"Empty","version":"1.0.0","contributes":{"panel":{"entry":""}}}"#,
+        )
+        .unwrap();
+        assert!(PluginService::validate_manifest_fields(&empty_entry)
+            .iter()
+            .any(|e| e.contains("contributes.panel.entry is required")));
+    }
 
     #[test]
     fn discovers_user_and_project_plugin_manifests() {
