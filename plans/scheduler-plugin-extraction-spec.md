@@ -199,6 +199,13 @@ wsclient ←──────── WS session_end / error（contextId 匹配�
 - `node scripts/validate.js` 通过（132 插件）；zip 内 18 文件结构与修正后的 manifest 已核对。
 - 环境备注：`scripts/publish-plugin.mjs` 在本机被文件删除保护拦截（脚本内 `rmSync` 清理临时目录/旧 zip 时超时），分发包改用 PowerShell `Compress-Archive` 生成、sha256 手工回填；**发布流程与脚本本身未改动**，换到无该保护的机器仍可走脚本一条龙。
 
+### 发布后修复：v1.0.1（2026-11-11 15:40）
+- **根因**：`plugin.json` / `update.json` 顶层多写了 `author` 字段。宿主 `PluginManifestFile`（`models/plugin.rs:619-646`）带 `#[serde(deny_unknown_fields)]` 且无 `author` 字段，`read_manifest`（`plugin_service.rs:1501-1521`）与 `read_update_manifest`（:1524-1537）会直接报「插件 manifest 格式错误」→ **v1.0.0 包实际装不上**。全仓 138 个插件中仅 ai-scheduler 带此字段；`author` 属商城索引元数据，只能放 `index.json`。
+- 修复：插件仓 commit `e658e4d`，删除两份 manifest 的 `author`、版本升 1.0.1、`origin.downloadUrl` 改指 `@ai-scheduler-v1.0.1`；重打包（18 文件 / 66948 B / sha256 `9ba0aa3abc35a7c6c515edd6f2b12f4a916cfbba6b260a84c1aef3f62323cfa9`）；`index.json` 顶层 version / versions / sha256 / downloadUrl 同步，下架坏版 1.0.0；tag 与 main 均已推送。
+- 门禁加固：`scripts/validate.js` 新增**全量** manifest 顶层字段白名单（严格对齐 Rust 结构，含未上架插件）；`node scripts/validate.js` 通过（132 上架 / 138 目录全扫）。B2-1 骨架的契约测试亦固化了本坑。
+- CDN 复核：`@ai-scheduler-v1.0.1` zip HTTP 200 / 66948 B / sha256 与索引一致 / 包内 `plugin.json` 无 `author`。
+
 ### 遗留（下一轮）
-- CDN 生效后做一次 `curl -sL <tag zip> | sha256sum` 与 index.json 比对（jsDelivr 首次拉取有传播延迟）。
+- ✅ CDN 比对已完成（见 v1.0.1 段）：v1.0.1 zip 与索引 sha256 一致。
 - plugin 型执行器 v1 不支持（README 声明 + 面板标记 + 触发跳过）
+- v1.0.0 tag / 包仍留在远程作只读历史（已从 `index.json` 下架，勿用于安装）。
