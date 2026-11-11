@@ -174,3 +174,25 @@ wsclient ←──────── WS session_end / error（contextId 匹配�
 | plugin 型执行器任务失效 | 低 | v1 明确不支持（README+触发日志+面板标记）；存量导入不丢数据 |
 | 双写者（MCP 直写任务键 vs 服务运行态） | 低 | 键空间读写分离（§3），服务对任务键只读 |
 | 旧 12 内置壳摘除影响 plugin-system 契约测试 | 低 | mcp.test fixture/pluginStore 断言随摘除改写 |
+
+---
+
+## 8. 实施与验收记录（2026-11-11 回填）
+
+### 主仓（commit a755f3fb）
+- 净删 **17,907 行**（73 文件，+104/-18011），超出 spec §4 预估（~13k，executor 子系统连带 + ipc.rs 78 臂全删 + 巨型 local_file_storage 死代码）
+- 门禁全绿：`cargo check` 0 错 / `cargo check --no-default-features --bin polaris-web --bin polaris-mcp` Finished / `tsc --noEmit` 0 错 / `eslint` 0 error / 受影响 vitest 套件（mcp 3+pluginStore 26+configDispatch·turnFilter 10+case-5 17+dispatchTask 12）全绿
+- spec §4 外发现：snippet 五函数是独立功能（cap.prompt_snippet，ChatInput/Settings 消费）——救出至 `snippetService.ts` 随宿主保留
+
+### 插件仓（commit c22ad8e + 8656dda）
+- `plugins/ai-scheduler` v1.0.0：MCP 七工具 + 常驻服务 + 面板三件套；测试四层（金标对拍 46 / MCP 18 / SSR 渲染 / 构建）全绿
+- 真桥冒烟抓出三 bug（离线单测全绿但组合语义错，全部已修）：
+  1. tick 用 `listTasks`（纯定义）判 isDue → 永假；改 `listTaskViews`（合并视图）
+  2. markRunning 后 30s 任务缓存未失效 → once 任务每 tick 重复触发；触发后立即失效
+  3. wsclient 按扁平形状解析 chat-event → AIEvent 实为嵌套 `{contextId, payload: AIEvent}`，session_end 永远收不到；改嵌套解析
+- **E2E 闭环验证**：建 12s 到期 once 任务 → tick 触发 → cap.ai.chat 会话启动 → WS session_end → 终态回收 `success (reason=completed)` → 历史落账，全程 18s
+- 数据迁移真桥验证：从主仓 scheduler.db 只读导入 1 条用户存量任务（数学世纪难题验证，after_completion 型），保真成功
+
+### 遗留（下一轮）
+- CDN 发布链（push + index.json + tag）待用户验收后执行
+- plugin 型执行器 v1 不支持（README 声明 + 面板标记 + 触发跳过）
