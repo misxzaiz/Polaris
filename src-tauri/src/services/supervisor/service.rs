@@ -122,6 +122,9 @@ pub struct SupervisorInner {
     engine_registry: std::sync::OnceLock<
         Arc<tokio::sync::Mutex<crate::ai::registry::EngineRegistry>>,
     >,
+    /// 宿主 web 端点（协议 v2 env 注入数据源）。web server 绑定后写入
+    /// （实际端口可能与 config 不同——顺延避让），spawn_env 优先取这里。
+    web_endpoint: std::sync::Mutex<Option<(u16, String)>>,
 }
 
 #[derive(Clone)]
@@ -144,6 +147,7 @@ impl ServiceSupervisor {
                 data_root: std::sync::OnceLock::new(),
                 recent_actions: std::sync::Mutex::new(VecDeque::new()),
                 engine_registry: std::sync::OnceLock::new(),
+                web_endpoint: std::sync::Mutex::new(None),
             }),
         }
     }
@@ -160,6 +164,18 @@ impl ServiceSupervisor {
         registry: Arc<tokio::sync::Mutex<crate::ai::registry::EngineRegistry>>,
     ) {
         let _ = self.inner.engine_registry.set(registry);
+    }
+
+    /// 注入宿主 web 端点（实际绑定端口 + 令牌）。web server 启动后调用；
+    /// 之后 spawn 的插件服务经 POLARIS_PORT/POLARIS_TOKEN env 直连宿主，
+    /// 不再依赖 config.json 文件自发现（config 落盘端口可能被 env 覆盖而过期）。
+    pub fn set_web_endpoint(&self, port: u16, token: String) {
+        *self.inner.web_endpoint.lock().unwrap() = Some((port, token));
+    }
+
+    /// 读取当前 web 端点（build_ctx 注入 StartContext 用）。
+    pub fn web_endpoint(&self) -> Option<(u16, String)> {
+        self.inner.web_endpoint.lock().unwrap().clone()
     }
 
     pub fn subscribe_status(&self) -> broadcast::Receiver<ServiceStatus> {
@@ -641,9 +657,17 @@ impl ServiceSupervisor {
         let epoch = new_epoch();
         let args = build_args_v2(&spec.contribution, &spec.install_path, port, &spec.ctx, key);
 
+        // web 端点运行时注入优先（web server 绑定后 set_web_endpoint 写入；
+        // config 落盘端口可能被 env 覆盖/顺延而与实际不符）。
+        let mut ctx = spec.ctx.clone();
+        if let Some((p, t)) = self.web_endpoint() {
+            ctx.web_port = Some(p);
+            ctx.web_token = Some(t);
+        }
+
         let mut command = tokio::process::Command::new(&spec.contribution.command);
         command.args(&args).current_dir(&spec.install_path).kill_on_drop(true);
-        for (k, v) in spawn_env(&spec.ctx, epoch, key) {
+        for (k, v) in spawn_env(&ctx, epoch, key) {
             command.env(k, v);
         }
         #[cfg(target_os = "windows")]

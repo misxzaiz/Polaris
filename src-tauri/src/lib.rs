@@ -330,6 +330,22 @@ async fn start_configured_web_server(
         .await
         .map_err(|e| error::AppError::NetworkError(e.to_string()))?;
     let status = web::server::WebServerStatus::running(handle.host.clone(), handle.port);
+    // 协议 v2 端点注入：把实际绑定端口 + 生效 token 交给 Supervisor，
+    // 之后 spawn 的插件服务经 POLARIS_PORT/POLARIS_TOKEN env 直连宿主
+    // （config.json 落盘端口可能被 env 覆盖/顺延而与实际监听不一致）。
+    // 通用能力：所有插件服务（ai-scheduler/browser-desk/...）的 kvclient 端点自发现因此可靠。
+    let effective_token = state
+        .config_store
+        .lock()
+        .unwrap()
+        .get()
+        .web
+        .token
+        .clone()
+        .unwrap_or_default();
+    state
+        .plugin_service_manager
+        .set_web_endpoint(handle.port, effective_token);
     *guard = Some(handle);
 
     Ok(status)
@@ -1430,6 +1446,21 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
                 std::process::exit(1);
             }
         };
+        // 协议 v2 端点注入（与桌面端 start_configured_web_server 同纪律）：
+        // 实际绑定端口 + 生效 token 交给 Supervisor，插件服务 spawn 时经
+        // POLARIS_PORT/POLARIS_TOKEN env 直连宿主（config 落盘端口可能过期）。
+        let effective_token = state
+            .config_store
+            .lock()
+            .unwrap()
+            .get()
+            .web
+            .token
+            .clone()
+            .unwrap_or_default();
+        state
+            .plugin_service_manager
+            .set_web_endpoint(handle.port, effective_token);
         // 等待 Ctrl+C 信号以优雅关停
         tokio::signal::ctrl_c().await.ok();
         tracing::info!("[Polaris-Web] Received shutdown signal, stopping...");
