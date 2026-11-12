@@ -47,12 +47,6 @@ const ENGINE_UI_MAP: Record<string, EngineUiConfig> = {
     descKey: 'engines.simpleAi.description',
     builtin: true,
   },
-  'open-code': {
-    id: 'open-code',
-    nameKey: 'engines.openCode.name',
-    descKey: 'engines.openCode.description',
-    npmPackage: 'opencode',
-  },
 }
 
 export interface EngineRuntimeStatus {
