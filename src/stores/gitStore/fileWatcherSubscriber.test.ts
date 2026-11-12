@@ -190,33 +190,22 @@ describe('fileWatcherSubscriber (FR-P2-2)', () => {
     expect(mockRefreshStatus).toHaveBeenCalledTimes(1)
   })
 
-  it('C9 序列操作活动窗口内 → 防抖放宽到 3000ms；窗口过后恢复 800ms', async () => {
+  it('P0：固定 800ms 防抖，连续事件合并为一次刷新', async () => {
     const cleanup = initGitStatusWatcher(() => '/repo')
     const handler = captureHandler()
 
-    // 进入活动窗口（until 在未来 10s）
-    mockGitState.sequenceActivityUntilByWs = { '/repo': Date.now() + 10_000 }
     emitEvent(handler, ['src'])
     await flushMicrotasks()
-
-    // 常规 800ms 窗口内不刷（放宽中）
-    await vi.advanceTimersByTimeAsync(debounceMs - 1)
-    expect(mockRefreshStatus).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(1)
-    expect(mockRefreshStatus).not.toHaveBeenCalled()
-
-    // 3s 窗口到期 → 刷一次
-    await vi.advanceTimersByTimeAsync(3000 - debounceMs)
-    expect(mockRefreshStatus).toHaveBeenCalledTimes(1)
-
-    // 窗口过后 → 恢复常规 800ms
-    mockGitState.sequenceActivityUntilByWs = {}
-    emitEvent(handler, ['more'])
+    await vi.advanceTimersByTimeAsync(debounceMs / 2)
+    emitEvent(handler, ['lib']) // 重置防抖窗口
     await flushMicrotasks()
-    await vi.advanceTimersByTimeAsync(debounceMs - 1)
-    expect(mockRefreshStatus).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(debounceMs / 2)
+    expect(mockRefreshStatus).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(debounceMs / 2 - 1)
+    expect(mockRefreshStatus).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
-    expect(mockRefreshStatus).toHaveBeenCalledTimes(2)
+    expect(mockRefreshStatus).toHaveBeenCalledTimes(1)
 
     cleanup()
   })

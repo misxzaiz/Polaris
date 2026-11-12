@@ -28,13 +28,6 @@ const log = createLogger('GitStatusWatcher')
 const DEBOUNCE_MS = 800
 
 /**
- * C9：序列操作活动窗口内的放宽防抖（ms）。
- * 窗口门由 operationsSubscriber 依 rebase/merge 等写动作 events 维护
- * （gitStore.sequenceActivityUntilByWs），对齐 master-plan 预算「rebase 中 ≤3s」。
- */
-const SEQUENCE_ACTIVITY_DEBOUNCE_MS = 3000
-
-/**
  * 订阅 file-system-change，防抖刷新 Git 面板当前生效仓库的 status。
  * @param getEffectivePath 每次事件到达时读取最新生效仓库路径（含子仓库选择），null 时不刷
  * @returns 清理函数（取消监听 + 清防抖 timer + 清待补刷标记）
@@ -67,11 +60,10 @@ export function initGitStatusWatcher(getEffectivePath: () => string | null): () 
     const path = getEffectivePath()
     if (!path) return
     clearDebounce()
-    // C9：序列操作（rebase/merge/cherry-pick/revert）活动窗口内放宽防抖
-    // 800 → 3000（master-plan「rebase 中刷新预算 ≤3s」），窗口过后恢复。
-    const until = useGitStore.getState().sequenceActivityUntilByWs?.[path] ?? 0
-    const debounce = until > Date.now() ? SEQUENCE_ACTIVITY_DEBOUNCE_MS : DEBOUNCE_MS
-    log.debug('file-system-change 防抖调度', { path, debounce, sequenceActive: until > Date.now() })
+    // P0：序列操作活动窗口由已删除的 operationsSubscriber 维护，内置面板移除后
+    // 统一使用固定防抖。插件侧自行决定刷新节奏。
+    const debounce = DEBOUNCE_MS
+    log.debug('file-system-change 防抖调度', { path, debounce })
     debounceTimer = setTimeout(() => {
       debounceTimer = null
       log.debug('file-system-change 防抖到期，自动刷新 status', { path })
