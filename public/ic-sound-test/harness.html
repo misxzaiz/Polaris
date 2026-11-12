@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>polaris-interactive card 复刻宿主页（带声音测试）</title>
+<style>
+  body { margin:0; padding:18px; font-family:system-ui,sans-serif; background:#0b0d12; color:#e8e8ea; }
+  h2 { font-size:14px; margin:0 0 4px; }
+  .tip { font-size:11px; color:#9aa0aa; margin:0 0 12px; }
+  .card { border:1px solid #2a2e3a; border-radius:8px; overflow:hidden; max-width:880px; }
+  .bar { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 10px; background:#151824; border-bottom:1px solid #2a2e3a; font-size:11px; }
+  .bar .tag { border-radius:4px; background:rgba(34,211,238,.1); color:#22d3ee; padding:2px 6px; }
+  .bar .title { font-weight:600; }
+  .bar button { font:inherit; font-size:11px; padding:4px 9px; border-radius:5px; border:1px solid #3a3f4b; background:#1c2030; color:#e8e8ea; cursor:pointer; }
+  .bar button:hover { background:#262c40; }
+  #wrap { height:360px; background:#11131a; }
+  #frame { width:100%; height:100%; border:0; background:transparent; }
+  .card.fs #wrap { position:fixed; inset:0; z-index:9999; height:auto; background:#11131a; }
+  .card.fs .bar { position:fixed; top:0; left:0; right:0; z-index:10000; }
+  #out { margin-top:12px; font-family:ui-monospace,Consolas,monospace; font-size:11px; white-space:pre-wrap; background:#0b0d12; border:1px solid #2a2e3a; border-radius:8px; padding:10px; max-width:880px; }
+</style>
+</head>
+<body>
+  <h2>polaris-interactive 卡片复刻宿主页</h2>
+  <p class="tip">iframe 策略与 src/card.tsx 完全一致：sandbox（不含 allow-same-origin）+ allow="autoplay" + referrerPolicy=no-referrer + srcdoc 主题注入。静音按钮复刻 toggleMute 的 postMessage 协议。</p>
+
+  <div class="card" id="card">
+    <div class="bar">
+      <span><span class="tag">交互面板</span> <span class="title">polaris-interactive 声音测试</span> <span style="color:#9aa0aa">v1</span></span>
+      <span>
+        <button id="mute">静音</button>
+        <button id="full">全屏</button>
+        <button id="probe">探测状态</button>
+      </span>
+    </div>
+    <div id="wrap">
+      <iframe id="frame" title="polaris-interactive 声音测试"
+        sandbox="allow-scripts allow-forms allow-popups allow-modals allow-pointer-lock"
+        allow="autoplay" referrerPolicy="no-referrer"></iframe>
+    </div>
+  </div>
+
+  <div id="out">等待 iframe 上报…</div>
+
+<script>
+(function () {
+  var frame = document.getElementById('frame');
+  var card = document.getElementById('card');
+  var out = document.getElementById('out');
+  var muted = false;
+  window.__icStatus = null;
+  window.__icLog = [];
+  window.__icFullscreen = false;
+  window.__icFramePolicy = {
+    sandbox: frame.getAttribute('sandbox'),
+    allow: frame.getAttribute('allow'),
+    referrerPolicy: frame.getAttribute('referrerPolicy')
+  };
+
+  // 复刻 buildSrcDoc(..., withTheme=true)：片段/完整文档 + 主题底座注入 <head>
+  fetch('./sound-test.html').then(function (r) { return r.text(); }).then(function (html) {
+    var base = '<style>:root{--background:#0b0d12;--foreground:#e8e8ea;color-scheme:dark}</style>';
+    var doc = /<html[\s>]/i.test(html.trim()) ? html.trim()
+      : '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0">' + html + '</body></html>';
+    doc = /<head[^>]*>/i.test(doc) ? doc.replace(/<head([^>]*)>/i, '<head$1>' + base) : base + doc;
+    frame.srcdoc = doc;
+    window.__icSrcDocLen = doc.length;
+  });
+
+  window.addEventListener('message', function (e) {
+    // 与卡片桥一致：只接受来自本 iframe 的消息
+    if (!e.data || e.data.__icSound !== 1) return;
+    if (e.source !== frame.contentWindow) return;
+    window.__icStatus = e.data;
+    window.__icLog.push(e.data);
+    if (window.__icLog.length > 60) window.__icLog.shift();
+    out.textContent = 'iframe 上报（共 ' + window.__icLog.length + ' 条，最新）：\n' + JSON.stringify(e.data, null, 2);
+  });
+
+  document.getElementById('mute').addEventListener('click', function () {
+    muted = !muted;
+    this.textContent = muted ? '取消静音' : '静音';
+    frame.contentWindow.postMessage({ __polarisMute: 1, muted: muted }, '*');
+  });
+
+  document.getElementById('full').addEventListener('click', function () {
+    window.__icFullscreen = !window.__icFullscreen;
+    card.classList.toggle('fs', window.__icFullscreen);
+    this.textContent = window.__icFullscreen ? '退出全屏' : '全屏';
+  });
+
+  document.getElementById('probe').addEventListener('click', function () {
+    frame.contentWindow.postMessage({ __icProbe: 1 }, '*');
+  });
+
+  // 复刻卡片 Esc 退出全屏
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && window.__icFullscreen) {
+      window.__icFullscreen = false;
+      card.classList.remove('fs');
+      document.getElementById('full').textContent = '全屏';
+    }
+  });
+})();
+</script>
+</body>
+</html>

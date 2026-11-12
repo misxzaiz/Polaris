@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>polaris-interactive 声音测试组件</title>
+<style>
+  body { margin:0; padding:16px; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:#11131a; color:#e8e8ea; }
+  h1 { font-size:15px; margin:0 0 4px; font-weight:600; }
+  .sub { font-size:11px; color:#9aa0aa; margin:0 0 14px; line-height:1.5; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  button { font:inherit; font-size:12px; padding:6px 12px; border-radius:6px; border:1px solid #3a3f4b; background:#1c2030; color:#e8e8ea; cursor:pointer; }
+  button:hover { background:#262c40; }
+  button.primary { border-color:#22d3ee; color:#22d3ee; }
+  #status { font-family:ui-monospace,Consolas,monospace; font-size:11px; line-height:1.7; white-space:pre-wrap; background:#0b0d12; border:1px solid #2a2e3a; border-radius:8px; padding:10px 12px; }
+  .ok { color:#4ade80; } .bad { color:#f87171; } .warn { color:#fbbf24; }
+  #box { margin-top:12px; height:64px; border:1px dashed #3a3f4b; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:11px; color:#9aa0aa; user-select:none; }
+</style>
+</head>
+<body>
+  <h1>polaris-interactive 声音测试组件</h1>
+  <p class="sub">验证 v2 的 allow="autoplay" 音效、__polarisMute 静音协议、pointer-lock 与不透明沙箱隔离。所有状态通过 postMessage 上报宿主页。</p>
+  <div class="row">
+    <button id="play" class="primary">播放测试音</button>
+    <button id="stop">停止</button>
+    <button id="lock">锁定鼠标</button>
+  </div>
+  <div id="status">初始化…</div>
+  <div id="box">点击此区域可测试 requestPointerLock（sandbox 已放行 allow-pointer-lock）</div>
+
+<script>
+(function () {
+  var AC = window.AudioContext || window.webkitAudioContext;
+  var ctx = null, master = null, voices = [], timer = null;
+  var muted = false, playing = false, lastError = '';
+  var statusEl = document.getElementById('status');
+
+  function color(v) { return v ? 'ok' : 'bad'; }
+  function report() {
+    var s = {
+      __icSound: 1,
+      state: ctx ? ctx.state : 'none',
+      muted: muted,
+      gain: master ? Number(master.gain.value.toFixed(4)) : null,
+      playing: playing,
+      voices: voices.length,
+      pointerLock: !!document.pointerLockElement,
+      error: lastError,
+      t: Date.now()
+    };
+    try { window.parent.postMessage(s, '*'); } catch (e) {}
+    statusEl.innerHTML =
+      'AudioContext.state : <span class="' + color(s.state === 'running') + '">' + s.state + '</span>\n' +
+      '音效调度         : <span class="' + color(s.playing) + '">' + (s.playing ? '运行中 (每 700ms 一音)' : '已停止') + '</span>\n' +
+      '活跃振荡器       : ' + s.voices + '\n' +
+      '主增益 gain       : <span class="' + color(!s.muted && s.gain > 0) + '">' + s.gain + '</span>\n' +
+      '静音 (__polarisMute): <span class="' + (s.muted ? 'warn' : 'ok') + '">' + (s.muted ? '是' : '否') + '</span>\n' +
+      'pointer-lock      : ' + (s.pointerLock ? '已锁定' : '未锁定') + '\n' +
+      '错误             : ' + (s.error || '无');
+    document.title = 'ic-sound:' + s.state + ':' + (s.muted ? 'muted' : 'on');
+  }
+
+  function tick() {
+    if (!playing || !ctx) return;
+    try {
+      var notes = [523.25, 659.25, 783.99, 1046.50];
+      var f = notes[tick.step++ % notes.length];
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.85, ctx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45);
+      o.connect(g); g.connect(master);
+      o.start(); o.stop(ctx.currentTime + 0.5);
+      voices.push(o);
+      o.onended = function () { voices = voices.filter(function (x) { return x !== o; }); report(); };
+      report();
+    } catch (e) { lastError = String(e); report(); }
+  }
+  tick.step = 0;
+
+  function start() {
+    try {
+      if (!ctx) {
+        ctx = new AC();
+        master = ctx.createGain();
+        master.gain.value = muted ? 0 : 0.12;
+        master.connect(ctx.destination);
+      }
+      if (ctx.state === 'suspended') { ctx.resume().then(report, function (e) { lastError = String(e); report(); }); }
+      if (timer) return;
+      playing = true;
+      tick();
+      timer = window.setInterval(tick, 700);
+    } catch (e) { lastError = String(e); }
+    report();
+  }
+
+  function stop() {
+    playing = false;
+    if (timer) { window.clearInterval(timer); timer = null; }
+    report();
+  }
+
+  function setMuted(v) {
+    muted = !!v;
+    if (master && ctx) master.gain.setTargetAtTime(muted ? 0 : 0.12, ctx.currentTime, 0.02);
+    report();
+  }
+
+  document.getElementById('play').addEventListener('click', start);
+  document.getElementById('stop').addEventListener('click', stop);
+  document.getElementById('box').addEventListener('click', function () {
+    try { this.requestPointerLock(); } catch (e) { lastError = String(e); }
+    setTimeout(report, 100);
+  });
+  document.addEventListener('pointerlockchange', report);
+
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.__polarisMute === 1) setMuted(d.muted);
+    else if (d.__icProbe === 1) report();
+    else if (d.__icPlay === 1) start();
+    else if (d.__icStop === 1) stop();
+  });
+
+  // 自动起播：验证 iframe allow="autoplay" 是否放行无需手势的 AudioContext
+  start();
+})();
+</script>
+</body>
+</html>
