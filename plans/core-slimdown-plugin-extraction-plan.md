@@ -1,6 +1,6 @@
 # 主仓瘦身：存量功能插件化拆分方案（core-slimdown）
 
-> 状态：**实施中**（B1 完成 6/7、B2 完成 1/4；B1-6 于 2026-11-11 合入并发布 v1.0.1 修复版；B2-1 起批，步骤 1/7 完成） · 日期：2026-11-06 · 状态复核：2026-11-11
+> 状态：**实施中**（B1 完成 6/7、B2 完成 1.5/4；B1-6 于 2026-11-11 合入并发布 v1.0.1 修复版；B2-3 PetOverlay 与 B2-1 语音电台均已直接移除而非插件化） · 日期：2026-11-06 · 状态复核：2026-11-12
 > 上游定案：`plans/plugin-first-slim-plan.md`（2026-10-30 用户定案「新功能一律插件化」）+ `AGENTS.md` §五功能路由原则。
 > 本方案定位：把该定案从**增量纪律**推进到**存量迁移**——盘点主仓已有功能，判定哪些拆出为 `Polaris-plugin` 仓插件，给出分批路径、验收标准与不拆清单。
 > 数据口径：行数为 2026-11-06 工作区实测（`wc -l`，前端含 .ts/.tsx）；改动热度为 `git log --since=2026-08-01` 文件触碰次数。
@@ -86,7 +86,7 @@ B1 合计 ~30k 行。外移后同步动作（每项相同，下称「三处同�
 
 | 序 | 功能 | 主仓删除（约） | 行数 | 说明 |
 |---|---|---|---|---|
-| B2-1 | 语音电台 / 伴播 | `voice_capability.rs` 1229 + RadioBroadcast 组件 2044 + `voiceBroadcast` ~1.8k + `speechService` 683 + `ttsService` 617 + VoiceCompanion 476 + `streamingTts` 309 | ~7.2k | 近期高频演进域（radio-broadcast P0-P3 刚收尾），发布解耦收益最大；插件仓 `mimo-tts` 已有 TTS 先例。锁屏控制/媒体键如属宿主能力，保留薄通道 |
+| ~~B2-1~~ | 语音电台 / 伴播 | ✅ **已整体移除**（2026-11-12 用户定案：平时不用，直接删而非插件化；前端 `5869dd11` −13,578 行 / 后端 `7c7012bf` −1,254 行）。插件化被否的原因：电台控制器依赖宿主 session kernel 自建 AI 会话、语音伙伴是全局浮层、移动端 ASR 桥接在宿主 Android 工程内——需新增 5 类宿主槽位，成本高于收益。详见 `plans/voice-domain-removal-record.md` | ~~7.2k~~ | 原判「发布解耦收益最大」不再成立 |
 | B2-2 | IM 集成 | `integrations/` 7095（钉钉/飞书/QQ bot）+ Integration 组件 771 + `integrationService.ts` 168 | ~8k | 典型独立进程形态（`contributes.services` 常驻 + webhook），与宿主仅共享 config |
 | ~~B2-3~~ | PetOverlay | ✅ 已移除（2026-11-10 用户定案：主仓直接删除，不新建插件；插件仓 `whale-pet` 为替代） | ~~1.5k~~ | 独立浮窗；宿主 `__POLARIS_PET_OVERLAY__` 桥与 `?petOverlay=1` 分支同步拆除，whale-pet 桌面悬浮按钮按存在性降级 |
 | B2-4 | Translate | `commands/translate.rs` 107 + Translate 组件 705 | 0.8k | 顺手项；方案见 `translate-extraction-spec.md`（2026-11-10 定案待批，实施另需批准） |
