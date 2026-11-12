@@ -88,7 +88,29 @@
 - [x] 用户裁定（2026-11-12 AskUserQuestion）：①本轮包含删码（插件真宿主验证通过后单独 commit，删除可独立 revert）；②插件能力范围=查询+暂存/提交（Phase 1 写路径），AI 会话/gutter/中央 Tab 留待 H2/H3/H4 契约批次
 - [x] 第一批已实施（2026-11-12，范围缩减版）：插件 `plugins/polaris-git` v0.1.0（查询+暂存/提交，真宿主 E2E：shadow 接管/status/diff/历史/分支/stage→commit 落库复核全通过）+ 主仓删内置 GitPanel 面板（63 文件，cap.git/services/git/gitStore/gitEditorService/DiffViewer/编辑器三扩展保留宿主），实施记录/缺口清单/门禁实测见 `plans/git-panel-plugin-extraction-implementation.md`
 - [x] 第二批已实施（2026-11-12 用户反馈驱动）：插件 v0.2.0 承接 discard/分支写/远程 fetch-pull-push/stash 写/标签/右键菜单/.gitignore 编辑 + 样式对齐宿主（token 病根修复，见实施记录 §7）；H2/H3/H4 契约仍待批次
-- [ ] 后续批次：冲突三方合并器/Interactive Rebase/blame/Reflog/Undo UI（依赖 H4/H3 契约）；R1「功能不变」为分批交付（实施记录 §6 缺口 G1/§7）
+- [x] 后续批次已全部收口（2026-11-12）：冲突三方合并器 / Interactive Rebase / blame / Reflog / Undo UI 全部随引擎出仓一并落地，插件侧 77 个 action 零 UNSUPPORTED（13 个历史缺口在 R1 轮补齐为真实实现，见 `plugins/polaris-git/service/UNSUPPORTED.md`）
 - [x] §4.3 注记已修订为「面板已插件化第一批」；`docs/git-plugin-extraction-plan.md`「保留内置」结论已声明失效（详见实施记录 §文档同步）
+
+### 7.1 架构方案 C 实施结果（2026-11-12，宿主 Git 域归零）
+
+用户裁定「按 C 规划实施直到完成」——宿主 Git 后端完全出仓，插件自带 Node 服务 + MCP 承接全部能力。分四个阶段独立提交，每阶段可单独 revert。
+
+| 阶段 | 主仓 commit | 内容 | 门禁 |
+| --- | --- | --- | --- |
+| P0 | `4f7f73d5` | 清宿主 Git 孤儿状态层（`gitStore` 14 slice → 单 status slice）+ i18n 外迁（`git.json` 31.6KB → 977B） | vitest 全量 / tsc |
+| P1 | `6d83cda7` | 前端状态层外迁 + H7 UI 槽位（`contributes.uiSlots` + `registerUi`）+ 宿主通用服务转发 `cap.pluginServiceManager.request` | vitest 88 项 / tsc / cargo check |
+| P2 | `2018e286` | 编辑器 SCM 外迁（H3 `EditorScmProvider`）+ 通用席位占位 + 类型去 Git 化（`types/git.ts` 811 行 → `scmDiff.ts` 32 行） | tsc / vitest 140 文件·1980 用例 |
+| P3 | `e6ae1f32` | 宿主 Git 后端整体出仓（`services/git/` 22 文件 + `git_capability.rs` 1640 行 + `models/git.rs` + `crates/git-lanes/`，共 41 文件 / ~11.5k 行） | cargo check --lib exit 0（38 warnings）/ tsc exit 0 |
+
+插件仓对应提交：`7ee0487`（引擎 77 action + MCP + H7）、`7984cdf`（H3 editorScmProvider 接入 + 文档/清单对齐，zip sha256 `55d4fa94…`）。
+
+**宿主侧归零证明**：`src/` 与 `src-tauri/src/` 中 `cap.git` / `GitCapability` / `gitStore` / `GitStatusIndicator` / `gitEditorService` / `invoke('git_*')` **仅剩注释性历史说明**，无任何活跃引用；`Cargo.toml` 无 `git` feature、无 `git2` 依赖。
+
+**新增宿主通用能力（非 Git 专属，可被后续插件复用）**：
+1. `cap.pluginServiceManager` 的 `request` action——按 `serviceId` 查运行实例端口，仅转发 `127.0.0.1`，`no_proxy` + path 校验 + 审计日志，插件无需知道端口。
+2. `contributes.uiSlots` + 插件导出 `registerUi(host, ctx)`——按 pluginId 隔离，`isPluginUiEnabled` 门控，禁用即不加载；当前槽位 `fileExplorerToolbar` / `diffRefresh` / `editorScmProvider`。
+3. H3 `EditorScmProvider`——宿主只保留 CM6 渲染壳（gutter/blame/变更导航），数据由插件提供，provider 缺失一律空态降级。
+
+**已知有意的边界**：未 bump 版本、未打 tag、未动 CDN；`pack.js` 打印的 `@v0.1.0` 与 index 中 `@polaris-git-v0.1.0` 的既有不一致保持原状（tag 刷新需单独授权）。
 
 > 记录人注：本需求与 2026-08、2026-11-06 两次结论直接冲突，**冲突本身是需求的一部分**，不要在实施 spec 里绕开；先把 §4 六问答完，再谈迁移。
