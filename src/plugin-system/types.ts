@@ -423,6 +423,14 @@ export interface PolarisPluginManifest {
     uiTemplates?: PluginUiTemplateContribution[]
     /** 插件配置项 schema。声明后设置页自动渲染配置表单。 */
     configSchema?: PluginConfigFieldSchema[]
+    /**
+     * UI 槽位声明（H7）：声明后宿主在插件注册时加载 panel entry 并调用其
+     * `registerUi(host, ctx)` 导出一次。当前支持：
+     * - `fileExplorerToolbar`：文件浏览器工具栏注入
+     * - `diffRefresh`：diff tab 恢复时的最新差异提供者
+     * 未声明的插件不会预加载 bundle，避免无谓开销。
+     */
+    uiSlots?: string[]
   }
   permissions: PluginPermissionDeclaration
   origin?: PluginOriginMetadata

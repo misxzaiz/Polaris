@@ -213,22 +213,21 @@ export function TabBar({ className = '' }: TabBarProps) {
       } else if (tab.type === 'diff' && tab.diffData) {
         // Diff 刷新需要重新获取最新的 diff 数据（旧数据来自当前 git 快照，可能已过时）
         const currentWorkspacePath = currentWorkspace?.path
-        if (currentWorkspacePath && tab.metadata?.diffIdentity) {
-          const { useGitStore } = await import('@/stores/gitStore')
-          const gitStore = useGitStore.getState()
-          // 获取当前工作区状态来确定 base commit
-          if (gitStore.status?.commit) {
-            await gitStore.getDiffs(currentWorkspacePath, gitStore.status.commit)
-            // 从最新的 diffs 中找到对应文件的 diff
-            const refreshedDiff = gitStore.diffs.find(d => d.file_path === tab.diffData?.file_path)
-            if (refreshedDiff) {
-              useTabStore.getState().openDiffTab(refreshedDiff, {
-                identity: tab.metadata.diffIdentity,
-                titleContext: tab.metadata.diffTitleContext,
-                metadata: tab.metadata,
-              })
-              return
-            }
+        if (currentWorkspacePath && tab.metadata?.diffIdentity && tab.diffData?.file_path) {
+          // 最新差异由插件经 H7「diffRefresh」槽位提供（Git 插件内部走自己的
+          // service）；未安装/未声明/失败均返回 null，退回旧 diffData，不阻塞恢复。
+          const { refreshDiffViaPlugin } = await import('@/plugin-system/uiContributions')
+          const refreshed = await refreshDiffViaPlugin(
+            tab.diffData.file_path,
+            currentWorkspacePath,
+          )
+          if (refreshed) {
+            useTabStore.getState().openDiffTab(refreshed as NonNullable<typeof tab.diffData>, {
+              identity: tab.metadata.diffIdentity,
+              titleContext: tab.metadata.diffTitleContext,
+              metadata: tab.metadata,
+            })
+            return
           }
         }
         // 退回到使用原有 diffData 打开

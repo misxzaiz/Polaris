@@ -12,7 +12,6 @@ export { useWorkspaceStore } from './workspaceStore';
 export { useFileExplorerStore } from './fileExplorerStore';
 export { useFileEditorStore } from './fileEditorStore';
 export { useViewStore } from './viewStore';
-export { useGitStore } from './gitStore/index';
 export { useTabStore } from './tabStore';
 export { useEditorSettingsStore } from './editorSettingsStore';
 export { useEditorContextStore } from './editorContextStore';

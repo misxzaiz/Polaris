@@ -1,8 +1,6 @@
 import type { PolarisPluginManifest } from './types'
 import { pluginRegistry } from './registry'
 import { chatCardRegistry } from './chatCardRegistry'
-import { fileExplorerToolbarSlot } from './fileExplorerToolbarSlot'
-import { GitStatusIndicator } from '@/components/FileExplorer/GitStatusIndicator'
 import { askPluginManifest } from '@/plugins/ask/manifest'
 import { browserPluginManifest } from '@/plugins/browser/manifest'
 
@@ -121,13 +119,8 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(askPluginManifest)
   pluginRegistry.register(browserPluginManifest)
 
-  // Git 状态指示器挂到文件树工具栏 slot（P0-5）
-  fileExplorerToolbarSlot.register(
-    'git-status',
-    'polaris.core',
-    GitStatusIndicator,
-    10,
-  )
+  // 文件树 Git 分支徽章改由 polaris-git 插件经 H7 UI 槽位注入
+  // （contributes.uiSlots: ['fileExplorerToolbar']，宿主 registerUi 时注册）。
   // builtin 插件聊天卡片 loader 手动注册（无 installPath）
   // cap.ui.render 帧统一渲染器（question/form/confirm/template/custom）
   // 后端 cap.ui.render 发帧 toolName 默认即 'ui.render'，精确 key 命中。

@@ -17,6 +17,10 @@
 //! - `restart`            `{ "action": "restart", "pluginId": string, "serviceId": string }`
 //!   → ServiceStatus
 //! - `list_status`        `{ "action": "list_status" }` → Vec<ServiceStatus>
+//! - `request`           `{ "action": "request", "serviceId": string,
+//!                           "path": string?, "body": object? }` → 插件服务 JSON 响应
+//!   （通用转发：按 serviceId 查运行中实例端口，只转发到 127.0.0.1 的本机插件服务；
+//!    面板无需知道端口，写类动作在此留审计，权限 gate 由 policy 层统一裁决）
 //! - `stop_for_plugin`   `{ "action": "stop_for_plugin", "pluginId": string }`
 //!   → Vec<ServiceStatus>
 //! - `autostart`         `{ "action": "autostart", "pluginStates": { [k]: { enabled: bool } },
@@ -49,6 +53,7 @@ pub const PLUGIN_SERVICE_MANAGER_ACTIONS: &[&str] = &[
     "stop_for_plugin",
     "autostart",
     "recent_actions",
+    "request",
 ];
 
 /// 前端 plugin_states 快照（autostart 用）
@@ -101,7 +106,15 @@ impl PluginServiceManagerCapability {
                     "pluginStates": "object（必填语义）——map: pluginId → { enabled: bool }，按各插件 enabled 决定是否启动其服务；缺省/空对象时不报错但不会启停任何服务",
                     "workspacePath": "string?"
                 }, "returns": "ServiceStatus[]（裸数组）" },
-                "recent_actions": { "params": {}, "returns": "string[]（裸数组）——supervisor 最近对账动作环形日志（≤10 条，拉起/停止/孤儿清杀/spawn 失败），诊断用" }
+                "recent_actions": { "params": {}, "returns": "string[]（裸数组）——supervisor 最近对账动作环形日志（≤10 条，拉起/停止/孤儿清杀/spawn 失败），诊断用" },
+                "request": {
+                    "params": {
+                        "serviceId": "string（必填）——contributes.services[].id，须为当前运行中的插件服务",
+                        "path": "string?——服务内路径，默认 /dispatch；只允许 / 开头的相对路径，禁止 .. 与协议头",
+                        "body": "object?——POST JSON 载荷，原样转发"
+                    },
+                    "returns": "插件服务返回的 JSON（原样）；非 2xx 返回结构化错误"
+                }
             }),
         )
     }
@@ -281,6 +294,66 @@ impl Capability for PluginServiceManagerCapability {
                 let sup = self.supervisor.clone();
                 Self::block_on_async(async move {
                     serde_json::to_value(sup.recent_actions().await).map_err(|e| e.to_string())
+                })
+            }
+            // 通用插件服务转发：宿主按 serviceId 查端口，只转发到本机 127.0.0.1，
+            // 面板无需知道端口；此处留审计（不记录参数内容，避免泄露路径/密钥）。
+            "request" => {
+                let service_id = Self::require_string(&params, "serviceId")?.to_string();
+                let path = params
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("/dispatch")
+                    .to_string();
+                if !path.starts_with('/') || path.contains("..") || path.contains("://") {
+                    return Err(
+                        "cap.pluginServiceManager.request: path 只允许 / 开头的相对路径".into(),
+                    );
+                }
+                let body = params.get("body").cloned().unwrap_or(Value::Null);
+                let action_hint = body
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-");
+                tracing::info!(
+                    target: "plugin_service_request",
+                    service = %service_id,
+                    action = %action_hint,
+                    "插件服务转发"
+                );
+                let sup = self.supervisor.clone();
+                Self::block_on_async(async move {
+                    let port = sup
+                        .list_status()
+                        .await
+                        .into_iter()
+                        .find(|s| s.service_id == service_id)
+                        .and_then(|s| s.port)
+                        .ok_or_else(|| format!("插件服务未运行或无端口: {service_id}"))?;
+                    let url = format!("http://127.0.0.1:{port}{path}");
+                    let client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(60))
+                        .no_proxy()
+                        .build()
+                        .map_err(|e| {
+                            format!("cap.pluginServiceManager.request 客户端构建失败: {e}")
+                        })?;
+                    let resp = client
+                        .post(&url)
+                        .json(&body)
+                        .send()
+                        .await
+                        .map_err(|e| format!("插件服务请求失败 {url}: {e}"))?;
+                    let status = resp.status();
+                    let text = resp
+                        .text()
+                        .await
+                        .map_err(|e| format!("插件服务响应读取失败: {e}"))?;
+                    if !status.is_success() {
+                        return Err(format!("插件服务返回 {status}: {text}"));
+                    }
+                    serde_json::from_str::<Value>(&text)
+                        .map_err(|e| format!("插件服务响应非 JSON: {e}; body={text}"))
                 })
             }
             other => Err(unsupported_action(

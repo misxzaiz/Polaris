@@ -15,10 +15,16 @@ import { pluginPanelRegistry } from './panelRegistry'
 import { chatCardRegistry } from './chatCardRegistry'
 import { uiTemplateRegistry } from './uiTemplateRegistry'
 import { loadModuleFromFile, resolvePluginEntryPath } from './pluginModuleLoader'
+import { hydratePluginUi } from './uiContributions'
 import { invoke } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
-import { usePluginStore, registerPluginDefaultUi, clearPluginDefaultUi } from '@/stores/pluginStore'
+import {
+  usePluginStore,
+  registerPluginDefaultUi,
+  clearPluginDefaultUi,
+  isPluginUiEnabled,
+} from '@/stores/pluginStore'
 
 const log = createLogger('PluginRegistry')
 
@@ -106,14 +112,24 @@ class PluginRegistry {
     if (!panel?.entry || !manifest.installPath) return
 
     const views = manifest.contributes.views ?? []
-    if (views.length === 0) return
-
     for (const view of views) {
       pluginPanelRegistry.register(
         view.panelType,
         manifest.id,
         createPanelLoader(manifest.installPath, panel.entry)
       )
+    }
+
+    // H7：声明了 uiSlots 的插件预加载 entry，调用其 registerUi 注入工具栏/diff
+    // 刷新等 UI 贡献。无面板视图但有 UI 贡献的插件也走这里（views 可以为空）。
+    if ((manifest.contributes.uiSlots ?? []).length > 0) {
+      const uiEnabled = isPluginUiEnabled(
+        usePluginStore.getState().pluginStates,
+        manifest.id,
+      )
+      if (uiEnabled) {
+        void hydratePluginUi(manifest.id, manifest.installPath, panel.entry)
+      }
     }
   }
 

@@ -58,7 +58,6 @@ const RadioBroadcastPanel = lazy(() => import('./components/RadioBroadcast/Radio
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
 import { useNarrowTabStore } from './stores/narrowTabStore';
-import { initGitStatusWatcher } from './stores/gitStore/fileWatcherSubscriber';
 import { GitPanelPlaceholder } from './components/GitPanelPlaceholder';
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
@@ -278,17 +277,10 @@ function App() {
   // 终端全屏模式优先级更高，由 fullscreen 分支单独处理。
   const leftPanelFillRemaining = !hasCenterStage && rightPanelCollapsed && !terminalFullscreen;
 
-  // Git 面板已插件化（2026-11-12）：gitStore 的 file-system-change → status 自动刷新
-  // 原由内置 GitPanel 挂载时激活（GitPanel/index.tsx FR-P2-2）；面板移除后改在应用层
-  // 激活，供 FileExplorer GitStatusIndicator 徽章与 CenterStage diff tab 消费。
-  // undo/operations 订阅的消费面（UndoBar/OperationsLog）随面板移除，保持休眠不激活。
-  useEffect(() => {
-    return initGitStatusWatcher(() => {
-      const { workspaces, currentWorkspaceId } = useWorkspaceStore.getState();
-      const ws = workspaces.find((w) => w.id === currentWorkspaceId);
-      return ws?.path ?? null;
-    });
-  }, []);
+  // Git 域已整体出仓（2026-11-12，架构方案 C）：宿主不再持有 gitStore 与
+  // file-system-change → status 刷新链路。分支徽章由 polaris-git 插件经 H7
+  // fileExplorerToolbar 槽位注入，diff tab 刷新走 diffRefresh 槽位；两者数据
+  // 均来自插件自带 service。
 
   // === 渲染 ===
   const loadingFallback = (

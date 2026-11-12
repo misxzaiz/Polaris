@@ -200,6 +200,11 @@ pub struct PluginManifestContributes {
     /// 内置模板名（ask-card/form-card/artifact-card/chart-card）保留不可覆盖
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ui_templates: Vec<PluginUiTemplateManifestContribution>,
+    /// UI 槽位声明（H7）：声明后宿主注册插件时加载 panel entry 并调用其
+    /// `registerUi(host, ctx)` 导出一次（fileExplorerToolbar / diffRefresh）。
+    /// 未声明的插件不预加载 bundle，避免无谓开销。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ui_slots: Vec<String>,
 }
 
 
