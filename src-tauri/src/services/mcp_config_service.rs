@@ -1224,6 +1224,7 @@ mod tests {
                 config_schema: Vec::new(),
                 executors: Vec::new(),
                 ui_templates: Vec::new(),
+                ui_slots: Vec::new(),
             },
             permissions: PluginManifestPermissions::default(),
             origin: PluginOriginMetadata::default(),
