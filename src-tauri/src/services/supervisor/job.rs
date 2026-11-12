@@ -79,43 +79,53 @@ mod imp {
         use windows_sys::Win32::System::JobObjects::JobObjectBasicProcessIdList;
 
         let &job = JOB.get()?;
-        // JOBOBJECT_BASIC_PROCESS_ID_LIST：首字段 NumberOfAssignedProcesses 为
-        // 所需容量提示。先按提示分配查询；缓冲不足（两调用间又有进程加入）则
-        // 按返回的实际需求扩容重试一次。上限防御异常值。
+        // JOBOBJECT_BASIC_PROCESS_ID_LIST 的 ProcessIdList 是 C 柔性数组：
+        // windows-sys 声明为 [usize; 1]，真实 PID 连续排布在结构体起始地址之后。
+        // 读取方式 = 从 ProcessIdList.as_ptr() 起按 NumberOfProcessIdsInList
+        // 逐个指针偏移读（绝不能对 [usize;1] 用 iter/take——那只能读到第 1 个，
+        // 2026-11-12 生产事故：Job 有几十个成员却只排除了第 1 个，其余全被
+        // 孤儿清杀误杀，含正在运行的 codebuddy 适配器）。
         let mut capacity: usize = 16;
-        for _ in 0..2 {
-            let mut buf = vec![0u64; 1 + capacity];
+        for _ in 0..3 {
+            let mut buf = vec![0usize; 2 + capacity];
             let ok = unsafe {
                 QueryInformationJobObject(
                     job as HANDLE,
                     JobObjectBasicProcessIdList,
                     buf.as_mut_ptr() as *mut core::ffi::c_void,
-                    (buf.len() * std::mem::size_of::<u64>()) as u32,
+                    (buf.len() * std::mem::size_of::<usize>()) as u32,
                     std::ptr::null_mut(),
                 )
             };
             if ok != 0 {
-                let list = unsafe { &*(buf.as_ptr() as *const JOBOBJECT_BASIC_PROCESS_ID_LIST) };
-                return Some(
-                    list.ProcessIdList
-                        .iter()
-                        .take(list.NumberOfProcessIdsInList as usize)
-                        .map(|&pid| pid as u32)
-                        .collect(),
-                );
+                let list =
+                    unsafe { &*(buf.as_ptr() as *const JOBOBJECT_BASIC_PROCESS_ID_LIST) };
+                let count = list.NumberOfProcessIdsInList as usize;
+                if count > buf.len() - 2 {
+                    // 防御：返回数量与缓冲不符（理论不可达），扩容重试
+                    capacity = count;
+                    continue;
+                }
+                let base = list.ProcessIdList.as_ptr();
+                let pids: std::collections::HashSet<u32> = (0..count)
+                    .map(|i| unsafe { *base.add(i) as u32 })
+                    .collect();
+                return Some(pids);
             }
-            // 失败：容量不足时 NumberOfAssignedProcesses 提示所需数量；
+            // 查询失败：容量不足时 NumberOfAssignedProcesses 提示所需数量；
             // 其余错误（job 句柄无效等）重试同样结果，直接退出。
-            let list = unsafe { &*(buf.as_ptr() as *const JOBOBJECT_BASIC_PROCESS_ID_LIST) };
+            let list =
+                unsafe { &*(buf.as_ptr() as *const JOBOBJECT_BASIC_PROCESS_ID_LIST) };
             let need = list.NumberOfAssignedProcesses as usize;
-            if need > 0 && need < 100_000 {
+            if need > 0 && need < 100_000 && need > capacity {
                 capacity = need;
             } else {
                 break;
             }
         }
-        // Job 存在但查询失败：保守返回空集（不误杀优先于彻底清扫）。
-        Some(std::collections::HashSet::new())
+        // Job 存在但查询失败：返回 None（fail-safe）——调用方降级到
+        // 在管 PID ∪ 引擎活跃 PID 排除，绝不退回「无排除裸杀」语义。
+        None
     }
 
     /// 判断 PID 是否为本宿主 Job 成员（KillOrphan 动作前重验用）。
@@ -228,5 +238,48 @@ mod tests {
         let mut child = child;
         let _ = child.start_kill();
         let _ = child.wait().await;
+    }
+
+    /// 多成员柔性数组读取（2026-11-12 生产事故回归）：
+    /// Job 内同时有 ≥3 个子进程时全部被枚举——旧实现对 [usize;1] 用
+    /// iter/take 只能读到第 1 个成员，其余成员被孤儿清杀误杀。
+    #[tokio::test]
+    async fn job_member_pids_reads_full_flexible_array() {
+        assert!(ensure_initialized());
+        // spawn 3 个长驻子进程并收容
+        let mut children = Vec::new();
+        for _ in 0..3 {
+            let child = tokio::process::Command::new("cmd")
+                .args(["/C", "ping -n 10 127.0.0.1 > NUL"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .expect("测试环境可 spawn cmd");
+            assert!(assign_child(&child));
+            children.push(child);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let members = job_member_pids().expect("Job 成员枚举应可用");
+        // 3 个子进程 + 测试宿主自身（宿主是否在 Job 内取决于运行环境，
+        // 只断言 3 个子进程全部命中）
+        for child in &children {
+            let pid = child.id().expect("应有 pid");
+            assert!(
+                members.contains(&pid),
+                "多成员场景：子进程 PID={pid} 必须在成员集合中（柔性数组读取回归），实际 {members:?}"
+            );
+        }
+        assert!(
+            members.len() >= 3,
+            "成员集合至少含 3 个子进程，实际 {} 个：{:?}",
+            members.len(),
+            members
+        );
+        // 清理
+        for mut child in children {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+        }
     }
 }
