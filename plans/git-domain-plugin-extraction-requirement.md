@@ -87,7 +87,8 @@
 - [x] UI/交互设计交付（2026-11-11，仅文档与原型，未改生产代码）：`plans/git-plugin-ui-implementation-spec.md`（15 章：四层承载、GP-01~11 交互合同、H1–H6 宿主契约、Phase 0–3 与硬停点、§15 GLM 启动语）、`plans/git-plugin-ui-interaction-prototype.html`（自包含、可离线、模拟数据）、`plans/git-plugin-ui-prototype-check.js`（44 项断言全部通过）。**该规范是 UI 专项稿，不替代 §4 评审通过后的整体实施 spec，也不构成删码授权**；默认基线为方案 A（保留 cap.git + services/git/ 作宿主 SCM 运行时），若改方案 B 须重做数据与双端评审
 - [x] 用户裁定（2026-11-12 AskUserQuestion）：①本轮包含删码（插件真宿主验证通过后单独 commit，删除可独立 revert）；②插件能力范围=查询+暂存/提交（Phase 1 写路径），AI 会话/gutter/中央 Tab 留待 H2/H3/H4 契约批次
 - [x] 第一批已实施（2026-11-12，范围缩减版）：插件 `plugins/polaris-git` v0.1.0（查询+暂存/提交，真宿主 E2E：shadow 接管/status/diff/历史/分支/stage→commit 落库复核全通过）+ 主仓删内置 GitPanel 面板（63 文件，cap.git/services/git/gitStore/gitEditorService/DiffViewer/编辑器三扩展保留宿主），实施记录/缺口清单/门禁实测见 `plans/git-panel-plugin-extraction-implementation.md`
-- [ ] 后续批次：插件承接 discard/分支写/远程/冲突合并/blame/Reflog/Undo（R1 补齐）+ H2/H3/H4 宿主契约。注意：R1「功能不变」在本轮口径下为**分批交付**（实施记录 §6 缺口 G1），上述能力当前无处承载，建议冲突解决与远程操作排最前
+- [x] 第二批已实施（2026-11-12 用户反馈驱动）：插件 v0.2.0 承接 discard/分支写/远程 fetch-pull-push/stash 写/标签/右键菜单/.gitignore 编辑 + 样式对齐宿主（token 病根修复，见实施记录 §7）；H2/H3/H4 契约仍待批次
+- [ ] 后续批次：冲突三方合并器/Interactive Rebase/blame/Reflog/Undo UI（依赖 H4/H3 契约）；R1「功能不变」为分批交付（实施记录 §6 缺口 G1/§7）
 - [x] §4.3 注记已修订为「面板已插件化第一批」；`docs/git-plugin-extraction-plan.md`「保留内置」结论已声明失效（详见实施记录 §文档同步）
 
 > 记录人注：本需求与 2026-08、2026-11-06 两次结论直接冲突，**冲突本身是需求的一部分**，不要在实施 spec 里绕开；先把 §4 六问答完，再谈迁移。

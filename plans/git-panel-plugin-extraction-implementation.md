@@ -120,3 +120,22 @@ wire 契约与 `models/git.rs` 逐字段对齐（**注意 serde 命名逐 struct
 - `plans/core-slimdown-plugin-extraction-plan.md` §4.3 Git 行：冲突注记更新为「面板已插件化（本轮），cap.git/services/git/编辑器扩展保留宿主」。
 - `plans/git-domain-plugin-extraction-requirement.md` §7：登记本轮实施与 G1/R1 打折声明。
 - AGENTS.md §3.2 cap 清单：cap.git 条目不变（保留宿主），无需改动。
+
+
+---
+
+## 7. 第二批（2026-11-12 用户反馈驱动：样式/右键菜单/远程等写路径）
+
+用户实测 v0.1.0 后反馈：**样式丑、与宿主不搭；缺右键菜单；缺远程**。本轮全部承接：
+
+**样式病根（terminal-desk S1/S2 同病复演）**：v1 误用了宿主不存在的 token——`--c-bg-subtle`、`--c-danger`、`--c-success`（权威在 `src/index.css:30-55`，状态色是 `--c-status-*` 家族），且 `--c-border` 是带 alpha 的 RGB 基底被全强度渲染成刺眼白线。整改：styles.css 全量重写（bg-elevated/surface/hover/active 层级、status-* 语义色、`rgb(var(--c-border)/0.08~0.14)` 边框纪律、宿主 radius/shadow/overlay 体系、36px tab 基线）；新增 `test/styles-token-check.mjs` 静态守护（所有 token 名 ∈ 宿主定义集 + 禁全强度边框）。
+
+**功能承接（G1 缺口收窄）**：新增 PgMenu 右键菜单 + PgDialog 确认/输入框（对齐宿主 DropdownMenu/ConfirmDialog 视觉）。变更页右键（暂存/丢弃确认/加入 .gitignore/复制路径）、历史提交右键（复制 SHA/信息、建标签、revert、cherry-pick）、分支（新建/切换/重命名/删除）、远程（Fetch/Pull/Push）、Stash（保存/应用/弹出/删除）、标签（创建/删除）、.gitignore（编辑保存+模板）。repoStore 新增 17 个写动作，写后 reconcile + 强刷关联列表。
+
+**两个新坑实录**：
+1. **react-dom 禁入 bundle**：宿主面板 loader 只 shim `react`/`react/jsx-runtime`；插件 import react-dom（createPortal）会被打进 blob，其内部 CJS require 在浏览器 ESM 里直接崩（"Dynamic require of ... is not supported"）。浮层一律**面板根内联渲染**（absolute 定位 + panelRootRef 钳位），顺带规避 transform 困 fixed 的宿主陷阱。
+2. **宿主 React shim 白名单**（§6-G3 已修复于主仓 89da4705）：useLayoutEffect/useSyncExternalStore 已补进 ensureReactShim；插件 v0.2.0 起直接消费。
+
+**交付形态**：插件 v0.2.0（tag `polaris-git-v0.2.0`，sha256 cd7b4540…）；测试 31+33+24(token)+SSR 全绿；真宿主截图自审（面板/右键菜单/远程 tab）通过。
+
+**G1 剩余（后续批次）**：冲突三方合并器、Interactive Rebase TODO、blame/Reflog/Undo 快照 UI（依赖 H4 中央 Tab/Overlay 契约或 H3 编辑器契约）；Web 端系统性回归。
