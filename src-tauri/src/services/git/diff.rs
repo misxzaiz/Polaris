@@ -278,7 +278,11 @@ fn get_diff_content(
             Some(None)
         }
     } else {
-        Some(None)
+        // 2026-11-12 根因修复：新增文件不存在旧侧，用 None（字段缺省=「侧不存在」）
+        // 而非 Some(None)（=「内容被省略」）。此前 Some(None) 会被下方
+        // content_omitted 判定误标为「宿主已省略内容」，导致所有纯新增文件
+        // （哪怕 diff 只有 +1 行）在面板都渲染不出内容。Deleted 的新侧同理。
+        None
     };
 
     // 当 OID 为零时（工作区文件），从文件系统读取
@@ -332,10 +336,12 @@ fn get_diff_content(
             }
         }
     } else {
-        Some(None)
+        // 同上：删除文件不存在新侧，None（缺省）而非 Some(None)（省略）
+        None
     };
 
-    // 计算是否省略内容
+    // 计算是否省略内容：Some(None) 现在只可能来自二进制/不可读，
+    // 语义即「本应有内容的一侧无法提供」
     let content_omitted = matches!(&old_content, Some(None)) || matches!(&new_content, Some(None));
 
     // 提取内容
