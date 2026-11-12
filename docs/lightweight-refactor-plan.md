@@ -195,6 +195,13 @@ P0 的实际工作是**补齐 `codeEditorLanguages` 的唯一缺口**：开关 q
 | `pty` | `portable-pty` | 中 | 非编辑器用户可关 |
 | `integrations` | `tokio-tungstenite` 等(钉钉/飞书/QQ) | 高 | 三平台机器人可整体可选 |
 
+> **状态注记（2026-11-12）**：本表是设计阶段的候选网格，其中两行已失效——
+> `git` 列的 `git2` 依赖与 `lsp-index` 列的全部依赖均已从 `Cargo.toml` 移除
+> （Git 域整体外迁插件、LSP 域整体删除，两者都不再是需要 feature 门控的可选域）。
+> 其余行（`scheduler` / `web-server` / `computer-control` / `pty` / `integrations`）
+> 仍按本文推进。Git 移除见 `plans/git-domain-plugin-extraction-requirement.md` §7.1，
+> LSP 移除见 `plans/lsp-domain-removal-record.md`。
+
 ### 5.3 实施约束（避免破坏）
 1. **默认全开**：`default = ["tauri-app","git","lsp-index","scheduler","web-server","integrations"]`，保证现状不变。
 2. **每个可选 feature 必须有 `#[cfg(feature=...)]` 双向门控**：模块声明 + `invoke_handler` 注册 + `mod.rs` re-export 三处同步（参考 `web-only-tauri-command-gate` 记忆的教训）。

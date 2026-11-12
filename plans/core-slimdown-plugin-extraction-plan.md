@@ -103,7 +103,7 @@ B2 合计 ~17.5k。
 | Settings / 主题体系 | ~11k | 宿主管理面 |
 | `ai/` + `ai-runtime` + proxy | ~35k | AI 运行时与供应商网关，AGENTS.md 已定核心 |
 | ask / dispatch 插件壳 | — | ask 保留（interaction 卡片伴生通道）；dispatch 已于 2026-11-09 移除（A+B 档，/dispatch 与 /nexus 基础设施保留）——见 plans/builtin-plugin-cleanup-analysis.md |
-| lsp_index | 3.2k | 编辑器核心配套，feature 门控，无独立发布诉求 |
+| ~~lsp_index~~ | ~~3.2k~~ | **【2026-11-12 已整体移除】** 用户裁定直接删除，不做插件化。前端 16 文件（`lspStore` / `services/lsp/` / 编辑器四浮层 / `LspTab` / `IndexEngineSection`）+ 后端 8 文件（`services/lsp.rs` / `lsp_config_repository.rs` / `lsp_index/` / `commands/lsp.rs`）全部删除；`lsp-index` Cargo feature 与 `tree-sitter` / `tree-sitter-java` / `rayon` / `xxhash-rust` 四个依赖移除；`@codemirror/lsp-client` 依赖移除。不提插件化的理由：LSP 客户端必须挂在宿主持有的 `EditorView` 上、四处浮层是 App 顶层 overlay 而非席位、索引引擎是长驻后台服务——为一个不使用的功能造三类新宿主契约不划算。详见 `plans/lsp-domain-removal-record.md`。 |
 
 ---
 

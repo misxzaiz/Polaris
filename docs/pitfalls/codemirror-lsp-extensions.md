@@ -1,5 +1,11 @@
 # CodeMirror LSP 扩展挂载踩坑记录
 
+> **状态注记（2026-11-12）：LSP / 代码智能域已整体移除。**
+> 本文描述的是 CM6 扩展数组挂载机制的坑（`Unrecognized extension value`），
+> 该机制本身仍在用（语法高亮、SCM gutter 等），教训依然有效；
+> 但文中提到的 `lspStore` / `@codemirror/lsp-client` 等已不存在。
+> 移除详情见 `plans/lsp-domain-removal-record.md`。
+
 ## 症状
 
 打开任意文件后，控制台报错并且编辑器不显示内容、LSP 功能无效：

@@ -1,5 +1,10 @@
 # LSP 命令注册恢复 + Web IPC 桥接 & polaris-web 关闭修复
 
+> **状态注记（2026-11-12）：本方案涉及的 LSP 域已被整体移除**，本文仅作历史
+> 修复记录保留（它记录了「命令名被误替换为 #[cfg] 属性」导致 invoke
+> command not found 的排查过程，该教训对其它能力域仍适用）。
+> 移除详情见 `plans/lsp-domain-removal-record.md`。
+
 > 来源：需求库 #030（LSP 配置保存无效）、#031（polaris-web 关闭报错）。
 > 2026-11-06 根因修复，claude 会话。
 
