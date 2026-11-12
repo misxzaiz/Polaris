@@ -126,19 +126,11 @@ export function SessionConfigSelector({
         : activeEngineId
 
   const isSimpleAiEngine = currentEngine === 'simple-ai'
-  const isOpencodeEngine = currentEngine === 'open-code'
   useEffect(() => {
     if (isSimpleAiEngine) {
       void useAgentStore.getState().loadSimpleAiAgents()
     }
-    // opencode 引擎：加载模型列表（免费模型排前，glm 第一）
-    if (isOpencodeEngine) {
-      void useEngineMetadataStore.getState().loadOpencodeModels()
-    }
-  }, [isSimpleAiEngine, isOpencodeEngine])
-
-  // opencode 动态模型列表（从后端 `get_opencode_models` 获取）
-  const opencodeModels = useEngineMetadataStore(s => s.opencodeModels)
+  }, [isSimpleAiEngine])
 
   // 插件引擎声明的模型目录（contributes.engines[].models 经 EngineMetadata.models 透传，
   // 如 codebuddy 的 hy4-preview）。用 useMemo 保持引用稳定，避免 zustand 选择器返回新数组导致重渲染。
@@ -181,20 +173,8 @@ export function SessionConfigSelector({
   // - 选择官方 API（modelProfileId='' 或未选 Profile）：
   //   · claude：使用官方模型档位
   //   · simple-ai：必须由 Profile 提供，无 Profile 时为空（SimpleAI 无官方通道）
-  //   · open-code：从后端动态拉取 opencode models（免费模型排前），不受 Profile 影响
   // - 选择某个 Profile：使用该 Profile 的 modelOptions（为空时回退到 [model]）
-  //   （open-code 例外：opencode 有自己的 provider 体系，始终用 opencode models）
   const modelList = useMemo(() => {
-    // OpenCode 引擎：始终从后端动态拉取 opencode models，不受 Profile 影响
-    // （opencode 有自己的 provider 体系，Polaris Profile 对它无意义）
-    if (isOpencodeEngine) {
-      return opencodeModels.map(m => ({
-        id: m.id,
-        name: m.free ? `${m.name} (免费)` : m.name,
-        description: m.free ? t('sessionConfig.freeModel') : '',
-        supportsStreaming: true,
-      }))
-    }
     // 插件引擎声明的模型目录优先（声明即权威目录）：
     // 官方 Claude PRESET 对插件引擎无意义，Profile 也未必建立（如 codebuddy 免登录直用）。
     // 首项保留「不设置」= 走引擎默认模型（adapter 侧默认）。
@@ -227,7 +207,7 @@ export function SessionConfigSelector({
       description: '',
       supportsStreaming: true,
     }))
-  }, [config.modelProfileId, profiles, currentEngine, isOpencodeEngine, opencodeModels, engineDeclaredModels, t])
+  }, [config.modelProfileId, profiles, currentEngine, engineDeclaredModels, t])
 
   // 切换供应商（Profile）后，清掉不属于该 Profile 的残留模型选择。
   // config.model 是跨 Profile 持久化的：从官方 API（opus/sonnet/haiku）切到第三方

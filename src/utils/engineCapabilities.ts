@@ -21,7 +21,6 @@ export type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profil
 const FALLBACK_ENGINE_SELECTOR_CAPABILITIES: Record<string, SelectorType[]> = {
   'claude-code': ['agent', 'model', 'effort', 'permission', 'profile'],
   'simple-ai': ['agent', 'model', 'effort', 'profile'],
-  'open-code': ['model', 'profile'],
 }
 
 /**

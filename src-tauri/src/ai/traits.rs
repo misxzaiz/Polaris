@@ -41,8 +41,6 @@ pub enum EngineId {
     ClaudeCode,
     /// Simple AI 引擎（内置轻量助手，直连模型供应商 API）
     SimpleAI,
-    /// OpenCode 引擎（开源 AI 编程 CLI，支持多 provider/免费模型）
-    OpenCode,
     /// 插件注册的动态引擎（运行时发现）
     Custom(String),
 }
@@ -67,7 +65,6 @@ impl EngineId {
         match self {
             Self::ClaudeCode => "claude-code",
             Self::SimpleAI => "simple-ai",
-            Self::OpenCode => "open-code",
             Self::Custom(_) => "custom",
         }
     }
@@ -92,7 +89,15 @@ impl EngineId {
     /// 从字符串解析引擎 ID，未知字符串作为 Custom 引擎。
     ///
     /// 用于序列化反序列化及前端传入的引擎 ID（信任前端已通过 registry 校验）。
+    ///
+    /// 兼容迁移（2026-11-12）：opencode 内置引擎已插件化（见
+    /// plans/opencode-plugin-migration.md），旧会话/配置中 `open-code` 引擎 id
+    /// 映射到 `Custom("opencode")`，保证存量会话续接不退化。
     pub fn parse_any(s: &str) -> Self {
+        // opencode 迁移别名：旧引擎 id → 插件引擎 id（Custom）
+        if matches!(s, "open-code" | "opencode" | "open_code") {
+            return EngineId::Custom("opencode".to_string());
+        }
         Self::parse(s).unwrap_or_else(|| {
             // 处理 Custom 内部携带的字符串（反序列化旧数据时避免二次包装）
             if let Some(inner) = s.strip_prefix("Custom(") {
@@ -109,7 +114,6 @@ impl EngineId {
         &[
             EngineId::ClaudeCode,
             EngineId::SimpleAI,
-            EngineId::OpenCode,
         ]
     }
 
@@ -118,7 +122,6 @@ impl EngineId {
         match self {
             Self::ClaudeCode => vec!["claude", "claude-code", "claudecode"],
             Self::SimpleAI => vec!["simple-ai", "simpleai", "simple_ai"],
-            Self::OpenCode => vec!["open-code", "opencode", "open_code"],
             Self::Custom(id) => vec![id.as_str()],
         }
     }
@@ -128,7 +131,6 @@ impl EngineId {
         match self {
             Self::ClaudeCode => "claude-code".to_string(),
             Self::SimpleAI => "simple-ai".to_string(),
-            Self::OpenCode => "open-code".to_string(),
             Self::Custom(id) => id.clone(),
         }
     }
@@ -138,7 +140,6 @@ impl EngineId {
         match self {
             Self::ClaudeCode => "Claude Code".to_string(),
             Self::SimpleAI => "Simple AI".to_string(),
-            Self::OpenCode => "OpenCode".to_string(),
             Self::Custom(id) => id.clone(),
         }
     }
@@ -150,7 +151,7 @@ impl EngineId {
 
     /// 判断是否为已知引擎（非 Custom）
     pub fn is_known(&self) -> bool {
-        matches!(self, Self::ClaudeCode | Self::SimpleAI | Self::OpenCode)
+        matches!(self, Self::ClaudeCode | Self::SimpleAI)
     }
 }
 
@@ -893,5 +894,56 @@ impl Default for EnvKeyMapping {
             api_key: "OPENAI_API_KEY",
             model: "OPENAI_MODEL",
         }
+    }
+}
+
+// ============================================================================
+// 单元测试
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// opencode 迁移别名映射：旧会话/配置中 `open-code` / `opencode` / `open_code`
+    /// 引擎 id 应映射到 `Custom("opencode")`（插件引擎），保证存量会话续接不退化。
+    /// 见 plans/opencode-plugin-migration.md。
+    #[test]
+    fn parse_any_maps_opencode_legacy_ids_to_custom_plugin() {
+        for legacy in ["open-code", "opencode", "open_code"] {
+            let id = EngineId::parse_any(legacy);
+            assert_eq!(id, EngineId::Custom("opencode".to_string()), "{} 应映射", legacy);
+        }
+    }
+
+    /// 非 opencode 的 Custom 引擎 id 不应被误映射（保持原样）。
+    #[test]
+    fn parse_any_keeps_other_custom_ids() {
+        assert_eq!(
+            EngineId::parse_any("omp"),
+            EngineId::Custom("omp".to_string())
+        );
+    }
+
+    /// 已知引擎仍正常解析（不受迁移影响）。
+    #[test]
+    fn parse_any_keeps_known_engines() {
+        assert_eq!(EngineId::parse_any("claude-code"), EngineId::ClaudeCode);
+        assert_eq!(EngineId::parse_any("simple-ai"), EngineId::SimpleAI);
+    }
+
+    /// opencode 不再出现在 known() 列表（已插件化，仅剩 ClaudeCode + SimpleAI）。
+    #[test]
+    fn known_engines_exclude_opencode() {
+        let known = EngineId::known();
+        assert_eq!(known.len(), 2, "known 应仅剩 ClaudeCode + SimpleAI");
+        assert!(!known.iter().any(|id| id.as_str() == "opencode"));
+    }
+
+    /// 迁移别名不应被误判为已知引擎（parse 应返回 None，走 Custom 兜底）。
+    #[test]
+    fn legacy_opencode_ids_not_in_known_parse() {
+        assert!(EngineId::parse("open-code").is_none());
+        assert!(EngineId::parse("opencode").is_none());
     }
 }

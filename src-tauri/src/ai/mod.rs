@@ -27,7 +27,6 @@ pub use traits::{
 pub use registry::EngineRegistry;
 pub use engine::ClaudeEngine;
 pub use engine::SimpleAIEngine;
-pub use engine::OpencodeEngine;
 pub use engine::PluginEngineRunner;
 pub use engine::PluginProcessEngine;
 pub use launcher::{McpSessionConfig, prepare_mcp_config, inject_mcp_into_session_opts, McpConfigParams};
