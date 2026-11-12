@@ -7,14 +7,14 @@
  * 采用「预载 + 同步读缓存」模式：
  * - 共享模块通过 startNavigation(editorState, getContext) 在文件打开/文档变化时异步预载改动行号
  * - keymap handler 同步读共享缓存，未就绪则返回 false（不拦截，下次按键生效）
- * - 数据与 gitGutter 一致（同一 gitEditorService 缓存）
+ * - 数据与 scmGutter 一致（同一 editorScmService 缓存）
  */
 
 import { keymap, EditorView } from '@codemirror/view'
 import type { Extension, EditorState } from '@codemirror/state'
 import { Prec } from '@codemirror/state'
-import type { GitFileContext } from '@/services/gitEditorService'
-import { getFileGitState } from '@/services/gitEditorService'
+import type { ScmFileContext } from '@/services/editorScmService'
+import { getFileScmState } from '@/services/editorScmService'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('GitChangeNavigator')
@@ -28,14 +28,14 @@ let preloadingKey: string | null = null
 /**
  * 预载当前文件的改动行号。在编辑器打开文件时调用一次。
  */
-export function startNavigator(ctx: GitFileContext, _state?: EditorState): void {
+export function startNavigator(ctx: ScmFileContext, _state?: EditorState): void {
   const key = ctx.filePath ? `${ctx.workspacePath}|${ctx.filePath}` : ''
   if (!key || changeLinesCache.has(key) || preloadingKey === key) return
   preloadingKey = key
   void (async () => {
     try {
       const git = ctx.filePath && ctx.workspacePath
-        ? await getFileGitState(ctx.filePath, ctx.workspacePath)
+        ? await getFileScmState(ctx.filePath, ctx.workspacePath)
         : null
       if (!git) return
       const lines = collectChangeLines(git.worktreeDiff?.lines ?? null, git.indexDiff?.lines ?? null)
@@ -67,7 +67,7 @@ function collectChangeLines(
   return Array.from(lines).sort((a, b) => a - b)
 }
 
-function getChangeLines(ctx: GitFileContext): number[] {
+function getChangeLines(ctx: ScmFileContext): number[] {
   const key = ctx.filePath ? `${ctx.workspacePath}|${ctx.filePath}` : ''
   return key ? (changeLinesCache.get(key) ?? []) : []
 }
@@ -85,7 +85,7 @@ function scrollToLine(view: EditorView, line: number): boolean {
   return true
 }
 
-export function gitChangeNavigatorExtension(getContext: () => GitFileContext): Extension {
+export function scmChangeNavigatorExtension(getContext: () => ScmFileContext): Extension {
   return Prec.high(
     keymap.of([
       {

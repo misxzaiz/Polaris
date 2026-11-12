@@ -20,6 +20,11 @@ import {
   fileExplorerToolbarSlot,
   type FileExplorerToolbarItemProps,
 } from './fileExplorerToolbarSlot'
+import {
+  registerEditorScmProvider as registerScmProvider,
+  unregisterEditorScmProvider,
+  type EditorScmProvider,
+} from './editorScmProvider'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('PluginUiContributions')
@@ -47,6 +52,8 @@ export interface PluginUiHostApi {
   ): void
   /** 注册「重新获取某文件最新 diff」提供者，供宿主 diff tab 恢复时刷新 */
   registerDiffRefreshProvider(provider: DiffRefreshProvider): void
+  /** 注册编辑器 SCM 数据提供者（gutter / blame / 变更导航的数据源） */
+  registerEditorScmProvider(provider: EditorScmProvider): void
 }
 
 /** 注册 diff 刷新提供者（后注册覆盖先注册；插件禁用时应调用 unregister） */
@@ -101,6 +108,13 @@ export function createPluginUiHostApi(pluginId: string): PluginUiHostApi {
       }
       registerDiffRefreshProvider(pluginId, provider)
     },
+    registerEditorScmProvider(provider) {
+      if (!provider || typeof provider.getStatus !== 'function') {
+        log.warn(`registerEditorScmProvider 参数非法，忽略`, { pluginId })
+        return
+      }
+      registerScmProvider(pluginId, provider)
+    },
   }
 }
 
@@ -108,6 +122,7 @@ export function createPluginUiHostApi(pluginId: string): PluginUiHostApi {
 export function unregisterPluginUi(pluginId: string): void {
   fileExplorerToolbarSlot.unregisterAll(pluginId)
   unregisterDiffRefreshProvider(pluginId)
+  unregisterEditorScmProvider(pluginId)
 }
 
 /**

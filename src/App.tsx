@@ -46,7 +46,7 @@ const DefinitionPeek = lazy(() => import('./components/Editor/DefinitionPeek').t
 
 // 懒加载大型面板组件，减少初始 bundle 大小
 // Git 面板已插件化（2026-11-12）：内置 GitPanel 移出主仓，git.panel 席位由
-// polaris-git 插件 shadow 接管；未启用插件时渲染 GitPanelPlaceholder 兜底。
+// polaris-git 插件 shadow 接管；未启用插件时渲染通用席位占位兜底。
 const TranslatePanel = lazy(() => import('./components/Translate/TranslatePanel').then(m => ({ default: m.TranslatePanel })));
 const TerminalPanel = lazy(() => import('./components/Terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
 const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel').then(m => ({ default: m.DemoPluginPanel })));
@@ -58,7 +58,7 @@ const RadioBroadcastPanel = lazy(() => import('./components/RadioBroadcast/Radio
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
 import { useNarrowTabStore } from './stores/narrowTabStore';
-import { GitPanelPlaceholder } from './components/GitPanelPlaceholder';
+import { PluginSlotPlaceholder } from './components/PluginSlotPlaceholder';
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
@@ -294,7 +294,17 @@ function App() {
       currentType={leftPanelType}
       activePanelType={activeLeftPanelType}
       filesContent={<FileExplorer />}
-      gitContent={<GitPanelPlaceholder />}
+      gitContent={
+        <PluginSlotPlaceholder
+          title={t('pluginSlotPlaceholder.gitTitle', {
+            defaultValue: 'Git 与版本管理已迁移为插件',
+          })}
+          hint={t('pluginSlotPlaceholder.gitHint', {
+            defaultValue:
+              '安装并启用 polaris-git 插件后，此席位由插件面板接管（状态/差异/历史/分支与提交，引擎内置于插件）。插件管理：设置 → 插件。',
+          })}
+        />
+      }
       browserContent={<Suspense fallback={loadingFallback}><BrowserSidebarPanel /></Suspense>}
       translateContent={<Suspense fallback={loadingFallback}><TranslatePanel onSendToChat={sendMessage} /></Suspense>}
       terminalContent={<Suspense fallback={loadingFallback}><TerminalPanel /></Suspense>}

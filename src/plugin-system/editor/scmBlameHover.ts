@@ -2,14 +2,14 @@
  * Git 悬停 Blame（CM6 hover tooltip）
  *
  * 鼠标悬停在任意行上时，显示该行最后一次提交的作者、时间、消息。
- * 数据源：gitEditorService#getBlameForLine（git_blame_file，60s 缓存）。
+ * 数据源：editorScmService#getBlameForLine（provider，60s 缓存）。
  * 通过 editorExtensionRegistry 注入。
  */
 
 import { hoverTooltip } from '@codemirror/view'
-import { getBlameForLine, type GitFileContext } from '@/services/gitEditorService'
+import { getBlameForLine, type ScmFileContext } from '@/services/editorScmService'
 
-export function gitBlameHoverExtension(getContext: () => GitFileContext) {
+export function scmBlameHoverExtension(getContext: () => ScmFileContext) {
   return hoverTooltip(
     (view, pos) => {
       const ctx = getContext()
@@ -18,7 +18,7 @@ export function gitBlameHoverExtension(getContext: () => GitFileContext) {
       const line = view.state.doc.lineAt(pos)
       const { filePath, workspacePath } = ctx
 
-      // 预取 blame（承诺缓存：gitEditorService 已缓存 60s）
+      // 预取 blame（承诺缓存：editorScmService 已缓存 60s）
       void getBlameForLine(filePath, workspacePath, line.number)
 
       const dom = document.createElement('div')

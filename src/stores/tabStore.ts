@@ -6,7 +6,7 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { GitDiffEntry } from '@/types/git'
+import type { ScmDiffEntry } from '@/types/scmDiff'
 import { useFileEditorStore } from './fileEditorStore'
 import { getFileNameFromPath } from '@/utils/path'
 import { browserClose, DEFAULT_BROWSER_HOME, makeBrowserWebviewLabel } from '@/services/tauri/browserService'
@@ -29,7 +29,7 @@ export interface Tab {
   // Editor Tab 数据
   filePath?: string
   // Diff Tab 数据
-  diffData?: GitDiffEntry
+  diffData?: ScmDiffEntry
   // 其他元数据
   metadata?: Record<string, any>
   /** 文件是否有未保存的更改 */
@@ -62,7 +62,7 @@ interface TabActions {
   // Tab 操作
   openEditorTab: (filePath: string, title?: string) => string
   openPreviewTab: (filePath: string, title?: string, metadata?: Record<string, any>) => string
-  openDiffTab: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => string
+  openDiffTab: (diff: ScmDiffEntry, options?: OpenDiffTabOptions) => string
   openBrowserTab: (url?: string, title?: string, options?: OpenBrowserTabOptions) => string
   closeTab: (tabId: string) => void
   switchTab: (tabId: string) => void
@@ -144,7 +144,7 @@ export const useTabStore = create<TabStore>()(
       },
 
       // 打开 Diff Tab
-      openDiffTab: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => {
+      openDiffTab: (diff: ScmDiffEntry, options?: OpenDiffTabOptions) => {
         const diffIdentity = options?.identity ?? diff.file_path
         const titleContext = options?.titleContext
         const metadata = {

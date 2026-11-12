@@ -8,7 +8,7 @@ export * from './workspace';
 export * from './fileExplorer';
 export * from './fileEditor';
 export * from './context';
-export * from './git';
+export * from './scmDiff';
 export * from './integration';
 export * from './terminal';
 export * from './terminalScript';

@@ -7,11 +7,11 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FilePlus, FileMinus, FileEdit, FileX } from 'lucide-react'
-import type { GitDiffEntry, DiffChangeType } from '@/types/git'
+import type { ScmDiffEntry, DiffChangeType } from '@/types/scmDiff'
 
 interface FileNavigatorProps {
   /** 文件列表 */
-  files: GitDiffEntry[]
+  files: ScmDiffEntry[]
   /** 当前选中的文件路径 */
   activeFilePath: string
   /** 文件选择回调 */

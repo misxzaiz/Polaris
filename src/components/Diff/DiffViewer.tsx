@@ -10,7 +10,7 @@ import { useMemo, useCallback, useRef, useState, useEffect } from 'react'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
 import { getLanguageFromPath, isHighlightableLanguage } from '@/utils/language'
 import { useTranslation } from 'react-i18next'
-import type { DiffChangeType, GitDiffEntry } from '@/types/git'
+import type { DiffChangeType, ScmDiffEntry } from '@/types/scmDiff'
 import { FileNavigator } from './FileNavigator'
 import { useDiffKeyboard } from './useDiffKeyboard'
 import { useChangeIndices } from './useChangeIndices'
@@ -39,7 +39,7 @@ interface DiffViewerProps {
   contentOmitted?: boolean
   viewMode?: DiffViewMode
   filePath?: string
-  files?: GitDiffEntry[]
+  files?: ScmDiffEntry[]
   activeFilePath?: string
   onFileSelect?: (filePath: string) => void
   /** 点击行回调（Ctrl+Click 时触发，传递行号） */

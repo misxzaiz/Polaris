@@ -4,11 +4,11 @@
  * 在编辑器行号区左侧显示 added / modified / deleted 小竖条，
  * 并对改动行做行内装饰（背景高亮）。
  *
- * 数据源：gitEditorService#getFileGitState（后端 git2 + computeDiff）
+ * 数据源：editorScmService#getFileScmState（插件 provider + computeDiff）
  * 通过 editorExtensionRegistry 注入（Phase 0-1）。
  *
  * 性能设计：
- * - 状态缓存：git status 1.5s TTL + blame 60s TTL（见 gitEditorService）
+ * - 状态缓存：git status 1.5s TTL + blame 60s TTL（见 editorScmService）
  * - 文档变更时仅重算当前文件 diff（computeDiff 复杂度 O(edit)）
  * - 同文件仅首次打开全量拉取，后续复用缓存
  */
@@ -23,13 +23,13 @@ import {
 import { StateEffect, type Extension } from '@codemirror/state'
 import { createLogger } from '@/utils/logger'
 import {
-  getFileGitState,
-} from '@/services/gitEditorService'
+  getFileScmState,
+} from '@/services/editorScmService'
 
-const log = createLogger('GitGutter')
+const log = createLogger('ScmGutter')
 
 /** 当前编辑器文件的 git 上下文 */
-export interface GitFileContext {
+export interface ScmFileContext {
   filePath?: string
   workspacePath?: string
 }
@@ -105,7 +105,7 @@ function buildDecorations(view: EditorView, statuses: GutterLineStatus[]): Decor
 }
 
 /** ViewPlugin：异步拉取当前文件 git 状态 → 构建/更新装饰 */
-function createGitGutterPlugin(getContext: () => GitFileContext) {
+function createGitGutterPlugin(getContext: () => ScmFileContext) {
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet = Decoration.none
@@ -127,7 +127,7 @@ function createGitGutterPlugin(getContext: () => GitFileContext) {
           }
         }
 
-        const currentKey = GitFileContextKey(getContext())
+        const currentKey = ScmFileContextKey(getContext())
         if (currentKey !== this.lastFileKey) {
           this.lastFileKey = currentKey
           if (currentKey) this.scheduleLoad(update.view)
@@ -145,7 +145,7 @@ function createGitGutterPlugin(getContext: () => GitFileContext) {
 
         try {
           const currentContent = view.state.doc.toString()
-          const state = await getFileGitState(ctx.filePath, ctx.workspacePath, currentContent)
+          const state = await getFileScmState(ctx.filePath, ctx.workspacePath, currentContent)
 
           if (token !== this.loadToken) return
 
@@ -174,7 +174,7 @@ function createGitGutterPlugin(getContext: () => GitFileContext) {
 }
 
 /** 上下文键（工作区+路径） */
-function GitFileContextKey(ctx: GitFileContext): string {
+function ScmFileContextKey(ctx: ScmFileContext): string {
   return ctx.filePath ? `${ctx.workspacePath}|${ctx.filePath}` : ''
 }
 
@@ -183,7 +183,7 @@ function GitFileContextKey(ctx: GitFileContext): string {
  *
  * @param getContext 返回当前编辑器文件上下文（随 editorExtensionRegistry 注入时包装一次）
  */
-export function gitGutterExtension(getContext: () => GitFileContext): Extension {
+export function scmGutterExtension(getContext: () => ScmFileContext): Extension {
   return [
     createGitGutterPlugin(getContext),
     EditorView.theme({

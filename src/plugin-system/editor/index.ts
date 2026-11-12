@@ -1,7 +1,7 @@
 /**
- * Git 编辑器扩展总装
+ * 编辑器 SCM 扩展总装（H3：数据由插件 provider 提供，宿主无 SCM 引擎）
  *
- * 把 gitGutter / gitBlameHover / gitChangeNavigator 绑定到当前编辑器上下文
+ * 把 scmGutter / scmBlameHover / scmChangeNavigator 绑定到当前编辑器上下文
  * （currentWorkspace + filePath），并注册到 editorExtensionRegistry。
  *
  * 编辑器上下文如何获得：
@@ -15,17 +15,17 @@
 
 import type { Extension } from '@codemirror/state'
 import { editorExtensionRegistry, type EditorExtensionFactory } from '@/plugin-system/editorExtensionRegistry'
-import { gitGutterExtension } from './gitGutter'
-import { gitBlameHoverExtension } from './blameHover'
-import { gitChangeNavigatorExtension, startNavigator } from './changeNavigator'
+import { scmGutterExtension } from './scmGutter'
+import { scmBlameHoverExtension } from './scmBlameHover'
+import { scmChangeNavigatorExtension, startNavigator } from './scmChangeNavigator'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import type { GitFileContext } from '@/services/gitEditorService'
+import type { ScmFileContext } from '@/services/editorScmService'
 
 /**
  * 惰性上下文读取器：编辑器创建时调用一次，
  * 之后每次 gutter 刷新 / 悬停 / 导航时重新读取（可在文件切换后生效）。
  */
-function createGitContextGetter(filePathAtCreation: string | undefined): () => GitFileContext {
+function createGitContextGetter(filePathAtCreation: string | undefined): () => ScmFileContext {
   return () => {
     const workspace = useWorkspaceStore.getState().getCurrentWorkspace()
     return {
@@ -36,10 +36,10 @@ function createGitContextGetter(filePathAtCreation: string | undefined): () => G
 }
 
 /**
- * 组装 Git 编辑器扩展。供 Editor.tsx 的 editorExtensionRegistry.collectExtensions 消费。
+ * 组装 SCM 编辑器扩展。供 Editor.tsx 的 editorExtensionRegistry.collectExtensions 消费。
  * 返回一个扩展工厂：工厂接收当前 filePath，返回 []（无 repository）或扩展数组。
  */
-export const gitEditorExtensionFactory: EditorExtensionFactory = (filePath) => {
+export const scmEditorExtensionFactory: EditorExtensionFactory = (filePath) => {
   // 无文件路径时（无打开文件/新文件）不启用编辑器 git 集成
   if (!filePath) return []
 
@@ -53,15 +53,15 @@ export const gitEditorExtensionFactory: EditorExtensionFactory = (filePath) => {
   }
 
   const extensions: Extension[] = [
-    gitGutterExtension(ctxGetter),
-    gitBlameHoverExtension(ctxGetter),
-    gitChangeNavigatorExtension(ctxGetter),
+    scmGutterExtension(ctxGetter),
+    scmBlameHoverExtension(ctxGetter),
+    scmChangeNavigatorExtension(ctxGetter),
   ]
 
   return extensions
 }
 
 /** 注册到编辑器扩展 registry（在 builtinPlugins 或 App 启动时调用一次） */
-export function registerGitEditorExtensions(): void {
-  editorExtensionRegistry.register('polaris.git-editor', gitEditorExtensionFactory, 'Git 编辑器集成（gutter/blame/导航）')
+export function registerScmEditorExtensions(): void {
+  editorExtensionRegistry.register('polaris.scm-editor', scmEditorExtensionFactory, 'SCM 编辑器集成（gutter/blame/导航）')
 }

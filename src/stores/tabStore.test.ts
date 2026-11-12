@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useTabStore } from './tabStore'
-import type { GitDiffEntry } from '@/types/git'
+import type { ScmDiffEntry } from '@/types/scmDiff'
 
-const diffFor = (filePath: string, newContent: string): GitDiffEntry => ({
+const diffFor = (filePath: string, newContent: string): ScmDiffEntry => ({
   file_path: filePath,
   change_type: 'modified',
   old_content: 'old',

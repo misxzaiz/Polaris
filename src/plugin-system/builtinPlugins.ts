@@ -108,13 +108,14 @@ const corePluginManifest: PolarisPluginManifest = {
 
 export function registerBuiltinPlugins(): void {
   pluginRegistry.register(corePluginManifest)
-  // Git 编辑器集成（gutter / blame / 改动导航）注册到 editor extension slot
-  // FE-2: ./editor 静态绑定 gitGutter/blameHover/changeNavigator 的 @codemirror
+  // SCM 编辑器集成（gutter / blame / 改动导航）注册到 editor extension slot。
+  // 宿主只提供 CM6 渲染壳，数据由插件经 H3 editorScmProvider 提供。
+  // FE-2: ./editor 静态绑定 scmGutter/scmBlameHover/scmChangeNavigator 的 @codemirror
   // 值引用，经 plugin-system barrel（App.tsx 静态 import pluginRegistry）会把
   // codemirror chunk（~1MB）拽回首载；改动态 import。消费方 Editor.tsx 位于
   // 编辑器懒 chunk，collectExtensions 调用时序恒晚于本注册微任务。
-  void import('./editor').then(({ registerGitEditorExtensions }) =>
-    registerGitEditorExtensions(),
+  void import('./editor').then(({ registerScmEditorExtensions }) =>
+    registerScmEditorExtensions(),
   )
   pluginRegistry.register(askPluginManifest)
   pluginRegistry.register(browserPluginManifest)
