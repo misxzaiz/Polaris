@@ -10,11 +10,21 @@
 //! 注意：函数体（含错误整形）从旧模块逐字搬运，行为等价。
 
 #![allow(non_snake_case)]
-use crate::models::git::GitError;
+/// 文件 IO 错误（返回给前端）
+///
+/// 字段与旧 Git 域 `GitError` 完全一致（code/message/details?），前端解析零改动；
+/// Git 域出仓后该类型只剩文件读写语义，故就地定义，不再依赖已删除的 models::git。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FileIoError {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
+}
 
 /// 写入文件内容（用于撤销 AI 修改）
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn write_file_absolute(path: String, content: String) -> Result<(), GitError> {
+pub fn write_file_absolute(path: String, content: String) -> Result<(), FileIoError> {
     use std::path::Path;
 
     let file_path = Path::new(&path);
@@ -22,7 +32,7 @@ pub fn write_file_absolute(path: String, content: String) -> Result<(), GitError
     // 确保父目录存在
     if let Some(parent) = file_path.parent() {
         if !parent.exists() {
-            std::fs::create_dir_all(parent).map_err(|e| GitError {
+            std::fs::create_dir_all(parent).map_err(|e| FileIoError {
                 code: "IO_ERROR".to_string(),
                 message: format!("Failed to create directory: {}", e),
                 details: None,
@@ -31,7 +41,7 @@ pub fn write_file_absolute(path: String, content: String) -> Result<(), GitError
     }
 
     // 写入文件
-    std::fs::write(file_path, content).map_err(|e| GitError {
+    std::fs::write(file_path, content).map_err(|e| FileIoError {
         code: "IO_ERROR".to_string(),
         message: format!("Failed to write file: {}", e),
         details: None,
@@ -42,20 +52,20 @@ pub fn write_file_absolute(path: String, content: String) -> Result<(), GitError
 
 /// 读取文件内容（用于检查文件是否被修改）
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn read_file_absolute(path: String) -> Result<String, GitError> {
+pub fn read_file_absolute(path: String) -> Result<String, FileIoError> {
     use std::path::Path;
 
     let file_path = Path::new(&path);
 
     if !file_path.exists() {
-        return Err(GitError {
+        return Err(FileIoError {
             code: "FILE_NOT_FOUND".to_string(),
             message: format!("File does not exist: {}", path),
             details: None,
         });
     }
 
-    std::fs::read_to_string(file_path).map_err(|e| GitError {
+    std::fs::read_to_string(file_path).map_err(|e| FileIoError {
         code: "IO_ERROR".to_string(),
         message: format!("Failed to read file: {}", e),
         details: None,

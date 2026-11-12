@@ -36,8 +36,6 @@ use crate::services::router::{
     SelfInspectCapability, SelfMutateCapability, UiChatCapability,
     UiInputCapability, UiThemeCapability,
 };
-#[cfg(feature = "git")]
-use crate::services::router::GitCapability;
 
 const SERVER_NAME: &str = "polaris-bus-mcp";
 const SERVER_VERSION: &str = "0.1.0";
@@ -157,12 +155,6 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
         let _ = router.register_handle(Box::new(UiThemeCapability));
         let _ = router.register_handle(Box::new(UiChatCapability));
         let _ = router.register_handle(Box::new(UiInputCapability));
-        // cap.git —— 本地仓库读写域。GitCapability 模块带 #[cfg(feature = "git")] gate
-        // （router/mod.rs），本处引用必须同 gate，否则 --no-default-features
-        // 构建失败（见 AGENTS.md「命令门控」节双向陷阱）。
-        // 写类动作仍经 router 权限 gate（is_destructive 名单）+ 操作流水审计。
-        #[cfg(feature = "git")]
-        let _ = router.register_handle(Box::new(GitCapability));
         // cap.context —— 内存型能力（本进程独立实例，跨进程不共享主应用内存）。
         let _ = router.register_handle(Box::new(crate::services::router::ContextCapability::new(
             Arc::new(std::sync::Mutex::new(ContextMemoryStore::new())),
@@ -558,7 +550,6 @@ const MODULE_DOMAINS: &[(&str, &[&str], Option<&str>)] = &[
     ("prompt_snippet", &["cap.prompt_snippet"], None),
     ("data_root", &["cap.data_root"], Some("管理面：set_root 2026-10-26 起 Plugin 源默认放行（审批名单停用）；Remote 来源仍默认 deny")),
     ("hook", &["cap.hook"], None),
-    ("git", &["cap.git"], Some("只读动作干道开放；写类动作经权限 gate + 操作流水审计；Remote 来源默认 deny")),
     ("context", &["cap.context"], Some("独立内存实例：本进程与主进程各持一份、互不共享——经 bus_dispatch 写入的条目主进程不可见，读主进程上下文须经 cap_dispatch")),
     ("ui", &["cap.ui.theme", "cap.ui.chat", "cap.ui.input", "cap.ui.render"], Some("ui_control_enabled=false（默认）时 AI 会话禁控 UI 域（策略 deny）；状态真相在前端 store，效果经引擎 tool_call_start 事件落前端")),
     ("self", &["cap.self.mutate", "cap.self.inspect"], Some("cap.self.mutate 同受 ui_control_enabled 门控；状态真相在前端 uiSlotStore")),

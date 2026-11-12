@@ -7,7 +7,7 @@ edition = "2021"
 default-run = "polaris"
 
 [features]
-default = ["tauri-app", "git", "lsp-index"]
+default = ["tauri-app", "lsp-index"]
 
 # 测试包 profile（polaris-dev）：
 # 编译期切换数据根为 %APPDATA%/Polaris-dev，与正式版（%APPDATA%/Polaris）完全隔离。
@@ -47,8 +47,6 @@ multi-instance = []
 # 详见 docs/lightweight-refactor-plan.md §5
 # ====================================================================
 
-# Git 集成（commands::git + services::git 模块门控 + git2 依赖）
-git = ["dep:git2"]
 
 # LSP 智能索引（tree-sitter AST 解析 + SQLite 持久化）
 lsp-index = ["dep:tree-sitter", "dep:tree-sitter-java", "dep:rayon", "dep:xxhash-rust"]
@@ -86,7 +84,6 @@ tauri-build = { version = "2.0", features = [], optional = true }
 # PR-2a B2：写闸 FIFO 队列 + progress 合流器（std-only mini crate，独立可真实跑测）
 polaris-gate-queue = { path = "crates/gate-queue" }
 # PR-2a D2：泳道 lane 计算核心（graph.c 语义，std-only mini crate，独立可真实跑测）
-polaris-git-lanes = { path = "crates/git-lanes" }
 tauri = { version = "2.0", features = ["devtools", "unstable"], optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
 tauri-plugin-dialog = { version = "2.7", optional = true }
@@ -111,10 +108,6 @@ glob = "0.3"
 base64 = "0.22"
 urlencoding = "2"
 url = "2"
-# git2 按需依赖（`git` feature）：vendored-openssl 会为每个目标编译 OpenSSL,
-# Android aarch64 交叉编译被其构建脚本阻塞（探路闸门①,plans/mobile-self-contained-spike.md）。
-# 桌面/默认构建含 `git` feature,行为不变;移动/web-only 构建可剔除。
-git2 = { version = "0.18", features = ["vendored-openssl"], optional = true }
 similar = "2.4"
 bitflags = "2.4"
 walkdir = "2"

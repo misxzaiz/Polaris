@@ -5,8 +5,8 @@ pub mod file_clipboard;
 pub mod window;
 pub mod browser;
 pub mod browser_scripts;
-// commands/git.rs 已整域摘除（git 面板 vNext PR-2b）：git 域动作唯一入口 =
-// cap.git（services/router/git_capability.rs，直调 services::git）。仅存的
+// Git 域已整体出仓（2026-11-12，架构方案 C）：commands/git.rs、services/git/、
+// cap.git、models/git.rs 全部删除，Git 引擎移入 polaris-git 插件 service。仅存的
 // write_file_absolute / read_file_absolute / test_param_serialization（无 git
 // 业务关联）迁往 commands/file_io.rs。
 pub mod file_io;

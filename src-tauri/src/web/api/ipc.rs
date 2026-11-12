@@ -6,7 +6,6 @@
 //! to the appropriate business logic function.
 
 use std::collections::HashMap;
-use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -221,13 +220,6 @@ pub async fn handle_ipc_bridge(
             ))
         }
 
-        // ── Git ──────────────────────────────────────────────────────────────
-        // PR-1（git 面板 vNext）：git_* 统一转发 cap.git（RouterBus 能力内薄转发），
-        // 旧 web/api/git_dispatch.rs 双写派发表已删。兼容语义保持：成功返回裸结果
-        // JSON，失败走 WebError（500 Internal，message 为人类可读错误串）。
-        cmd if cmd.starts_with("git_") => {
-            dispatch_git_via_bus(&state, cmd, &args).await
-        }
         // ── Contract Router: 统一转发总线（契约第三步 P2）──────────────────
         // 基础设施臂，不属于任何业务域：2026-11-11 提交 a755f3fb「Scheduler 域
         // 整体出仓」批量删 78 条 scheduler_* 命令臂时，把紧邻的本臂连同注释块
@@ -697,10 +689,6 @@ fn dispatch_create_dispatch_task(
 // Protocol Documents (protocol-mode task files)
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// 将 IO 错误转为 WebError（ BadRequest 表达"文件/路径问题"）
-fn io_to_web(e: io::Error) -> WebError {
-    WebError::BadRequest(format!("Protocol document IO error: {}", e))
-}
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2329,7 +2317,7 @@ async fn dispatch_router_dispatch(state: &AppState, args: &Value) -> Result<Json
 
     // 性能治理（同 commands/router.rs router_dispatch）：外包 blocking 线程池，
     // 重量级 sync capability 不占 tokio worker（git 写秒级任务尤其受益）。
-    // 若 git feature 未编译，cap.git 将以"能力未注册"应答（与旧行为等价）。
+    // Git 域已整体出仓（2026-11-12）：cap.git 不再注册，Git 数据由插件服务提供。
     // X5 护栏：DISPATCH_SYNC_TIMEOUT 兜「能力 handler 未返回」的挂死——
     // 只解除调用方阻塞（blocking 线程无法强取消，由能力自行完成）。
     // 楔死取证（2026-10-31）：10s 未返回即点名 target（与 commands/router.rs 同款）。
@@ -2405,41 +2393,6 @@ async fn dispatch_respond_permission_request(
             .map_err(WebError::Internal)?
     };
     Ok(Json(serde_json::json!({ "resolved": resolved })))
-}
-
-/// git_* 前缀命令转发至 cap.git 能力（PR-1：web 双写派发表 `git_dispatch.rs` 摘除）。
-///
-/// 兼容语义：成功返回裸结果 JSON（与旧 dispatch_git_command 一致，前端 shim 之外
-/// 的残留调用方不受影响）；失败走 WebError::Internal（人类可读错误串）。
-/// 注意：git feature 未编译时 cap.git 不在总线，dispatch 报"能力未注册"——
-/// 与旧"Git support not compiled in"等价（未知能力 → 该域整体缺席）。
-async fn dispatch_git_via_bus(
-    state: &AppState,
-    cmd: &str,
-    args: &Value,
-) -> Result<Json<Value>, WebError> {
-    let action = cmd.strip_prefix("git_").unwrap_or(cmd);
-    let mut payload = args.clone();
-    if let Some(obj) = payload.as_object_mut() {
-        obj.insert("action".to_string(), Value::String(action.to_string()));
-    }
-    let env = crate::contracts::Envelope {
-        id: crate::contracts::MsgId(format!("web-git-{}", uuid::Uuid::new_v4())),
-        source: authenticated_remote_token(state),
-        target: crate::contracts::CapabilityId("cap.git".to_string()),
-        payload,
-        trace: crate::contracts::TraceId(format!("trace-git-{}", uuid::Uuid::new_v4())),
-    };
-    // 与 dispatch_router_dispatch 同策略：外包 blocking 线程池（git 写秒级不占 worker）
-    let router = state.router.clone();
-    let reply = tokio::task::spawn_blocking(move || router.dispatch(env))
-        .await
-        .map_err(|e| WebError::Internal(format!("dispatch join error: {}", e)))?
-        .map_err(WebError::Internal)?;
-    match reply.result {
-        Ok(v) => Ok(Json(v)),
-        Err(e) => Err(WebError::Internal(e)),
-    }
 }
 
 /// 审计链尾部（第五步阶段 B：契约测试面板审计链块用）

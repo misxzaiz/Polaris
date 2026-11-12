@@ -31,8 +31,6 @@ mod history_capability;
 mod demo_capability;
 mod event_adapter;
 mod voice_capability;
-#[cfg(feature = "git")]
-mod git_capability;
 mod kv_capability;
 mod policy_permission;
 pub mod permission_prompt;
@@ -61,8 +59,6 @@ pub use config_capability::ConfigCapability;
 pub use context_capability::ContextCapability;
 pub use data_root_capability::DataRootCapability;
 pub use fs_capability::FsCapability;
-#[cfg(feature = "git")]
-pub use git_capability::{GitCapability, GIT_CAP_ID};
 pub use http_capability::HttpCapability;
 pub use plugin_discovery_capability::PluginDiscoveryCapability;
 pub use plugin_service_manager_capability::PluginServiceManagerCapability;

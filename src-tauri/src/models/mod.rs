@@ -1,7 +1,6 @@
 pub mod ai_event;
 pub mod config;
 pub mod events;
-pub mod git;
 pub mod plugin;
 pub mod plugin_state;
 pub mod prompt;

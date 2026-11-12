@@ -9,8 +9,6 @@ pub mod file_watcher;
 pub mod session_db;
 pub mod session_state;
 pub mod turn_persist;
-#[cfg(feature = "git")]
-pub mod git;
 pub mod logger;
 pub mod mcp_config_service;
 pub mod mcp_server_common;

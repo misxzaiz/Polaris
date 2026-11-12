@@ -21,11 +21,6 @@ import { createHttpTransport } from './httpTransport';
 import type { ConnectionStatus } from './httpTransport';
 import type { TransportAdapter } from './types';
 import { getServerUrl } from './auth';
-import { parseReplyError } from './replyError';
-
-// PR-2a C1：结构化错误类型对同模块消费者再导出（消费方 `from '@/services/transport'` 可达）
-export type { GitErrorDetail, ReplyErrorDetail } from './replyError';
-export { GitCapError } from './replyError';
 import { useToastStore } from '@/stores/toastStore';
 import { createLogger } from '@/utils/logger';
 import { eventBus } from '@/services/eventBus';
@@ -240,47 +235,12 @@ export const disconnect = (): void => { transport.disconnect?.(); };
  * Tauri 模式：直接 IPC invoke
  * HTTP 模式：POST 到对应 API endpoint
  *
- * ── git 域 shim（git 面板 vNext PR-1，见 plans/git-panel-p0-spec.md）──
- * `git_*` 命令透明转发 cap.git（RouterBus）：前端 gitStore slices 的
- * `invoke('git_xxx', args)` 签名保持不变（零改动承诺），返回值即能力的 result。
- * 读类动作无限并发；写类动作由 PR-2a 队列收口（当前后端直调，行为同旧命令层）。
- * Sunset：PR-2a 起 slices 逐个显式 callGitCap 后移除本拦截。
+ * Git 域已整体出仓（2026-11-12，架构方案 C）：此前 `git_*` → cap.git 的透明
+ * 转发 shim 随宿主 Git 后端一并删除。前端不再存在任何 `invoke('git_*')` 调用，
+ * Git 数据统一由插件自带 service 提供（经 cap.pluginServiceManager.request 转发）。
  */
-const GIT_CAP_PREFIX = 'git_'
 
-interface CapDispatchResponse {
-  msgId: string
-  ok: boolean
-  result: unknown
-  error: string | null
-  /** PR-2a C1：结构化错误元数据（cap.git 分类；旧后端无该字段） */
-  errorDetail?: import('./replyError').ReplyErrorDetail | null
-  trace: string
-}
-
-async function invokeGitCap<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const action = cmd.slice(GIT_CAP_PREFIX.length)
-  const res = await transport.invoke<CapDispatchResponse>('router_dispatch', {
-    req: {
-      target: 'cap.git',
-      payload: { action, ...(args ?? {}) },
-    },
-  })
-  if (!res || typeof res !== 'object') {
-    throw new Error(`cap.git ${action}:empty response`)
-  }
-  if (!res.ok) {
-    // 错误串格式（后端整形）："message (details)"，对齐 parseGitError 呈现习惯；
-    // errorDetail（若后端给出）随 GitCapError 结构化携带（PR-2a C1）。
-    throw parseReplyError(res.error || `cap.git ${action} failed`, res.errorDetail)
-  }
-  return res.result as T
-}
-
-export const invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
-  cmd.startsWith(GIT_CAP_PREFIX)
-    ? invokeGitCap<T>(cmd, args)
-    : transport.invoke<T>(cmd, args);
+export const invoke = transport.invoke;
 
 /**
  * 统一 listen — 监听后端事件

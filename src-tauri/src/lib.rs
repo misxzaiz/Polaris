@@ -55,9 +55,9 @@ use commands::file_watcher::{
 };
 #[cfg(feature = "tauri-app")]
 use commands::file_io::{test_param_serialization, write_file_absolute, read_file_absolute};
-// commands/git.rs 已整域摘除（git 面板 vNext PR-2b）：git_* 命令不再注册，
-// git 域动作唯一入口 = cap.git（router_dispatch → services/router/git_capability.rs）。
-// 前端 transport shim 保持 invoke('git_*') 签名不变（plans/git-panel-p0-spec.md）。
+// Git 域已整体出仓（2026-11-12，架构方案 C）：git_* 命令、cap.git 与
+// transport shim 全部删除；Git 引擎在 polaris-git 插件 service（本机 git CLI），
+// 面板经 cap.pluginServiceManager.request 转发，AI 工具经插件 MCP 提供。
 #[cfg(feature = "tauri-app")]
 use commands::translate::baidu_translate;
 #[cfg(feature = "tauri-app")]
@@ -694,66 +694,6 @@ pub fn run() {
                                     }
                                     let Some(payload) = parsed.get("payload") else { continue };
                                     let _ = handle.emit("plugin.service.status", payload);
-                                }
-                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                                Err(_) => break,
-                            }
-                        }
-                    });
-                }
-
-                // 桌面 git-undo-snapshot 中继：cap.git 危险操作快照事件 → Tauri emit，
-                // 前端 toast「撤销」按钮据此弹出（FR-P2-3）。与 chat-event 同经
-                // EventBroadcaster，只在事件 kind 匹配时透传 payload。
-                {
-                    let mut raw_rx = state.event_broadcast.subscribe();
-                    let handle = app.handle().clone();
-                    tauri::async_runtime::spawn(async move {
-                        loop {
-                            match raw_rx.recv().await {
-                                Ok(msg) => {
-                                    let Ok(parsed) =
-                                        serde_json::from_str::<serde_json::Value>(&msg)
-                                    else {
-                                        continue;
-                                    };
-                                    if parsed.get("event").and_then(|e| e.as_str())
-                                        != Some("git-undo-snapshot")
-                                    {
-                                        continue;
-                                    }
-                                    let Some(payload) = parsed.get("payload") else { continue };
-                                    let _ = handle.emit("git-undo-snapshot", payload);
-                                }
-                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                                Err(_) => break,
-                            }
-                        }
-                    });
-                }
-
-                // 桌面 git-operation 中继：cap.git 写动作留痕事件 → Tauri emit，
-                // 前端操作流水面板据此实时追加（FR-P2-4）。与 git-undo-snapshot
-                // 同经 EventBroadcaster，只在事件 kind 匹配时透传 payload。
-                {
-                    let mut raw_rx = state.event_broadcast.subscribe();
-                    let handle = app.handle().clone();
-                    tauri::async_runtime::spawn(async move {
-                        loop {
-                            match raw_rx.recv().await {
-                                Ok(msg) => {
-                                    let Ok(parsed) =
-                                        serde_json::from_str::<serde_json::Value>(&msg)
-                                    else {
-                                        continue;
-                                    };
-                                    if parsed.get("event").and_then(|e| e.as_str())
-                                        != Some("git-operation")
-                                    {
-                                        continue;
-                                    }
-                                    let Some(payload) = parsed.get("payload") else { continue };
-                                    let _ = handle.emit("git-operation", payload);
                                 }
                                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                                 Err(_) => break,
