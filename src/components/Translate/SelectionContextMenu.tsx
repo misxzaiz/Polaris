@@ -15,8 +15,7 @@ import { useTranslateStore, useConfigStore, useViewStore, useWorkspaceStore } fr
 import { useEditorContextStore } from '@/stores/editorContextStore';
 import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
 import { baiduTranslate } from '@/services/tauri';
-import { ttsService } from '@/services/ttsService';
-import { Copy, Search, Languages, Quote, MessageSquare, Check, X, Send, Loader2, FileCode, Volume2, Square } from 'lucide-react';
+import { Copy, Search, Languages, Quote, MessageSquare, Check, X, Send, Loader2, FileCode } from 'lucide-react';
 import { openExternalLink } from '@/services/linkExternal';
 
 interface Position {
@@ -42,7 +41,6 @@ export function SelectionContextMenu() {
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState<MenuMode>('menu');
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [translatedText, setTranslatedText] = useState<string>('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [translateError, setTranslateError] = useState<string | null>(null);
@@ -71,7 +69,6 @@ export function SelectionContextMenu() {
       setTranslatedText('');
       setTranslateError(null);
       setAiQuestion('');
-      setIsSpeaking(ttsService.isPlaying());
     }
   }, []);
 
@@ -104,19 +101,6 @@ export function SelectionContextMenu() {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [handleContextMenu, handleClickOutside, handleKeyDown]);
-
-  // 菜单关闭时清理编辑器上下文
-  useEffect(() => {
-    const setStatus = (status: string) => setIsSpeaking(status === 'playing' || status === 'synthesizing');
-    ttsService.setCallbacks({
-      onStatusChange: setStatus,
-    });
-    setIsSpeaking(ttsService.isPlaying());
-
-    return () => {
-      ttsService.setCallbacks({});
-    };
-  }, []);
 
   useEffect(() => {
     if (!selection) {
@@ -151,16 +135,6 @@ export function SelectionContextMenu() {
 
     return { x: Math.max(8, x), y: Math.max(8, y) };
   }, [mode, editorContext?.filePath]);
-
-  // 朗读选中内容
-  const handleSpeak = async () => {
-    if (!selection) return;
-    if (isSpeaking) {
-      ttsService.stop();
-      return;
-    }
-    await ttsService.speak(selection.text, { force: true });
-  };
 
   // 复制
   const handleCopy = async () => {
@@ -423,13 +397,6 @@ export function SelectionContextMenu() {
       icon: copied ? <Check size={14} className="text-success" /> : <Copy size={14} />,
       label: copied ? tCommon('buttons.copied') : tCommon('buttons.copy'),
       onClick: handleCopy,
-    },
-    {
-      id: 'speak',
-      icon: isSpeaking ? <Square size={14} className="text-primary" /> : <Volume2 size={14} />,
-      label: isSpeaking ? t('stopSpeaking') : t('speak'),
-      onClick: handleSpeak,
-      disabled: isSpeaking && !ttsService.isPlaying(),
     },
     {
       id: 'search',

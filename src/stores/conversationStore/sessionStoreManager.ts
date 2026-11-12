@@ -23,7 +23,6 @@ import { createConversationStore } from './createConversationStore'
 import { getEventRouter } from '@/services/eventRouter'
 import { useConfigStore } from '../configStore'
 import { getEventBus } from '@/ai-runtime'
-import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useWorkspaceStore } from '../workspaceStore'
 import { useViewStore } from '../index'
 import { createLogger } from '@/utils/logger'
@@ -743,8 +742,6 @@ function createSessionManagerStore() {
                 )
               })
             }
-            // 语音提醒：后台完成通知
-            voiceNotificationService.notifyBackgroundComplete()
           }
         } else if (event.type === 'error') {
           // 批 4d（审计 4.11）：用户主动中断时后端 fallback 会发 error 事件，

@@ -36,14 +36,10 @@ class MainActivity : TauriActivity() {
     webView.settings.userAgentString =
       webView.settings.userAgentString.replace("Mozilla/5.0", "Polaris-App/1.0")
 
-    // WebView 默认要求媒体播放必须紧跟用户手势，而 TTS 是 new Audio(url).play()
-    // 由代码异步触发（用户手势不在同一调用栈上），会被 WebView 直接拒绝，
-    // 表现为「语音按钮有反应但始终不出声」。关闭此限制后播报才能正常出声。
-    // APK 内页面均为自有/受信内容，放开此限制的风险可接受。
+    // WebView 默认要求媒体播放必须紧跟用户手势，而页面内的音频播放常由代码
+    // 异步触发（用户手势不在同一调用栈上），会被 WebView 直接拒绝。关闭此限制后
+    // 才能正常出声。APK 内页面均为自有/受信内容，放开此限制的风险可接受。
     webView.settings.mediaPlaybackRequiresUserGesture = false
-
-    // 注册原生语音识别桥接（供 WebView 内 Web Speech API 不可用时回退）
-    webView.addJavascriptInterface(SpeechBridge(this, webView), "SpeechBridge")
 
     super.onWebViewCreate(webView)
   }

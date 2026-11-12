@@ -8,7 +8,6 @@ import {
   IconAIEngine,
   IconSearch,
   IconGeneral,
-  IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
 import { BarChart3, Download, Code2, Globe, Blocks, Server, Palette } from 'lucide-react';
@@ -21,7 +20,6 @@ export type SettingsTabId =
   | 'prompt-snippet'
   | 'ai-engine'
   | 'model-provider'
-  | 'speech'
   | 'lsp'
   | 'app-update'
   | 'plugins'
@@ -57,7 +55,6 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'model-provider', icon: <Server size={16} />, labelKey: 'nav.modelProvider' },
   { id: 'token-stats', icon: <BarChart3 size={16} />, labelKey: 'nav.tokenStats' },
 
-  { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },
   { id: 'lsp', icon: <Code2 size={16} />, labelKey: 'nav.lsp' },
   { id: 'plugins', icon: <Blocks size={16} />, labelKey: 'nav.plugins' },
   { id: 'app-update', icon: <Download size={16} />, labelKey: 'nav.appUpdate' },

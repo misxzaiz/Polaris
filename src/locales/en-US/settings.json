@@ -20,7 +20,6 @@
     "modelProvider": "Model Providers",
     "translate": "Translate",
     "scheduler": "Scheduler",
-    "speech": "Speech Input",
     "advanced": "Advanced",
     "plugins": "Plugins",
     "appUpdate": "App Update",
@@ -379,118 +378,6 @@
       "current": "Current",
       "notConfigured": "Not Configured",
       "activated": "Activated"
-    }
-  },
-  "speech": {
-    "input": {
-      "title": "Speech Input"
-    },
-    "output": {
-      "title": "Speech Output"
-    },
-    "enabled": {
-      "title": "Enable Speech Input",
-      "desc": "Click speech button in status bar to start continuous recognition"
-    },
-    "language": {
-      "title": "Recognition Language"
-    },
-    "dictation": {
-      "title": "Dictation Shortcut (Ctrl/Cmd+D)",
-      "desc": "With the input focused, press Ctrl (⌘ on Mac)+D to start dictation; recognized text fills the input box",
-      "modeToggle": "Toggle: press once to start, again to stop",
-      "modePush": "Push-to-talk: hold to record, release to stop",
-      "modeHint": "Only active when the input is focused; yields to an active voice companion call"
-    },
-    "wakeWord": {
-      "title": "Wake Word Mode",
-      "desc": "When enabled, speech recognition runs continuously waiting for wake word trigger",
-      "remove": "Remove",
-      "empty": "Please add at least one wake word, otherwise wake word mode cannot work",
-      "placeholder": "Enter wake word, press Enter to add",
-      "add": "Add",
-      "hint": "After saying the wake word, subsequent speech will be written to the input field. Say the wake word again to stop"
-    },
-    "commands": {
-      "title": "Voice Commands",
-      "send": "Send message",
-      "clear": "Clear input",
-      "interrupt": "Interrupt conversation",
-      "undo": "Undo last input",
-      "play": "Read response",
-      "removeKeyword": "Remove",
-      "noKeywords": "No keywords, please add at least one",
-      "addKeywordPlaceholder": "Enter keyword, press Enter to add",
-      "addKeyword": "Add",
-      "resetToDefault": "Reset to Default"
-    },
-    "tips": {
-      "title": "Instructions",
-      "button": "Click speech button in status bar to start/stop recognition",
-      "continuous": "Keeps listening until manually stopped",
-      "requirement": "Requires microphone permission and network connection"
-    },
-    "tts": {
-      "enabled": {
-        "title": "Enable Speech Output",
-        "desc": "Automatically read AI responses when complete"
-      },
-      "voice": {
-        "title": "Voice"
-      },
-      "rate": {
-        "title": "Speed"
-      },
-      "volume": {
-        "title": "Volume"
-      },
-      "autoPlay": {
-        "title": "Auto Play",
-        "desc": "Automatically play when message is complete, disable for manual trigger"
-      },
-      "test": {
-        "title": "Test Voice",
-        "play": "Play Test",
-        "playing": "Playing...",
-        "stop": "Stop",
-        "sampleText": "Hello, this is a voice test."
-      },
-      "tips": {
-        "title": "Instructions",
-        "filter": "Automatically filters code blocks and tool calls, reads only plain text",
-        "interrupt": "Stops automatically when sending new message or interrupting",
-        "online": "Speech synthesis requires network connection"
-      }
-    },
-    "notification": {
-      "title": "Voice Notifications",
-      "enabled": {
-        "title": "Enable Voice Notifications",
-        "desc": "Voice alerts for key events"
-      },
-      "sendConfirm": {
-        "title": "Send Confirmation",
-        "desc": "Play confirmation voice after sending message",
-        "label": "Announcement text"
-      },
-      "wakeResponse": {
-        "title": "Wake Response",
-        "desc": "Play response voice after wake word match",
-        "remove": "Remove",
-        "placeholder": "Enter response phrase, press Enter to add",
-        "add": "Add"
-      },
-      "errorAlert": {
-        "title": "Error Alert",
-        "desc": "Play error alert when chat encounters an error",
-        "label": "Announcement text"
-      },
-      "backgroundNotify": {
-        "title": "Background Completion",
-        "desc": "Play notification when background task completes",
-        "label": "Announcement text"
-      },
-      "autoPlayHint": "AI response auto-play is controlled by the \"Auto Play\" toggle above"
     }
   },
   "systemPrompt": {

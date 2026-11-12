@@ -94,7 +94,7 @@ export function subscribeKernelSessionState(
  *   「压缩引擎未产出简报内容」并把刚起步的运行掐死。
  * - 开启后：必须先观测到 running（订阅推送或一次性查询任一来源），
  *   此后才认 idle/error 下降沿；从未观测到 running 则保持等待，由 timeout 兜底。
- * - 默认关闭，既有消费方（radioBroadcastController 等）行为零变更。
+ * - 默认关闭，既有消费方行为零变更。
  */
 export function waitKernelSessionStreamEnd(
   sessionId: string,

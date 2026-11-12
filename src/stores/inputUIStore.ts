@@ -54,6 +54,12 @@ export interface InputUIState {
   showContextMeter: boolean
   /** 当前动态横幅（null = 无） */
   banner: InputBanner | null
+  /** 当前输入字数（ChatInput 同步，不持久化） */
+  inputLength: number
+  /** 附件数量（ChatInput 同步，不持久化） */
+  attachmentCount: number
+  /** 建议模式（ChatInput 同步，不持久化） */
+  suggestionMode: 'workspace' | 'file' | 'git' | null
 
   // ===== Actions =====
   /** 应用 cap.ui.input patch 的 config */
@@ -65,6 +71,12 @@ export interface InputUIState {
   setBanner: (banner: InputBanner | null) => void
   /** 恢复默认（清横幅 + 复原悬浮层与上下文条） */
   reset: () => void
+  /** 同步输入字数 */
+  setInputLength: (length: number) => void
+  /** 同步附件数量 */
+  setAttachmentCount: (count: number) => void
+  /** 同步建议模式 */
+  setSuggestionMode: (mode: 'workspace' | 'file' | 'git' | null) => void
   /** 横幅动作点击回调（执行 dispatch） */
   dispatchBannerAction: (action: BannerAction) => void
 }
@@ -103,6 +115,9 @@ export const useInputUIStore = create<InputUIState>()(
   persist(
     (set) => ({
       ...DEFAULT_INPUT_UI,
+      inputLength: 0,
+      attachmentCount: 0,
+      suggestionMode: null,
 
       applyConfigPatch: (patch) =>
         set((state) => {
@@ -129,7 +144,16 @@ export const useInputUIStore = create<InputUIState>()(
       reset: () =>
         set(() => ({
           ...DEFAULT_INPUT_UI,
+          inputLength: 0,
+          attachmentCount: 0,
+          suggestionMode: null,
         })),
+
+      setInputLength: (length) => set({ inputLength: length }),
+
+      setAttachmentCount: (count) => set({ attachmentCount: count }),
+
+      setSuggestionMode: (mode) => set({ suggestionMode: mode }),
 
       dispatchBannerAction: (action) => {
         if (!action.dispatch) {

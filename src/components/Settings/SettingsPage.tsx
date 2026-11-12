@@ -17,7 +17,6 @@ import { ModelProviderTab } from './tabs/ModelProviderTab';
 import { GeneralTab } from './tabs/GeneralTab';
 import { ThemeTab } from './tabs/ThemeTab';
 import { PromptSnippetTab, type PromptSnippetTabRef } from './tabs/PromptSnippetTab';
-import { SpeechTab } from './tabs/SpeechTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
 import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { LspTab } from './tabs/LspTab';
@@ -47,7 +46,6 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'prompt-snippet': 'nav.promptSnippet',
   'ai-engine': 'nav.aiEngine',
   'model-provider': 'nav.modelProvider',
-  'speech': 'nav.speech',
   'lsp': 'nav.lsp',
   'app-update': 'nav.appUpdate',
   'advanced': 'nav.advanced',
@@ -92,7 +90,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   const topLevelKeysByTab: Partial<Record<SettingsTabId, (keyof Config)[]>> = {
     general: ['language', 'baiduTranslate', 'uiControlEnabled', 'autoLaunch'],
     theme: ['theme'],
-    speech: ['speech', 'tts', 'wakeWord', 'voiceNotification', 'voiceCommands'],
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
     'ai-engine': ['defaultEngine', 'claudeCode'],
@@ -285,14 +282,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
             {activeTab === 'prompt-snippet' && (
               <PromptSnippetTab ref={snippetTabRef} />
-            )}
-
-            {activeTab === 'speech' && (
-              <SpeechTab
-                config={localConfig}
-                onConfigChange={setLocalConfig}
-                loading={loading}
-              />
             )}
 
             {activeTab === 'advanced' && (

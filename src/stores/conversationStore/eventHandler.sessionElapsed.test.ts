@@ -9,9 +9,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/services/dialogStorage', () => ({ dialogStorageService: {} }))
-vi.mock('@/services/voiceNotificationService', () => ({
-  voiceNotificationService: { notifyError: () => {} },
-}))
 vi.mock('@/stores/workspaceStore', () => ({ useWorkspaceStore: { getState: () => ({}) } }))
 vi.mock('@/stores/cliInfoStore', () => ({
   useCliInfoStore: { getState: () => ({ updateFromInit: () => {} }) },

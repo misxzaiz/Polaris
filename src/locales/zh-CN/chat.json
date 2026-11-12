@@ -364,9 +364,7 @@
     "copyMessage": "复制消息内容",
     "copied": "已复制",
     "edit": "编辑",
-    "regenerate": "重新生成",
-    "speak": "朗读",
-    "stopSpeaking": "停止朗读"
+    "regenerate": "重新生成"
   },
   "history": {
     "title": "会话历史",
@@ -643,35 +641,6 @@
     "chatNavigation": "对话导航",
     "rounds": "轮",
     "backToBottom": "回到底部"
-  },
-  "speech": {
-    "listening": "正在听...",
-    "processing": "处理中...",
-    "error": "识别失败",
-    "stop": "停止听写",
-    "dictate": "语音听写：识别结果填入输入框",
-    "dictating": "听写中",
-    "dictateLabel": "听写",
-    "waitingWake": "等待唤醒...",
-    "awake": "已唤醒...",
-    "awakeShort": "已唤醒",
-    "insecureContext": "当前为 HTTP 环境，语音合成将使用设备本地引擎（音质一般）。需要 HTTPS 才能使用云端高质量音色。",
-    "insecureTTS": "语音合成已降级到设备本地引擎（HTTP 环境下 crypto.subtle 不可用，无法使用云端音色）",
-    "ttsUnplayable": "当前环境无法播放语音（既无云端合成，也无本地 TTS 引擎）",
-    "ttsEngine": "语音合成引擎：{{engine}}"
-  },
-  "tts": {
-    "stop": "停止播放",
-    "disable": "关闭语音播放",
-    "enable": "开启语音播放",
-    "synthesizing": "合成中...",
-    "playing": "朗读中",
-    "enabled": "朗读开",
-    "label": "朗读"
-  },
-  "voiceCompanion": {
-    "busy": "语音通话占用麦克风中",
-    "entry": "和小陈语音通话"
   },
   "sessionConfig": {
     "noAgent": "不设置",

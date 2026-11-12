@@ -3,7 +3,6 @@
  */
 
 import type { CSSProperties } from 'react'
-import type { SpeechConfig, TTSConfig, WakeWordConfig, VoiceNotificationConfig, VoiceCommandEntry } from './speech'
 import type { ModelProfile } from './modelProfile'
 import type { WorkspaceTerminalScripts } from './terminalScript'
 
@@ -342,16 +341,6 @@ export interface Config {
   feishu?: FeishuConfig;
   /** DingTalk 集成配置 */
   dingtalk?: DingTalkConfig;
-  /** 语音输入配置 */
-  speech?: SpeechConfig;
-  /** 语音输出配置 (TTS) */
-  tts?: TTSConfig;
-  /** 唤醒词配置 */
-  wakeWord?: WakeWordConfig;
-  /** 语音提醒配置 */
-  voiceNotification?: VoiceNotificationConfig;
-  /** 语音命令配置（自定义关键词） */
-  voiceCommands?: VoiceCommandEntry[];
   /** Web 服务配置 */
   web?: WebConfig;
   /** 派发任务配置（策略/结果注入/队员预设） */

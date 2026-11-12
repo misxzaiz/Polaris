@@ -365,9 +365,7 @@
     "copyMessage": "Copy message content",
     "copied": "Copied",
     "edit": "Edit",
-    "regenerate": "Regenerate",
-    "speak": "Read Aloud",
-    "stopSpeaking": "Stop"
+    "regenerate": "Regenerate"
   },
   "history": {
     "title": "Session History",
@@ -644,35 +642,6 @@
     "chatNavigation": "Chat Navigation",
     "rounds": "rounds",
     "backToBottom": "Back to bottom"
-  },
-  "speech": {
-    "listening": "Listening...",
-    "processing": "Processing...",
-    "error": "Recognition failed",
-    "stop": "Stop dictation",
-    "dictate": "Voice dictation: results fill the input box",
-    "dictating": "Dictating",
-    "dictateLabel": "Dictate",
-    "waitingWake": "Waiting for wake word...",
-    "awake": "Awake...",
-    "awakeShort": "Awake",
-    "insecureContext": "HTTP environment detected. TTS falls back to the device-local engine (lower quality). HTTPS is required for the cloud neural voices.",
-    "insecureTTS": "TTS downgraded to the device-local engine (crypto.subtle unavailable over HTTP)",
-    "ttsUnplayable": "Voice playback is unavailable in this environment (no cloud synthesis and no local TTS engine)",
-    "ttsEngine": "TTS engine: {{engine}}"
-  },
-  "tts": {
-    "stop": "Stop playback",
-    "disable": "Disable voice playback",
-    "enable": "Enable voice playback",
-    "synthesizing": "Synthesizing...",
-    "playing": "Speaking",
-    "enabled": "Read on",
-    "label": "Read"
-  },
-  "voiceCompanion": {
-    "busy": "Voice call is using the microphone",
-    "entry": "Voice call with Xiaobai"
   },
   "sessionConfig": {
     "noAgent": "None",

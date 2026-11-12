@@ -4,31 +4,24 @@
  * 显示当前对话的状态信息：
  * - 会话配置选择器 (Agent/Model/Effort/Permission)
  * - 引擎健康指示
- * - 语音区：听写麦克风（填输入框） + 语音伙伴「小陈」通话入口 + 听筒(TTS 朗读)
  * - 输入状态提示 / 流式状态 / 输入字数
  */
 
-import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore, useModelProfileStore } from '@/stores';
-import { useVoiceInputStore } from '@/stores/voiceInputStore';
-import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages, useActiveSessionUsage, useActiveSessionStreamRate } from '@/stores/conversationStore/useActiveSession';
+import { useInputUIStore } from '@/stores/inputUIStore';
+import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionUsage, useActiveSessionStreamRate } from '@/stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
-import { Paperclip, MoreHorizontal, Loader2, Mic, Volume1, Volume2, VolumeX, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Paperclip, MoreHorizontal, RefreshCw } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useTTS } from '@/hooks/useTTS';
-import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { useContainerWidth } from '@/hooks/useContainerWidth';
-import type { TTSConfig, WakeWordConfig, VoiceCommandConfig, VoiceCommand } from '@/types/speech';
-import { DEFAULT_TTS_CONFIG } from '@/types/speech';
 import { SessionConfigSelector } from '../session/SessionConfigSelector';
 import { ContextMeter } from './ContextMeter';
 import { getSelectedEngineHealth } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { getEngineSelectors } from '@/utils/engineCapabilities';
 import { useActiveSessionId, useSessionMetadataList } from '@/stores/conversationStore/sessionStoreManager';
-import { voiceNotificationService } from '@/services/voiceNotificationService';
-import { isAssistantMessage } from '@/types/chat';
 import { currentMode } from '@/services/transport';
 import { useToastStore } from '@/stores/toastStore';
 
@@ -38,7 +31,7 @@ import { useToastStore } from '@/stores/toastStore';
 const BREAKPOINTS = {
   /** 主行可容纳 profile + model + effort，并显示版本号文字 */
   wide: 720,
-  /** 主行可容纳 profile + model，并内联语音区 */
+  /** 主行可容纳 profile + model，并内联输入提示 */
   medium: 560,
   /** 主行仅显示 profile（端点，最高优先级） */
   narrow: 420,
@@ -81,14 +74,13 @@ interface ChatStatusBarProps {
 /**
  * 聊天状态栏组件
  *
- * 四区布局：[会话操作] │ [配置选择器] … [语音区/健康] │ [输入状态]
+ * 三区布局：[会话操作] │ [配置选择器] … [健康] │ [输入状态]
  * - 配置选择器分层 + 宽度自适应（profile > model > effort，agent/permission 始终折叠）
- * - 语音区常驻右侧（不随宽度折叠，保证可发现性）：听写 / 通话 / 听筒
  * - 引擎版本降级为健康圆点（hover 显示版本号）
  */
 export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps) {
   const { t } = useTranslation('chat');
-  const { config, healthStatus, updateConfigPatch } = useConfigStore();
+  const { config, healthStatus } = useConfigStore();
   const isStreaming = useActiveSessionStreaming();
   const activeSessionId = useActiveSessionId();
   const sessionMetadataList = useSessionMetadataList();
@@ -96,18 +88,11 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
     inputLength,
     attachmentCount,
     suggestionMode,
-    appendSpeechTranscript,
-    speechCommand,
-    setSpeechCommand,
-    undoSpeechTranscript,
-  } = useVoiceInputStore();
+  } = useInputUIStore();
 
   // 直接从 conversationStore 获取状态（消除 chatInputStore 冗余同步）
   const hasPendingQuestion = useHasPendingQuestion();
   const hasActivePlan = useHasActivePlan();
-
-  // 会话消息（用于命令 "播放"）
-  const { messages } = useActiveSessionMessages();
 
   // 会话配置
   const { config: sessionConfig, setConfig: setSessionConfig } = useSessionConfig();
@@ -146,158 +131,6 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
   // 展开/收起
   const [expanded, setExpanded] = useState(false);
 
-  // ===== 语音区 =====
-  // 唤醒词 + 语音命令配置（统一读全局 config）
-  const speechConfig = config?.speech;
-  const speechInputEnabled = speechConfig?.enabled ?? true;
-  const speechLanguage = speechConfig?.language ?? 'zh-CN';
-  const wakeWordConfig = config?.wakeWord as WakeWordConfig | undefined;
-  const voiceCommands = config?.voiceCommands as VoiceCommandConfig | undefined;
-  const wakeWordEnabled = wakeWordConfig?.enabled && wakeWordConfig.words.length > 0;
-
-  // 语音听写（填输入框，可编辑后发送）；与全屏伙伴经音频焦点仲裁互斥
-  const {
-    isDictating,
-    interimText,
-    wakeActive,
-    toggle: toggleDictation,
-    stop: stopDictation,
-    isSupported: dictationSupported,
-    isSecureContext,
-    companionOpen,
-  } = useVoiceDictation(appendSpeechTranscript, speechLanguage, {
-    voiceCommands,
-    wakeWordConfig: wakeWordEnabled ? wakeWordConfig : undefined,
-    onCommand: (cmd: VoiceCommand) => {
-      setSpeechCommand(cmd);
-    },
-  });
-
-  // ===== Ctrl/Cmd+D 听写快捷键 =====
-  // 作用域：仅当聊天输入框聚焦时生效（避免与终端 EOF、编辑器、Mac 书签冲突）
-  // - toggle 模式：keydown 触发 toggleDictation（开始/停止）
-  // - push-to-talk 模式：keydown 开始（若未在听写）、keyup/blur/隐藏 停止
-  const dictationShortcutEnabled = speechConfig?.dictationShortcutEnabled ?? true;
-  const dictationMode = speechConfig?.dictationMode ?? 'toggle';
-
-  // 用 ref 持有最新值，避免 stale closure 与依赖重渲染抖动
-  const dictationStateRef = useRef({
-    toggleDictation,
-    stopDictation,
-    isDictating,
-    companionOpen,
-    dictationShortcutEnabled,
-    dictationMode,
-    dictationSupported,
-  });
-  useEffect(() => {
-    dictationStateRef.current = {
-      toggleDictation,
-      stopDictation,
-      isDictating,
-      companionOpen,
-      dictationShortcutEnabled,
-      dictationMode,
-      dictationSupported,
-    };
-  }, [toggleDictation, stopDictation, isDictating, companionOpen, dictationShortcutEnabled, dictationMode, dictationSupported]);
-
-  useEffect(() => {
-    if (!dictationShortcutEnabled || !dictationSupported) return;
-
-    const isChatInputFocused = () => {
-      const el = document.activeElement;
-      return !!el && el instanceof HTMLElement && el.closest('.chat-input-text') !== null;
-    };
-
-    const isOurKey = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey;
-      return mod && !e.shiftKey && !e.altKey && (e.code === 'KeyD' || e.key === 'd' || e.key === 'D');
-    };
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      const s = dictationStateRef.current;
-      if (!s.dictationShortcutEnabled || !s.dictationSupported) return;
-      if (s.companionOpen) return;                 // 通话占用，避让
-      if (!isChatInputFocused()) return;            // 仅输入框聚焦时生效
-      if (!isOurKey(e)) return;
-      // Mac 下 ⌘+D 默认是"加入书签"，必须拦截
-      e.preventDefault();
-      if (e.repeat) return;                         // 键盘连击忽略
-      if (s.dictationMode === 'toggle') {
-        s.toggleDictation();
-      } else {
-        // push-to-talk：未在听写则开始（用 toggle 当 start，因为未开始时 toggle==start）
-        if (!s.isDictating) s.toggleDictation();
-      }
-    };
-
-    const onKeyUp = (e: KeyboardEvent) => {
-      const s = dictationStateRef.current;
-      if (s.dictationMode !== 'push-to-talk') return;
-      if (!isOurKey(e)) return;
-      if (s.isDictating) s.stopDictation();
-    };
-
-    // 失焦/切后台兜底：push-to-talk 模式下若仍在听写，立即停止
-    const onblurStop = () => {
-      const s = dictationStateRef.current;
-      if (s.dictationMode === 'push-to-talk' && s.isDictating) s.stopDictation();
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', onblurStop);
-    document.addEventListener('visibilitychange', onblurStop);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('blur', onblurStop);
-      document.removeEventListener('visibilitychange', onblurStop);
-    };
-  }, [dictationShortcutEnabled, dictationSupported]);
-
-  // ===== 语音命令处理 =====
-  // send/clear 留给 ChatInput 消费（handleSend 已处理 send、clear 清空输入框）
-  // interrupt/undo/play 在此处处理
-  useEffect(() => {
-    const cmd = speechCommand;
-    if (!cmd) return;
-
-    switch (cmd) {
-      case 'interrupt':
-        // 批 6（审计 5.11）：语音「停止/中断」此前是空壳——现在真正调用活跃
-        // 会话的 interrupt（与停止按钮同一链路，含超时兜底）。动态 import
-        // manager 直取活跃会话（useActiveSessionActions 是 hook 不能在此调用）。
-        if (isStreaming) {
-          void import('@/stores/conversationStore/sessionStoreManager').then(
-            ({ sessionStoreManager }) => {
-              const sid = sessionStoreManager.getState().activeSessionId
-              const store = sid
-                ? sessionStoreManager.getState().stores.get(sid)
-                : undefined
-              void store?.getState().interrupt()
-            },
-          )
-        }
-        break;
-      case 'undo':
-        undoSpeechTranscript();
-        break;
-      case 'play': {
-        const lastAssistant = [...messages].reverse().find(m => isAssistantMessage(m));
-        if (lastAssistant) {
-          voiceNotificationService.speakAIResponse(lastAssistant as Parameters<typeof voiceNotificationService.speakAIResponse>[0], { force: true });
-        }
-        break;
-      }
-    }
-
-    if (cmd !== 'send' && cmd !== 'clear') {
-      setSpeechCommand(null);
-    }
-  }, [speechCommand, isStreaming, setSpeechCommand, undoSpeechTranscript, messages]);
-
   // ===== 同步恢复（Web 模式专用）=====
   // 手机锁屏/切后台导致断线后，手动触发：重连 WS → 重拉会话历史 → 续接新内容
   const [syncing, setSyncing] = useState(false);
@@ -319,29 +152,6 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
       setSyncing(false);
     }
   }, [syncing, t]);
-
-  // 听筒（TTS 朗读控制）
-  const ttsConfig = config?.tts as TTSConfig | undefined;
-  const ttsEnabled = ttsConfig?.enabled ?? false;
-  const { status: ttsStatus, engine: ttsEngine, stop: stopTTS } = useTTS();
-  const setTTSEnabled = useCallback(
-    (enabled: boolean) => {
-      updateConfigPatch({ tts: { ...(ttsConfig || DEFAULT_TTS_CONFIG), enabled } });
-    },
-    [ttsConfig, updateConfigPatch],
-  );
-  const handleTTSClick = useCallback(() => {
-    if (!config) return;
-    if (ttsStatus === 'playing') {
-      stopTTS();
-    } else if (ttsStatus === 'paused') {
-      stopTTS();
-      setTTSEnabled(false);
-    } else if (ttsStatus === 'idle' || ttsStatus === 'error') {
-      // 任意空闲状态点击即开关：修复「开启后空闲时关不掉」
-      setTTSEnabled(!ttsEnabled);
-    }
-  }, [ttsStatus, stopTTS, ttsEnabled, config, setTTSEnabled]);
 
   // 获取输入状态提示文本
   const getInputHint = () => {
@@ -389,133 +199,6 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
   // 是否有内容被折叠（需要「更多」按钮）：低频选择器（agent/permission）始终折叠
   const hasOverflow = hiddenTypes.length > 0;
 
-  // 语音区是否内联在主行（窄屏折叠进「更多」面板，保证 260px 不溢出）
-  const voiceInline = containerWidth >= BREAKPOINTS.medium;
-
-  /**
-   * 语音分段控件：听写(Mic) / 通话(AudioLines) / 朗读(Volume2)
-   * 图标差异化 + 激活态自说明；panel 变体带文字标签（窄屏折叠面板用）
-   */
-  const renderVoiceSegment = (variant: 'inline' | 'panel') => {
-    const withLabel = variant === 'panel';
-    const btnBase = 'flex items-center gap-1 px-1.5 py-0.5 rounded-full transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed';
-
-    return (
-      <div
-        className={clsx(
-          'flex items-center gap-0.5 p-0.5 rounded-full border border-border-subtle bg-background-surface/60 shrink-0',
-          withLabel && 'self-start',
-        )}
-      >
-        {/* 听写：识别填入输入框 */}
-        {speechInputEnabled && dictationSupported && (
-          <button
-            onClick={toggleDictation}
-            disabled={companionOpen}
-            className={clsx(
-              btnBase,
-              isDictating && wakeWordEnabled && wakeActive
-                ? 'bg-green-500/10 text-green-500'
-                : isDictating
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover',
-            )}
-            title={
-              companionOpen
-                ? t('voiceCompanion.busy', '语音通话占用麦克风中')
-                : isDictating
-                  ? (wakeWordEnabled ? (wakeActive ? t('speech.awake', '已唤醒...') : t('speech.waitingWake', '等待唤醒...')) : t('speech.stop', '停止听写'))
-                  : t('speech.dictate', '语音听写：识别结果填入输入框')
-            }
-          >
-            <Mic size={13} className={isDictating ? 'animate-pulse' : ''} />
-            {(withLabel || isDictating) && (
-              <span>{isDictating ? (wakeWordEnabled ? (wakeActive ? t('speech.awakeShort', '已唤醒') : t('speech.waitingWake', '等待唤醒')) : t('speech.dictating', '听写中')) : t('speech.dictateLabel', '听写')}</span>
-            )}
-          </button>
-        )}
-
-        {/* 通话：全屏语音伙伴（声波图标，与听写区分） */}
-        {/* <button
-          onClick={openVoiceCompanion}
-          className={clsx(btnBase, 'text-primary hover:bg-primary/10')}
-          title={t('voiceCompanion.entry', `和${companionName}语音通话`)}
-        >
-          <AudioLines size={13} />
-          {(withLabel || containerWidth >= BREAKPOINTS.wide) && (
-            <span>{companionName}</span>
-          )}
-        </button> */}
-
-        {/* 朗读：TTS 控制（任意状态可关） */}
-        <button
-          onClick={handleTTSClick}
-          disabled={ttsStatus === 'synthesizing'}
-          className={clsx(
-            btnBase,
-            ttsStatus === 'playing' && 'bg-primary/10 text-primary',
-            ttsStatus === 'paused' && 'text-text-secondary hover:text-text-primary hover:bg-background-hover',
-            ttsStatus === 'synthesizing' && 'text-warning cursor-wait',
-            (ttsStatus === 'idle' || ttsStatus === 'error') && (ttsEnabled
-              ? 'text-primary/70 hover:text-primary hover:bg-primary/10'
-              : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-            ),
-          )}
-          title={
-            ttsStatus === 'playing' ? t('tts.stop', '停止播放') :
-            ttsStatus === 'paused' ? t('tts.disable', '关闭语音播放') :
-            ttsStatus === 'synthesizing' ? t('tts.synthesizing', '合成中...') :
-            ttsEnabled ? t('tts.disable', '关闭语音播放') : t('tts.enable', '开启语音播放')
-          }
-        >
-          {ttsStatus === 'synthesizing' && <Loader2 size={13} className="animate-spin" />}
-          {(ttsStatus === 'playing' || ttsStatus === 'paused') && (
-            <Volume2 size={13} className={ttsStatus === 'playing' ? 'animate-pulse' : ''} />
-          )}
-          {(ttsStatus === 'idle' || ttsStatus === 'error') && (
-            ttsEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />
-          )}
-          {withLabel && (
-            <span>
-              {ttsStatus === 'playing' ? t('tts.playing', '朗读中')
-                : ttsEnabled ? t('tts.enabled', '朗读开') : t('tts.label', '朗读')}
-            </span>
-          )}
-        </button>
-
-        {/* 非安全上下文警告：语音功能受限 */}
-        {!isSecureContext && (
-          <span
-            className="text-warning/70 hover:text-warning cursor-help"
-            title={t('speech.insecureContext', '当前为 HTTP 环境，语音识别和语音合成受限。需要 HTTPS 或 localhost 才能完整使用语音功能。')}
-          >
-            <ShieldAlert size={12} />
-          </span>
-        )}
-
-        {/* TTS 降级提示：HTTP 下云端音色不可用，已改用设备本地引擎 */}
-        {ttsEnabled && !isSecureContext && ttsEngine === 'browser' && (
-          <span
-            className="text-warning/70 hover:text-warning cursor-help"
-            title={t('speech.insecureTTS', '语音合成已降级到设备本地引擎（HTTP 环境下 crypto.subtle 不可用，无法使用云端音色）')}
-          >
-            <Volume1 size={12} />
-          </span>
-        )}
-
-        {/* TTS 完全不可播提示 */}
-        {ttsEnabled && ttsEngine === 'none' && (
-          <span
-            className="text-error/80 hover:text-error cursor-help"
-            title={t('speech.ttsUnplayable', '当前环境无法播放语音（既无云端合成，也无本地 TTS 引擎）')}
-          >
-            <VolumeX size={12} />
-          </span>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div
       ref={containerRef}
@@ -530,7 +213,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
         gridTemplateRows: expanded ? 'auto auto' : 'auto 0fr',
       }}
     >
-      {/* 主行：[会话操作] │ [配置选择器] … [语音区/健康] │ [输入状态] */}
+      {/* 主行：[会话操作] │ [配置选择器] … [健康] │ [输入状态] */}
       <div className={clsx(
         'flex items-center gap-1.5 min-w-0',
         embedded ? 'py-0' : 'py-1.5 gap-2',
@@ -571,16 +254,8 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
           )}
         </div>
 
-        {/* 右侧：语音区(听写/通话/朗读) │ 健康 │ 输入状态 */}
+        {/* 右侧：健康 │ 输入状态 */}
         <div className="flex items-center justify-end gap-1.5 shrink-0 min-w-0">
-          {/* 听写实时预览（ghost text） */}
-          {isDictating && interimText && (
-            <span className="italic text-text-muted truncate max-w-[160px]" title={interimText}>
-              {interimText}
-            </span>
-          )}
-
-          {voiceInline && renderVoiceSegment('inline')}
           {/* 同步恢复（仅 Web 模式）：断线/锁屏后手动补回丢失内容并续接 */}
           {currentMode === 'http' && (
             <button
@@ -638,7 +313,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
         </div>
       </div>
 
-      {/* 折叠面板：低频选择器（agent/permission） + 窄屏折叠的语音区 */}
+      {/* 折叠面板：低频选择器（agent/permission） */}
       {hasOverflow && (
         <div className={clsx(
           'transition-opacity duration-200',
@@ -651,7 +326,6 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
               ? 'px-3 rounded-xl bg-background-elevated border border-border-subtle shadow-xl'
               : 'border-t border-border-subtle/50',
           )}>
-            {!voiceInline && renderVoiceSegment('panel')}
             <SessionConfigSelector
               config={sessionConfig}
               onChange={setSessionConfig}

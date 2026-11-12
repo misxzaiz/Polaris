@@ -13,8 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../../Common/Icons'
 import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Zap, ChevronDown } from 'lucide-react'
 import { useWorkspaceStore, useToastStore, useConfigStore } from '@/stores'
-import { useVoiceInputStore } from '@/stores/voiceInputStore'
-import { voiceNotificationService } from '@/services/voiceNotificationService'
+import { useInputUIStore } from '@/stores/inputUIStore'
 import { eventBus } from '@/services/eventBus'
 import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion, useActiveSessionPromptOptimize, useActiveSessionPendingQueue, useSessionState } from '@/stores/conversationStore/useActiveSession'
 import type { ConversationState } from '@/stores/conversationStore/types'
@@ -45,7 +44,6 @@ import { getChatDisplayStyleVars } from '@/types'
 import type { Attachment } from '@/types/attachment'
 import type { ContextBlock } from '@/stores/conversationStore/types'
 import { materializeContextBlocks, upsertContextBlock } from './contextBlockRegistry'
-import { useInputUIStore } from '@/stores/inputUIStore'
 import { useMarqueeStore } from '@/stores/marqueeStore'
 import { createLogger } from '@/utils/logger'
 import { normalizeEngineId, getEngineFullName } from '@/utils/engineDisplay'
@@ -204,7 +202,7 @@ export function ChatInput({
   const inputDraft = useActiveSessionInputDraft()
   const promptSuggestion = useActiveSessionPromptSuggestion()
   const {
-    updateInputDraft, clearInputDraft, setPromptSuggestion,
+    updateInputDraft, setPromptSuggestion,
     undoPromptOptimize, redoPromptOptimize, applyPendingPromptOptimize,
     resetPromptOptimize, clearPromptOptimizeError,
     updateContextBlockNote,
@@ -379,25 +377,7 @@ export function ChatInput({
     setInputLength,
     setAttachmentCount,
     setSuggestionMode,
-    speechTranscript,
-    speechCommand,
-    clearSpeechTranscript,
-    setSpeechCommand,
-    setSpeechWakeActive,
-  } = useVoiceInputStore()
-
-  // 处理语音识别文字
-  useEffect(() => {
-    if (speechTranscript) {
-      const newText = localText + speechTranscript
-      // 立即更新本地 state
-      setLocalText(newText)
-      // 持久化到 Store（立即，不防抖，因为是一次性追加）
-      updateInputDraft({ text: newText, attachments, contextBlocks: contextBlocksRef.current })
-      clearSpeechTranscript()
-      textareaRef.current?.focus()
-    }
-  }, [speechTranscript, clearSpeechTranscript, localText, attachments, updateInputDraft])
+  } = useInputUIStore()
 
   // 同步字数到 store
   useEffect(() => {
@@ -1376,8 +1356,6 @@ export function ChatInput({
       updateInputDraft({ text: '', attachments: [], contextBlocks: [] })
       resetPromptOptimize()
       setHistoryIndex(null)
-      setSpeechWakeActive(false)
-      voiceNotificationService.notifySendConfirm()
       return
     }
 
@@ -1472,35 +1450,7 @@ export function ChatInput({
     if (editMode) onCancelEdit?.()
     // 重置历史索引
     setHistoryIndex(null)
-    // 发送后重置语音唤醒状态（回到待命）
-    setSpeechWakeActive(false)
-    // 语音提醒：发送确认
-    voiceNotificationService.notifySendConfirm()
-  }, [value, disabled, isStreaming, attachments, localAttachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, promptHistoryWorkspacePath, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t, optimizeRunning, activeSessionId, resetPromptOptimize, enqueuePending, sendPendingNow, pendingQueue, commitPromptHistory])
-
-  // 处理语音命令（放在 handleSend 之后，避免变量声明顺序问题）
-  useEffect(() => {
-    if (!speechCommand) return
-
-    switch (speechCommand) {
-      case 'send':
-        if (!isStreaming) {
-          handleSend()
-        }
-        break
-      case 'clear':
-        // 清除本地 state
-        setLocalText('')
-        setLocalAttachments([])
-        // 清除 Store
-        clearInputDraft()
-        resetPromptOptimize()
-        break
-      // 'interrupt' 已在 ChatStatusBar 处理
-    }
-
-    setSpeechCommand(null)
-  }, [speechCommand, isStreaming, setSpeechCommand, clearInputDraft, handleSend, resetPromptOptimize])
+  }, [value, disabled, isStreaming, attachments, localAttachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, promptHistoryWorkspacePath, editMode, onEditSend, onCancelEdit, isClaudeEngine, t, optimizeRunning, activeSessionId, resetPromptOptimize, enqueuePending, sendPendingNow, pendingQueue, commitPromptHistory])
 
   // 键盘事件处理
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {

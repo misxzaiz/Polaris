@@ -105,18 +105,6 @@ export default defineConfig(async () => ({
 
   // Build optimization configuration
   build: {
-    // Tree-shaking configuration
-    // cryptoPolyfill 是纯副作用模块（顶层自执行 ensureCryptoSubtleDigest 注入
-    // crypto.subtle.digest polyfill），包内无被引用的导出值时 Rollup 会误判为
-    // 死代码整棵删除——实测生产 bundle 曾因此丢失 SHA-256 实现，导致非安全
-    // 上下文 Web 端永远降级浏览器内置 TTS。此处显式声明其模块副作用，禁止移除。
-    treeshake: {
-      moduleSideEffects: (id) => {
-        if (id.includes('cryptoPolyfill')) return true;
-        // 其余模块走 Rollup 默认（无 package.json sideEffects 字段时默认 true）
-        return undefined;
-      },
-    },
     // Code splitting configuration
     rollupOptions: {
       input: './index.html',

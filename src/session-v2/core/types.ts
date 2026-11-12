@@ -275,7 +275,7 @@ export type BeforeAppendMessageHook = (
 
 /**
  * 插件 hook：会话状态变化
- * 支持异步（标题生成、TTS 等真实场景）
+ * 支持异步（标题生成等真实场景）
  */
 export type OnSessionStatusChangeHook = (
   conversationId: string,

@@ -226,7 +226,6 @@ type LeftPanelContentProps = {
   integrationContent?: ReactNode
   demoPluginContent?: ReactNode
   aiConsoleContent?: ReactNode
-  radioBroadcastContent?: ReactNode
   /** 当前激活面板类型（关闭后依旧传递上次激活值，用于 strip/外壳高亮与保活判定），默认取 store.activeLeftPanelType */
   currentType?: LeftPanelType
   /** 面板激活态入口（平衡 tab strip 与 legacy ActivityBar 的权威切换） */
@@ -246,7 +245,6 @@ export function LeftPanelContent({
   integrationContent,
   demoPluginContent,
   aiConsoleContent,
-  radioBroadcastContent,
   currentType,
   activePanelType,
   onSendToChat,
@@ -269,7 +267,6 @@ export function LeftPanelContent({
     integration: integrationContent,
     demoPlugin: demoPluginContent,
     aiConsole: aiConsoleContent,
-    'radio-broadcast': radioBroadcastContent,
   }
 
   // shadow 接管消费端（P3-T1 闭环，plans/terminal-plugin-spec.md §六）：

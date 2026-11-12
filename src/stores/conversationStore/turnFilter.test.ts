@@ -18,9 +18,6 @@ import type { StoreDeps } from './types'
 import type { AIEvent } from '../../ai-runtime'
 
 vi.mock('@/services/dialogStorage', () => ({ dialogStorageService: {} }))
-vi.mock('@/services/voiceNotificationService', () => ({
-  voiceNotificationService: { notifyError: () => {} },
-}))
 vi.mock('./sessionStoreManager', () => ({
   sessionStoreManager: {
     getState: () => ({ sessionMetadata: new Map() }),

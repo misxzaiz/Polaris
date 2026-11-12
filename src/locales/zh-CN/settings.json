@@ -20,7 +20,6 @@
     "modelProvider": "模型供应商",
     "translate": "翻译",
     "scheduler": "定时任务",
-    "speech": "语音输入",
     "lsp": "语言服务器",
     "plugins": "插件",
     "mcp": "MCP 服务器",
@@ -378,118 +377,6 @@
       "current": "当前",
       "notConfigured": "未配置",
       "activated": "已激活"
-    }
-  },
-  "speech": {
-    "input": {
-      "title": "语音输入"
-    },
-    "output": {
-      "title": "语音输出"
-    },
-    "enabled": {
-      "title": "启用语音输入",
-      "desc": "在状态栏点击语音按钮开始连续语音识别"
-    },
-    "language": {
-      "title": "识别语言"
-    },
-    "dictation": {
-      "title": "听写快捷键 (Ctrl/Cmd+D)",
-      "desc": "在输入框聚焦时，按 Ctrl（Mac 为 ⌘）+D 触发语音听写，识别结果填入输入框",
-      "modeToggle": "切换型：按一次开始，再按一次结束",
-      "modePush": "按住型：按住录制，松开结束",
-      "modeHint": "仅当输入框聚焦时生效；语音伙伴通话中自动避让"
-    },
-    "wakeWord": {
-      "title": "唤醒词模式",
-      "desc": "开启后，语音识别将持续运行，等待唤醒词触发",
-      "remove": "删除",
-      "empty": "请至少添加一个唤醒词，否则唤醒词模式无法生效",
-      "placeholder": "输入唤醒词，按回车添加",
-      "add": "添加",
-      "hint": "说唤醒词后，后续语音内容将写入输入框，再次说唤醒词停止"
-    },
-    "commands": {
-      "title": "语音命令",
-      "send": "发送消息",
-      "clear": "清空输入框",
-      "interrupt": "中断对话",
-      "undo": "撤回最后输入",
-      "play": "朗读回复",
-      "removeKeyword": "删除",
-      "noKeywords": "无关键词，请至少添加一个",
-      "addKeywordPlaceholder": "输入关键词，按回车添加",
-      "addKeyword": "添加",
-      "resetToDefault": "恢复默认命令"
-    },
-    "tips": {
-      "title": "使用说明",
-      "button": "点击状态栏语音按钮开始/停止识别",
-      "continuous": "开启后持续识别，直到手动关闭",
-      "requirement": "需要麦克风权限和网络连接"
-    },
-    "tts": {
-      "enabled": {
-        "title": "启用语音输出",
-        "desc": "AI 回复完成后自动朗读文本内容"
-      },
-      "voice": {
-        "title": "语音角色"
-      },
-      "rate": {
-        "title": "语速"
-      },
-      "volume": {
-        "title": "音量"
-      },
-      "autoPlay": {
-        "title": "自动播放",
-        "desc": "消息完成后自动朗读，关闭后需手动触发"
-      },
-      "test": {
-        "title": "测试语音",
-        "play": "播放测试",
-        "playing": "播放中...",
-        "stop": "停止",
-        "sampleText": "你好，这是语音测试。"
-      },
-      "tips": {
-        "title": "使用说明",
-        "filter": "自动过滤代码块、工具调用等内容，只朗读纯文本",
-        "interrupt": "发送新消息或中断对话时会自动停止朗读",
-        "online": "语音合成需要网络连接"
-      }
-    },
-    "notification": {
-      "title": "语音提醒",
-      "enabled": {
-        "title": "启用语音提醒",
-        "desc": "在关键事件时通过语音播报提醒"
-      },
-      "sendConfirm": {
-        "title": "发送确认",
-        "desc": "发送消息后播报确认语音",
-        "label": "播报文本"
-      },
-      "wakeResponse": {
-        "title": "唤醒回应",
-        "desc": "唤醒词匹配后播报回应语音",
-        "remove": "删除",
-        "placeholder": "输入回应语，按回车添加",
-        "add": "添加"
-      },
-      "errorAlert": {
-        "title": "错误提醒",
-        "desc": "聊天出错时播报错误提醒",
-        "label": "播报文本"
-      },
-      "backgroundNotify": {
-        "title": "后台完成通知",
-        "desc": "后台任务完成时播报通知",
-        "label": "播报文本"
-      },
-      "autoPlayHint": "AI 回复自动朗读由上方「自动播放」开关控制"
     }
   },
   "systemPrompt": {

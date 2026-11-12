@@ -15,7 +15,6 @@ import { create, StoreApi, UseBoundStore } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { aiChatDispatch, aiChatDispatchStream } from '@/services/aiChatDispatch'
 import { detectClientDescriptor } from '@/services/transport/detector'
-import { speechService } from '@/services/speechService'
 import type { ConversationStore, ConversationState, StoreDeps } from './types'
 import type { ContentBlock, EngineId, ChatMessage, TaskBoardBlock, TaskBoardItem } from '@/types'
 import { handleAIEvent } from './eventHandler'
@@ -3078,9 +3077,6 @@ export function createConversationStore(
 
         // 清理压缩器快照
         compactor.clearSnapshots()
-
-        // 停止语音识别，防止会话结束时 STT 仍在后台运行
-        speechService.stop()
 
         const state = get()
         // 重置状态

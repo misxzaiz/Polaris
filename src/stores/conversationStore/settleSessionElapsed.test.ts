@@ -11,9 +11,6 @@ import { createConversationStore } from './createConversationStore'
 import type { StoreDeps } from './types'
 
 vi.mock('@/services/dialogStorage', () => ({ dialogStorageService: {} }))
-vi.mock('@/services/voiceNotificationService', () => ({
-  voiceNotificationService: { notifyError: () => {} },
-}))
 vi.mock('./sessionStoreManager', () => ({ sessionStoreManager: {} }))
 vi.mock('@/stores/workspaceStore', () => ({ useWorkspaceStore: { getState: () => ({}) } }))
 vi.mock('@/stores/cliInfoStore', () => ({

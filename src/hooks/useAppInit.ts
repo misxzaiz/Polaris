@@ -22,7 +22,6 @@ import { usePluginStore } from '@/stores/pluginStore';
 import { usePluginServiceStore } from '@/stores/pluginServiceStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { bootstrapEngines } from '../core/engine-bootstrap';
-import { voiceNotificationService } from '@/services/voiceNotificationService';
 import { discoverInstalledPlugins } from '@/services/pluginDiscoveryService';
 import { pluginServiceManager } from '@/services/pluginServiceManager';
 import { disconnect as disconnectTransport } from '@/services/transport';
@@ -167,9 +166,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
         log.warn('Browser orphaned session cleanup failed', { error: String(e) })
       );
     }
-
-    // 绑定语音提醒服务的配置获取
-    voiceNotificationService.initialize(() => useConfigStore.getState().config);
 
     // 获取配置
     const config = useConfigStore.getState().config;

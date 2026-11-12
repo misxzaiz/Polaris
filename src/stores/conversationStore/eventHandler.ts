@@ -17,7 +17,6 @@ import type {
 } from '@/types'
 import { chatCardRegistry } from '@/plugin-system/chatCardRegistry'
 import type { ConversationStore } from './types'
-import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { sessionStoreManager } from './sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -636,8 +635,6 @@ export function handleAIEvent(
       // currentMessage 不清空：消息固化由随后的 session_end handler 的 finishMessage()
       // 统一负责。此前在 error handler 里直接置 null 会导致流式输出被丢弃（中断时
       // error 和 session_end 同序到达，error 先清空后 finishMessage 空跑，消息消失）。
-      // 语音提醒：错误提醒
-      voiceNotificationService.notifyError()
       break
 
     case 'result':
