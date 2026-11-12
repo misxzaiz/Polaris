@@ -13,7 +13,6 @@ import { storeTokenMd5, md5Hex } from '@/services/transport/auth';
 import { useThemeStore } from './themeStore';
 import { getBuiltInThemeByShortName } from '@/data/builtInThemes';
 import { fsWatchStop } from '@/services/tauri/fileService';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 const log = createLogger('ConfigStore');
 
@@ -340,7 +339,7 @@ function setNeedsToken(): Partial<ConfigState> {
 // 性能开关热切换
 //
 // 监听后端 config-changed 事件，在性能开关从 true → false 时，
-// 停止对应的后端守护服务（file watcher / lspIndex）。
+// 停止对应的后端守护服务（file watcher）。
 // 开关从 false → true 时不主动启动服务（避免非预期的后台进程拉起），
 // 由对应功能首次调用时按需启动。
 // ============================================================
@@ -394,39 +393,6 @@ function handlePerfSwitch(prev: PerformanceFeatures, next: PerformanceFeatures):
     fsWatchStop().catch((err) => {
       perfLog.warn('停止文件监听失败', { error: String(err) });
     });
-  }
-
-  // lspIndex：true → false 时关闭所有 workspace 索引引擎
-  if (prev.lspIndex && !next.lspIndex) {
-    perfLog.info('lspIndex 关闭，释放索引引擎');
-    // FE-2: lspStore 静态绑定 @codemirror/lsp-client、@codemirror/view 与
-    // ctrlHoverLink，静态 import 会把 codemirror chunk（~1MB）拽回首载；
-    // 改动态 import 切断链路。热切换本为 fire-and-forget，加载延迟不改变语义。
-    void import('@/stores/lspStore')
-      .then(({ useLspStore }) => {
-        const { openedWorkspaces, ensureClose } = useLspStore.getState();
-        openedWorkspaces.forEach((ws) => {
-          void ensureClose(ws);
-        });
-        if (openedWorkspaces.size === 0) {
-          perfLog.debug('lspIndex 关闭时无已打开 workspace');
-        }
-      })
-      .catch((err) => {
-        perfLog.warn('加载 lspStore 失败，跳过索引引擎关闭', { error: String(err) });
-      });
-  }
-  // lspIndex：false → true 时热开启当前 workspace
-  if (!prev.lspIndex && next.lspIndex) {
-    perfLog.info('lspIndex 开启，热启动索引引擎');
-    const ws = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
-    if (ws) {
-      void import('@/stores/lspStore')
-        .then(({ useLspStore }) => useLspStore.getState().ensureOpen(ws))
-        .catch((err) => {
-          perfLog.warn('加载 lspStore 失败，索引引擎未开启', { error: String(err) });
-        });
-    }
   }
 
   // codeEditorLanguages：false → true 时预热编辑器语言包

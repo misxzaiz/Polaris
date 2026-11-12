@@ -59,7 +59,7 @@ export function PerfMigrationBanner({ onDismiss, onGoSettings }: PerfMigrationBa
           <p className="text-xs text-text-muted mt-1">
             {t(
               'performance.migrationBanner.body',
-              '为获得最佳性能，资源密集型功能（文件监听、LSP 索引、图表渲染等）已默认关闭。按需开启对应开关即可恢复功能，配置即时生效无需重启。',
+              '为获得最佳性能，资源密集型功能（文件监听、图表渲染等）已默认关闭。按需开启对应开关即可恢复功能，配置即时生效无需重启。',
             )}
           </p>
 

@@ -19,7 +19,6 @@ import { ThemeTab } from './tabs/ThemeTab';
 import { PromptSnippetTab, type PromptSnippetTabRef } from './tabs/PromptSnippetTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
 import { AppUpdateTab } from './tabs/AppUpdateTab';
-import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { PluginTab } from './tabs/PluginTab';
 import { PerformanceTab } from './tabs/PerformanceTab';
@@ -46,7 +45,6 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'prompt-snippet': 'nav.promptSnippet',
   'ai-engine': 'nav.aiEngine',
   'model-provider': 'nav.modelProvider',
-  'lsp': 'nav.lsp',
   'app-update': 'nav.appUpdate',
   'advanced': 'nav.advanced',
   'web': 'nav.web',
@@ -290,10 +288,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
                 onConfigChange={setLocalConfig}
                 loading={loading}
               />
-            )}
-
-            {activeTab === 'lsp' && (
-              <LspTab />
             )}
 
             {activeTab === 'app-update' && (

@@ -228,20 +228,10 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 // 预加载设置相关数据
     try {
       setInitPhase('正在预加载语言包...');
-      // FE-2: lspStore 静态绑定 @codemirror/lsp-client、@codemirror/view 与
-      // ctrlHoverLink（components/Editor 域），静态 import 会把 codemirror chunk
-      // 拽回首载；改动态 import 使其随 codemirror 一并移出首载。
-      // 初始化本就在 async 流程内，加载时机后移不改变启动时序。
-      const { useLspStore } = await import('@/stores/lspStore');
       await Promise.all([
         useSnippetStore.getState().loadSnippets(),
         useSkillStore.getState().loadSkills(),
         useIntegrationStore.getState().loadInstances(),
-        // 加载 LSP 持久化配置 —— 必须在启动时执行，否则重启后用户自定义的
-        // 语言服务器（如 Java）不会被加载，打开对应文件时静默失效。
-        useLspStore.getState().loadFromBackend(),
-        // 索引引擎初始化（事件订阅 + 当前 workspace 自动 open）
-        useLspStore.getState().init(),
       ]);
     } catch (error) {
       log.warn('设置数据预加载部分失败', { error: String(error) });
@@ -313,12 +303,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       cleanup();
       cleanupCliListeners();
       perfHotSwitchCleanupRef.current?.();
-      // 关闭所有 LSP 语言服务器进程，避免遗留子进程
-      // FE-2: lspStore 已改动态加载（切断首载静态链），unmount 清理同样走动态
-      // import；清理本为 fire-and-forget，失败仅告警不阻塞卸载流程。
-      void import('@/stores/lspStore')
-        .then(({ useLspStore }) => useLspStore.getState().deactivateAll())
-        .catch((e) => log.warn('LSP cleanup failed', { error: String(e) }));
       disconnectTransport();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only init, all deps are stable refs

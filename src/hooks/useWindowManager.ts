@@ -58,7 +58,7 @@ export function useWindowManager({
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
       // 仅"裸 F12"切换 DevTools；带任何修饰键(Shift/Ctrl/Meta/Alt)交给应用内 keymap，
-      // 例如 LSP 的 Shift+F12 查找引用。否则全局监听器会把这些组合也吞掉。
+      // 例如编辑器内的组合键快捷键。否则全局监听器会把这些组合也吞掉。
       if (
         e.key === 'F12' &&
         !e.shiftKey &&

@@ -70,12 +70,6 @@ export function isCodeEditorLanguagesEnabled(config?: Config | null): boolean {
   return readFlag(cfg, 'codeEditorLanguages');
 }
 
-/** 检查 LSP 智能索引是否启用 */
-export function isLspIndexEnabled(config?: Config | null): boolean {
-  const cfg = config ?? useConfigStore.getState().config;
-  return readFlag(cfg, 'lspIndex');
-}
-
 /** 检查文件监听是否启用 */
 export function isFileWatcherEnabled(config?: Config | null): boolean {
   const cfg = config ?? useConfigStore.getState().config;

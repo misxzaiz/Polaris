@@ -1,7 +1,7 @@
 /**
  * 性能与资源设置面板
  *
- * 提供 8 个资源密集型功能的开关，默认全部关闭。
+ * 提供 6 个资源密集型功能的开关，默认全部关闭。
  * 用户按需开启，配置变更通过 config-changed 事件热切换。
  */
 
@@ -31,13 +31,6 @@ const FEATURES: FeatureToggle[] = [
     description: '监听工作区文件变化，自动刷新文件树和编辑器',
     resource: 'CPU',
     fallback: '关闭后需手动刷新文件树（点击刷新按钮或重新打开目录）',
-  },
-  {
-    key: 'lspIndex',
-    title: 'LSP 智能索引',
-    description: '使用 tree-sitter 构建 AST 索引，提供精准的 Java 代码跳转和引用查找',
-    resource: 'CPU + Memory',
-    fallback: '关闭后代码跳转降级为正则匹配，精度降低但零持续开销',
   },
   {
     key: 'syntaxHighlighting',
@@ -161,7 +154,7 @@ export function PerformanceTab({ config, onConfigChange, loading }: PerformanceT
                     {feature.fallback}
                   </p>
                 </div>
-                {/* 开关 — 与项目标准 (WebTab / LspTab) 统一：w-11 h-6 + thumb w-4 h-4 */}
+                {/* 开关 — 与项目标准 (WebTab) 统一：w-11 h-6 + thumb w-4 h-4 */}
                 <button
                   role="switch"
                   aria-checked={enabled}
@@ -201,7 +194,6 @@ export function PerformanceTab({ config, onConfigChange, loading }: PerformanceT
       <div className="mt-4 p-3 rounded-lg bg-warning-faint/50 border border-warning/20 text-xs text-text-muted">
         <p className="font-medium text-warning mb-1">{t('performance.notes', '注意事项')}</p>
         <ul className="space-y-1 list-disc list-inside text-xs">
-          <li>{t('performance.note1', '部分功能之间有关联：如关闭 LSP 索引后，代码跳转仍可用但精度降低')}</li>
           <li>{t('performance.note2', '插件服务自动启动关闭后，首次使用插件功能时会有短暂等待（2-3 秒）')}</li>
           <li>{t('performance.note3', '如果不确定，保持默认关闭即可获得最佳性能')}</li>
         </ul>

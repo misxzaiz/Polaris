@@ -5,7 +5,7 @@
  * 时 tab 静默创建无反馈。本组件作为窄窗口下 tab 的渲染载体，从底部滑入覆盖
  * 聊天区，与 LeftPanelDrawer 同构。信号（tabId）由 narrowTabStore 提供，
  * 本组件按 tab.type 分流渲染：
- * - editor → EditorPanel（订阅 fileEditorStore，复用缓冲/保存/LSP 全链路）
+ * - editor → EditorPanel（订阅 fileEditorStore，复用缓冲/保存全链路）
  * - diff   → DiffViewer（默认 unified 单栏：窄窗口 split 双栏每列过窄不可读）
  *
  * 设计：
