@@ -30,7 +30,6 @@ mod plugin_service_manager_capability;
 mod history_capability;
 mod demo_capability;
 mod event_adapter;
-mod voice_capability;
 mod kv_capability;
 mod policy_permission;
 pub mod permission_prompt;
@@ -81,7 +80,6 @@ pub use dynamic_capability::{DynamicCapability, DynamicCapabilityConfig, Dynamic
 pub use registry_capability::RegistryCapability;
 pub(crate) use registry_capability::check_override_permission;
 pub use mcp_capability::{McpCapability, MCP_CAP_ID};
-pub use voice_capability::{VoiceCapability, VOICE_CAP_ID};
 pub use hook_capability::HookCapability;
 pub use ui_render_capability::UiRenderCapability;
 
@@ -1025,7 +1023,7 @@ impl Router for RouterBus {
 impl RouterBus {
     /// 注册能力（Arc 版本）：调用方保留同一 Arc 强引用。
     ///
-    /// 用途：cap.voice 委托 cap.mcp 时复用**同一能力实例**（不复制 McpClient 注册表、
+    /// 用途：需要让能力实例被多处共享时复用**同一实例**（不复制 McpClient 注册表、
     /// 不第二次拉起插件进程——AGENTS.md「唯一权威，禁止多写路径」）。
     pub fn register_handle_arc(&self, cap: Arc<dyn Capability>) -> Result<CapabilityHandle, String> {
         // X12：同 register_handle——同 id 拒绝（幂等注册走 register_streaming 语义）

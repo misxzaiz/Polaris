@@ -558,7 +558,6 @@ const MODULE_DOMAINS: &[(&str, &[&str], Option<&str>)] = &[
     ("ai-chat", &["cap.ai.chat"], Some("混合型：start/continue 可经 cap_dispatch 同步调用（RouterBus 自动回退 invoke），token 流经 WS chat-event 订阅")),
     ("history", &["cap.history"], None),
     ("mcp", &["cap.mcp"], None),
-    ("voice", &["cap.voice"], None),
     ("config", &["cap.config"], Some("管理面：patch/reset_cli 直接生效（无审批门槛），调用需谨慎——先确认用户意图")),
     ("plugin", &["cap.pluginDiscovery", "cap.pluginServiceManager"], Some("管理面：uninstall*/stop_for_plugin/autostart 原需用户审批，2026-10-26 起 Plugin 源默认放行（审批名单停用）；Remote 来源插件写/管理动作仍 deny")),
     ("stream", &["cap.stream.echo"], Some("仅 WS 流式通道（dispatch_stream），cap_dispatch 同步不可调")),

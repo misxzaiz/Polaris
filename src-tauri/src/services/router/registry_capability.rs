@@ -60,7 +60,7 @@ const SENSITIVE_TARGETS: &[&str] = &["cap.ai.chat", "cap.registry", "cap.help", 
 const OVERRIDE_L0_PREFIXES: &[&str] = &["cap.ui."];
 const OVERRIDE_L4_PREFIXES: &[&str] = &[
     "cap.registry", "cap.help", "cap.ai.chat", "cap.stream.", "cap.self.",
-    "cap.mcp", "cap.voice", "cap.hook", "cap.plugin",
+    "cap.mcp", "cap.hook", "cap.plugin",
 ];
 
 /// 覆盖权限分级判定（pub(crate)：plugin_capability_assembly 复用同一权威）
