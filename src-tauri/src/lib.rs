@@ -844,18 +844,6 @@ pub fn run() {
                 }
             }
 
-            // 索引引擎 → 前端事件桥（IndexStatus 推送）
-            #[cfg(feature = "lsp-index")]
-            {
-                let app_handle = app.handle().clone();
-                state.lsp_index_service.set_status_listener(move |status| {
-                    use tauri::Emitter;
-                    if let Err(e) = app_handle.emit("lsp_index:status", status) {
-                        tracing::debug!("emit lsp_index:status failed: {}", e);
-                    }
-                });
-            }
-
             // 遗留存储一次性迁移（normalize spec F2/F4）：在任何 requirement
             // 命令可达之前完成遗留库收编（best-effort 幂等）。
             // dev/test 隔离根自动跳过（模块内部判定 POLARIS_DATA_ROOT）。
@@ -1131,29 +1119,6 @@ pub fn run() {
             terminal_get,
             terminal_discover_scripts,
             terminal_open_in_external,
-            // LSP 语言服务器相关
-            // 根因修复（需求库 #030）：41d7fdb5 门控改造时 16 条 lsp 命令名被误替换为
-            // 堆叠的 #[cfg] 属性、命令名全部丢失，d8ef9855 清理残料时当作「纯残留」
-            // 删除未恢复注册——此后 LSP 设置页所有保存/开关/删除在桌面端 invoke 报
-            // command not found、Web 模式落 ipc.rs NotFound，「配置保存无效」即此因。
-            // 命令定义处 commands/lsp.rs 各自带 #[cfg(feature = "tauri-app")] 门控，
-            // 这里仅恢复注册列表（配置管理五命令 + 索引八命令均无 AppHandle 依赖）。
-            commands::lsp::lsp_start,
-            commands::lsp::lsp_send,
-            commands::lsp::lsp_stop,
-            commands::lsp::lsp_list_sessions,
-            commands::lsp::lsp_config_list,
-            commands::lsp::lsp_config_upsert,
-            commands::lsp::lsp_config_remove,
-            commands::lsp::lsp_config_toggle,
-            commands::lsp::lsp_check_command,
-            commands::lsp::lsp_index_references,
-            commands::lsp::lsp_index_definition,
-            commands::lsp::lsp_index_open,
-            commands::lsp::lsp_index_close,
-            commands::lsp::lsp_index_rebuild,
-            commands::lsp::lsp_index_status,
-            commands::lsp::lsp_index_update_file,
             // Plugin 相关：管理面已上总线（cap.pluginDiscovery + cap.pluginServiceManager，
             // 见 services/router/plugin_discovery_capability.rs / plugin_service_manager_capability.rs）。
             // 旧命令层 commands/plugin.rs + commands/plugin_service.rs 已整体删除，不再注册

@@ -15,10 +15,6 @@ use crate::services::config_store::ConfigStore;
 use crate::services::data_root::data_root;
 use crate::services::usage_db::init_usage_db;
 use crate::services::file_watcher::FileWatcherManager;
-use crate::services::lsp::LspManager;
-use crate::services::lsp_config_repository::LspConfigRepository;
-#[cfg(feature = "lsp-index")]
-use crate::services::lsp_index::IndexService;
 use crate::services::plugin_service::PluginService;
 use crate::web::server::WebServerHandle;
 
@@ -280,13 +276,6 @@ pub struct AppState {
     pub pending_plans: Arc<Mutex<HashMap<String, PendingPlan>>>,
     /// 调度器守护进程。用 Arc 包裹以便 Web standalone 模式同时持有本地
     /// 关停句柄与 state 槽位，两者共享同一份运行态供健康探测读取。
-    /// LSP 语言服务器管理器
-    pub lsp_manager: Mutex<LspManager>,
-    /// LSP 配置持久化
-    pub lsp_config: Mutex<LspConfigRepository>,
-    /// 轻量索引引擎（tree-sitter + SQLite，每 workspace 独立 DB）
-    #[cfg(feature = "lsp-index")]
-    pub lsp_index_service: IndexService,
     /// WebSocket 事件广播通道（Web Access Layer）— 带 seq 与重放缓冲
     pub event_broadcast: crate::web::EventBroadcaster,
     /// Tauri AppHandle — set once during setup, used by Web API handlers
@@ -705,10 +694,6 @@ pub fn create_app_state(
         dispatched_tasks: Arc::new(Mutex::new(HashMap::new())),
         ask_listener: Arc::new(OnceLock::new()),
         pending_plans: Arc::new(Mutex::new(HashMap::new())),
-        lsp_manager: Mutex::new(LspManager::new()),
-        lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
-        #[cfg(feature = "lsp-index")]
-        lsp_index_service: IndexService::new(),
         event_broadcast,
         #[cfg(feature = "tauri-app")]
         app_handle: OnceLock::new(),
@@ -788,10 +773,6 @@ impl AppState {
             dispatched_tasks: self.dispatched_tasks.clone(),
             ask_listener: self.ask_listener.clone(),
             pending_plans: self.pending_plans.clone(),
-            lsp_manager: Mutex::new(LspManager::new()),
-            lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
-            #[cfg(feature = "lsp-index")]
-            lsp_index_service: self.lsp_index_service.clone(),
             event_broadcast: self.event_broadcast.clone(),
             #[cfg(feature = "tauri-app")]
             app_handle,

@@ -86,9 +86,6 @@ pub use workspace::get_home_dir;
 
 // 终端命令
 
-#[cfg(feature = "lsp-index")]
-pub mod lsp;
-
 pub mod cli_info;
 #[cfg(feature = "tauri-app")]
 pub use cli_info::{cli_get_agents, cli_get_auth_status, cli_get_version};

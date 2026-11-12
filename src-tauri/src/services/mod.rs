@@ -52,11 +52,6 @@ pub use cli_info_service::CliInfoService;
 
 pub mod cli_resolver;
 
-pub mod lsp;
-pub mod lsp_config_repository;
-#[cfg(feature = "lsp-index")]
-pub mod lsp_index;
-
 pub mod mcp_manager_service;
 pub use mcp_manager_service::McpManagerService;
 

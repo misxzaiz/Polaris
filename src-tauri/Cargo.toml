@@ -7,7 +7,7 @@ edition = "2021"
 default-run = "polaris"
 
 [features]
-default = ["tauri-app", "lsp-index"]
+default = ["tauri-app"]
 
 # 测试包 profile（polaris-dev）：
 # 编译期切换数据根为 %APPDATA%/Polaris-dev，与正式版（%APPDATA%/Polaris）完全隔离。
@@ -46,10 +46,6 @@ multi-instance = []
 # 默认全开，向后兼容；关闭后对应功能的代码不会编入二进制。
 # 详见 docs/lightweight-refactor-plan.md §5
 # ====================================================================
-
-
-# LSP 智能索引（tree-sitter AST 解析 + SQLite 持久化）
-lsp-index = ["dep:tree-sitter", "dep:tree-sitter-java", "dep:rayon", "dep:xxhash-rust"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -149,16 +145,8 @@ crossbeam-channel = "0.5"
 notify = { version = "6", features = ["macos_kqueue"] }
 notify-debouncer-mini = { version = "0.4", default-features = false, features = ["serde"] }
 
-# 轻量索引引擎（Phase J）
-# - rusqlite bundled: 无需系统 sqlite3
-# - tree-sitter + tree-sitter-java: AST 级 Java 符号提取
-# - rayon: 全量索引并行
-# - xxhash-rust: 文件内容 hash（mtime 不可靠时校验）
+# SQLite 持久化（会话历史 / 用量统计等；bundled 无需系统 sqlite3）
 rusqlite = { version = "0.32", features = ["bundled"] }
-tree-sitter = { version = "0.22", optional = true }
-tree-sitter-java = { version = "0.21", optional = true }
-rayon = { version = "1.10", optional = true }
-xxhash-rust = { version = "0.8", features = ["xxh3"], optional = true }
 tauri-plugin-updater = { version = "=2.11.0", optional = true }
 tauri-plugin-process = { version = "2.3.1", optional = true }
 # 开机自启（cap.app.autolaunch 的 OS 执行体；plans/autostart-boot-launch-spec.md）

@@ -1574,7 +1574,7 @@ pub struct Config {
 // 设计原则：
 // - 所有字段默认 false（默认关闭），用户手动开启
 // - 开关变更通过 config-changed 事件热切换，无需重启
-// - 关闭时各功能应优雅降级（如 LSP 索引关闭后走 regex_fallback）
+// - 关闭时各功能应优雅降级
 // ============================================================================
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -1584,13 +1584,6 @@ pub struct PerformanceFeatures {
     /// 关闭后需用户手动触发刷新。
     #[serde(default)]
     pub file_watcher: bool,
-
-    /// LSP 智能索引（默认关闭）。
-    /// 开启后使用 tree-sitter 构建 AST 索引 + SQLite 持久化，
-    /// 提供精准的 Java 代码跳转和引用查找。
-    /// 关闭后降级为正则匹配（regex_fallback），精度降低但零开销。
-    #[serde(default)]
-    pub lsp_index: bool,
 
     /// 调度器守护进程（默认启用）。
     /// 定时任务是核心功能,不是可选性能优化 — 默认启动守护进程。
@@ -1631,7 +1624,6 @@ fn default_true() -> bool { true }
 fn default_performance_features() -> PerformanceFeatures {
     PerformanceFeatures {
         file_watcher: false,
-        lsp_index: false,
         // 定时任务是核心功能,不是可选性能优化 — 默认启用守护进程
         syntax_highlighting: false,
         mermaid_diagrams: false,

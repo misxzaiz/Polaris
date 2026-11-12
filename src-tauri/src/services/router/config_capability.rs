@@ -128,7 +128,6 @@ fn config_schema() -> Vec<SectionSchema> {
             kind: SectionKind::BoolSet,
             fields: &[
                 "fileWatcher",
-                "lspIndex",
                 "schedulerDaemon",
                 "syntaxHighlighting",
                 "mermaidDiagrams",
@@ -166,7 +165,6 @@ fn schema_named(name: &str) -> Option<SectionSchema> {
 fn default_performance_json() -> Value {
     serde_json::json!({
         "fileWatcher": false,
-        "lspIndex": false,
         "schedulerDaemon": true,
         "syntaxHighlighting": false,
         "mermaidDiagrams": false,
