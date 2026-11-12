@@ -20,11 +20,23 @@ import { ContextCompactRenderer } from './ContextCompactRenderer';
 import { AssaultResultCard } from '../tool-calls/AssaultResultCard';
 import { WorkflowCard } from '../tool-calls/WorkflowCard';
 import { parseWorkflowResult } from '../tool-calls/workflowParsers';
+import { chatCardRegistry } from '@/plugin-system/chatCardRegistry';
+import type { CardEntry } from '@/plugin-system/chatCardRegistry';
+import { BlockCardOverrideHost } from './BlockCardOverrideHost';
 
 /** workflow 工具块(SDK 内置多 agent 编排)。按 name 小写规范化匹配,同时命中
  * 'workflow' 与 'Workflow'。解析器注册表(parseWorkflowResult)自协商三路分发:
  * 攻坚格式→AssaultResultCard,通用 workflow→WorkflowCard,全失败→降级工具块。 */
 const WORKFLOW_TOOL_NAME = 'workflow';
+
+/** 块类型 → 插件覆盖卡片的匹配 key 缓存查询。命中返回注册条目，未命中走宿主默认。 */
+function resolveBlockOverride(
+  block: ContentBlock
+): { entry: CardEntry; key: string } | undefined {
+  // plugin_card 走 PluginCardHost 既有路径（其内部已做注册表分发），不在此列。
+  if (block.type === 'plugin_card') return undefined
+  return chatCardRegistry.resolveBlockCard(block)
+}
 
 export function renderContentBlock(
   block: ContentBlock,
@@ -36,6 +48,17 @@ export function renderContentBlock(
       {content}
     </ContentBlockErrorBoundary>
   );
+
+  // 插件覆盖渲染：非 plugin_card 块若被插件注册了同名 key（block:/tool: 前缀），
+  // 用插件组件渲染，宿主默认（下方 switch 原生路径）作未命中兜底。
+  // 插件崩溃由 BlockCardOverrideHost 内部 ErrorBoundary 兜住（不拖垮整条对话）。
+  const override = resolveBlockOverride(block)
+  if (override) {
+    return wrapWithErrorBoundary(
+      <BlockCardOverrideHost block={block} entry={override.entry} cardKey={override.key} />,
+      `override-${override.key}`
+    )
+  }
 
   switch (block.type) {
     case 'text':

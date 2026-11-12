@@ -94,3 +94,91 @@ const b = await tools["polaris-interactive"].read_preview({});`
     expect(chatCardRegistry.resolve('execute', { code })?.mcpServerId).toBe('example-agnes')
   })
 })
+
+describe('matchBlock / blockToCardKey — 内容块覆盖渲染（spec chat-block-renderer-registry）', () => {
+  beforeEach(() => {
+    chatCardRegistry.unregisterAll('test-plugin')
+  })
+
+  it('matchBy=block 注册 → block:{type} key 命中', () => {
+    chatCardRegistry.register('test-plugin', {
+      id: 'question-card',
+      matchBy: 'block',
+      blockTypes: ['question'],
+      tools: [],
+      mode: 'interaction',
+    })
+    const q = { type: 'question', id: 'q1', question: 'x', questions: [] } as any
+    expect(chatCardRegistry.blockToCardKey(q)).toBe('block:question')
+    expect(chatCardRegistry.matchBlock(q)?.cardId).toBe('question-card')
+  })
+
+  it('matchBy=tool 注册 → tool:{name} key 命中', () => {
+    chatCardRegistry.register('test-plugin', {
+      id: 'bash-card',
+      matchBy: 'tool',
+      toolNames: ['Bash'],
+      tools: [],
+      mode: 'result',
+    })
+    const b = { type: 'tool_call', id: 't1', name: 'Bash', input: {}, status: 'completed', startedAt: '' } as any
+    expect(chatCardRegistry.blockToCardKey(b)).toBe('tool:Bash')
+    expect(chatCardRegistry.matchBlock(b)?.cardId).toBe('bash-card')
+  })
+
+  it('tool_call 精确名未命中 → 回退 block:tool_call 兜底 key', () => {
+    chatCardRegistry.register('test-plugin', {
+      id: 'fallback-tool',
+      matchBy: 'block',
+      blockTypes: ['tool_call'],
+      tools: [],
+      mode: 'result',
+    })
+    const b = { type: 'tool_call', id: 't1', name: 'Grep', input: {}, status: 'completed', startedAt: '' } as any
+    expect(chatCardRegistry.matchBlock(b)?.cardId).toBe('fallback-tool')
+  })
+
+  it('未注册类型 → undefined（宿主默认兜底）', () => {
+    const t = { type: 'thinking', id: 'th1', content: 'x' } as any
+    expect(chatCardRegistry.matchBlock(t)).toBeUndefined()
+    const f = { type: 'form', id: 'f1', fields: [] } as any
+    expect(chatCardRegistry.matchBlock(f)).toBeUndefined()
+  })
+
+  it('plugin_card 不参与 matchBlock（走 PluginCardHost 既有路径）', () => {
+    const p = { type: 'plugin_card', id: 'p1', pluginId: 'x', cardId: 'c', toolName: 'mcp__a__b', mode: 'result', status: 'ready', data: null, createdAt: '' } as any
+    expect(chatCardRegistry.blockToCardKey(p)).toBe('block:plugin_card')
+    expect(chatCardRegistry.matchBlock(p)).toBeUndefined()
+  })
+})
+
+describe('resolveBlockCard — key 与 entry 一致性（宿主 load 不空转）', () => {
+  beforeEach(() => {
+    chatCardRegistry.unregisterAll('test-plugin')
+  })
+
+  it('tool_call 精确名命中 → key = tool:{name}', () => {
+    chatCardRegistry.register('test-plugin', {
+      id: 'bash-card', matchBy: 'tool', toolNames: ['Bash'], tools: [], mode: 'result',
+    })
+    const b = { type: 'tool_call', id: 't1', name: 'Bash', input: {}, status: 'completed', startedAt: '' } as any
+    const r = chatCardRegistry.resolveBlockCard(b)
+    expect(r?.key).toBe('tool:Bash')
+    expect(r?.entry.cardId).toBe('bash-card')
+  })
+
+  it('tool_call 精确名未命中 → 兜底 key = block:tool_call（与 entry 一致）', () => {
+    chatCardRegistry.register('test-plugin', {
+      id: 'fallback', matchBy: 'block', blockTypes: ['tool_call'], tools: [], mode: 'result',
+    })
+    const b = { type: 'tool_call', id: 't1', name: 'Grep', input: {}, status: 'completed', startedAt: '' } as any
+    const r = chatCardRegistry.resolveBlockCard(b)
+    expect(r?.key).toBe('block:tool_call')
+    expect(r?.entry.cardId).toBe('fallback')
+  })
+
+  it('未注册 → undefined（宿主默认）', () => {
+    const f = { type: 'form', id: 'f1', fields: [] } as any
+    expect(chatCardRegistry.resolveBlockCard(f)).toBeUndefined()
+  })
+})

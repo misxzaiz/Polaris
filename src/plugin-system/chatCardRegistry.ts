@@ -19,16 +19,19 @@ import type {
 } from './types'
 import { createLogger } from '@/utils/logger'
 import { buildMcpToolName } from '@/utils/toolConfig'
+import type { ContentBlock } from '@/types'
 
 const log = createLogger('ChatCardRegistry')
 
-interface CardEntry {
+export interface CardEntry {
   pluginId: string
   cardId: string
   mode: PluginChatCardContribution['mode']
   mcpServerId: string
   tools: string[]
   loader?: PluginChatCardLoader
+  /** matchBy 标记：按内容块类型匹配的卡片（block:/tool: 前缀 key） */
+  matchBy?: 'block' | 'tool'
 }
 
 /**
@@ -58,14 +61,15 @@ class ChatCardRegistry {
     card: Omit<PluginChatCardContribution, 'pluginId'>,
     loader?: PluginChatCardLoader
   ): void {
-    const keys = card.tools.map((tool) => this.buildKey(card.mcpServerId, tool))
+    const keys = this.buildContributionKeys(card)
     const entry: CardEntry = {
       pluginId,
       cardId: card.id,
       mode: card.mode,
-      mcpServerId: card.mcpServerId,
-      tools: card.tools,
+      mcpServerId: card.mcpServerId ?? '',
+      tools: card.tools ?? [],
       loader,
+      matchBy: card.matchBy,
     }
 
     let keySet = this.pluginKeys.get(pluginId)
@@ -90,6 +94,71 @@ class ChatCardRegistry {
     }
 
     log.debug(`Registered chat card: ${pluginId}/${card.id} for tools ${keys.join(', ')}`)
+  }
+
+  /**
+   * 按贡献声明构建匹配 key 列表。
+   * - matchBy='block'：`block:{blockType}`（blockTypes 列表）
+   * - matchBy='tool'：`tool:{toolName}`（toolNames 列表）
+   * - 缺省：`mcp__{mcpServerId}__{tool}`（既有 MCP 路径）
+   */
+  private buildContributionKeys(
+    card: Omit<PluginChatCardContribution, 'pluginId'>
+  ): string[] {
+    if (card.matchBy === 'block') {
+      return (card.blockTypes ?? []).map((t) => `block:${t}`)
+    }
+    if (card.matchBy === 'tool') {
+      return (card.toolNames ?? []).map((t) => `tool:${t}`)
+    }
+    // 既有 MCP 路径：mcpServerId 此时必填（types 层已可选化，兜底断言）
+    const server = card.mcpServerId ?? ''
+    return (card.tools ?? []).map((tool) => this.buildKey(server, tool))
+  }
+
+  /**
+   * 从内容块推导注册表匹配 key（不含 plugin_card——其走 PluginCardHost 既有路径）。
+   *
+   * - tool_call：优先 `tool:{name}`，兜底 `block:tool_call`（未命中按工具名的精确匹配）
+   * - 其余块类型：`block:{type}`
+   */
+  blockToCardKey(block: ContentBlock): string | undefined {
+    if (block.type === 'tool_call') {
+      return `tool:${block.name}`
+    }
+    return `block:${block.type}`
+  }
+
+  /**
+   * 按内容块匹配插件注册的渲染卡片（block/tool 前缀 key）。
+   * 返回 undefined 时由调用方回落到宿主默认渲染（switch 原生路径）。
+   */
+  matchBlock(block: ContentBlock): CardEntry | undefined {
+    if (block.type === 'tool_call') {
+      // 工具名精确匹配优先；再试块类型兜底 key
+      const byName = this.cards.get(`tool:${block.name}`)
+      if (byName) return byName
+      return this.cards.get('block:tool_call')
+    }
+    return this.cards.get(`block:${block.type}`)
+  }
+
+  /**
+   * 按内容块匹配并返回「实际命中的 key + entry」（供渲染宿主 load 用）。
+   * key 与 matchBlock 的命中条目严格一致：tool_call 精确名命中 → tool:{name}；
+   * 兜底命中 → block:tool_call；其余 → block:{type}。
+   * 避免调用方用 blockToCardKey 重新推导导致 key/entry 不一致（load 空转）。
+   */
+  resolveBlockCard(block: ContentBlock): { entry: CardEntry; key: string } | undefined {
+    if (block.type === 'tool_call') {
+      const byName = this.cards.get(`tool:${block.name}`)
+      if (byName) return { entry: byName, key: `tool:${block.name}` }
+      const fallback = this.cards.get('block:tool_call')
+      if (fallback) return { entry: fallback, key: 'block:tool_call' }
+      return undefined
+    }
+    const entry = this.cards.get(`block:${block.type}`)
+    return entry ? { entry, key: `block:${block.type}` } : undefined
   }
 
   /**

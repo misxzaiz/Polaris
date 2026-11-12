@@ -129,12 +129,26 @@ export interface PluginChatCardContribution {
   pluginId: PluginId
   /** React 组件入口（外部插件相对 installPath；内置插件手动注册 loader，可省略） */
   entry?: string
-  /** 目标 MCP server id，必须属于本插件的 mcpServers 声明 */
-  mcpServerId: string
-  /** server 内工具名列表（不含 mcp__ 前缀） */
+  /**
+   * 目标 MCP server id，必须属于本插件的 mcpServers 声明。
+   * 仅当 matchBy 未声明（MCP 工具路径）时必填；matchBy='block'/'tool' 时不需。
+   */
+  mcpServerId?: string
+  /** server 内工具名列表（不含 mcp__ 前缀）；matchBy 未声明时必填 */
   tools: string[]
   /** 渲染模式，默认 result */
   mode: PluginChatCardMode
+  /**
+   * 按内容块类型匹配（扩展，与 mcpServerId/tools 路径二选一）。
+   * - 'block'：按 ContentBlock.type 匹配，key = `block:{type}`（question/form/plan_mode/agent_run/task_board/permission_request/tool_call）
+   * - 'tool'：按 tool_call 的 block.name 匹配，key = `tool:{name}`
+   * 不填 = 原 MCP 工具路径（`mcp__{mcpServerId}__{tool}`）。
+   */
+  matchBy?: 'block' | 'tool'
+  /** matchBy='block' 时：目标块类型列表（不含 plugin_card，其走 PluginCardHost 既有路径） */
+  blockTypes?: string[]
+  /** matchBy='tool' 时：目标工具名列表（tool_call 的 block.name） */
+  toolNames?: string[]
 }
 
 /**

@@ -161,7 +161,10 @@ class PluginRegistry {
     )
 
     for (const card of cards) {
-      if (!ownMcpServerIds.has(card.mcpServerId)) {
+      // matchBy 卡片（block/tool 前缀 key）不绑定 MCP server，绕过归属校验。
+      // 其 key 前缀（block:/tool:）与 MCP 路径（mcp__）互不冲突，插件仅能覆盖
+      // 自己声明的块类型/工具名，无法劫持其他插件的 MCP 卡片。
+      if (!card.matchBy && !ownMcpServerIds.has(card.mcpServerId ?? '')) {
         continue
       }
 

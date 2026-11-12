@@ -17,7 +17,6 @@ import { ChevronRight, ChevronUp, Layers } from 'lucide-react';
 import type { ContentBlock, ThinkingBlock, ToolCallBlock } from '@/types';
 import type { CollapsibleBlockGroup } from '../chatUtils/types';
 import { isEmptyTextBlock } from '../chatUtils/helpers';
-import { ToolCallBlockRenderer } from '../chatBlocks/ToolCallBlockRenderer';
 import { ThinkingBlockRenderer } from '../chatBlocks/ThinkingBlockRenderer';
 import { renderContentBlock } from '../chatBlocks';
 
@@ -50,12 +49,16 @@ const CollapsibleBlockGroupRenderer = memo(function CollapsibleBlockGroupRendere
   const toolCount = blocks.length - thinkingCount;
 
   // 平铺渲染（流式期间与结束后展开态共用同构形态）
+  // tool_call 走 renderContentBlock 统一分发：插件覆盖（tool:/block:tool_call key）
+  // 命中时由 BlockCardOverrideHost 渲染，未命中回落宿主 ToolCallBlockRenderer。
   const renderBlocks = () =>
     blocks.map((block, index) =>
       block.type === 'thinking' ? (
         <ThinkingBlockRenderer key={`thinking-${index}`} block={block} isStreaming={isStreaming} />
       ) : (
-        <ToolCallBlockRenderer key={`tool-${index}`} block={block as ToolCallBlock} isStreaming={isStreaming} />
+        <React.Fragment key={`tool-${index}`}>
+          {renderContentBlock(block, isStreaming)}
+        </React.Fragment>
       )
     );
 
