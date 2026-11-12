@@ -26,6 +26,23 @@ async function ensureReactShim(): Promise<string> {
     export const useCallback = R.useCallback;
     export const useMemo = R.useMemo;
     export const useRef = R.useRef;
+    // 2026-11-12 补齐：插件面板常用但原白名单缺失的导出（polaris-git 实测
+    // useSyncExternalStore 不可用被迫降级 useState 订阅，见
+    // plans/git-panel-plugin-extraction-implementation.md §6-G3）。
+    // 缺失的成员在旧宿主 React 上导出 undefined，不会在 import 期崩溃。
+    export const useSyncExternalStore = R.useSyncExternalStore;
+    export const useLayoutEffect = R.useLayoutEffect;
+    export const useReducer = R.useReducer;
+    export const useContext = R.useContext;
+    export const useId = R.useId;
+    export const useImperativeHandle = R.useImperativeHandle;
+    export const useTransition = R.useTransition;
+    export const useDeferredValue = R.useDeferredValue;
+    export const useInsertionEffect = R.useInsertionEffect;
+    export const useDebugValue = R.useDebugValue;
+    export const startTransition = R.startTransition;
+    export const isValidElement = R.isValidElement;
+    export const cloneElement = R.cloneElement;
     export const memo = R.memo;
     export const createElement = R.createElement;
     export const Fragment = R.Fragment;
