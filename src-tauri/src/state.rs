@@ -611,6 +611,7 @@ pub fn create_app_state(
                 Path::new(&config_dir),
                 None,
                 None,
+                None,
             )
             .ok()
             .map(|(service, _)| {

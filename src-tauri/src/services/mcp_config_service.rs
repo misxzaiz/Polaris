@@ -532,6 +532,7 @@ pub fn resolve_external_plugin_mcp_servers(
     plugin_states: &PluginStateMap,
     ask_listener: Option<&crate::services::ask_listener::AskListenerHandle>,
     ask_route_session_id: Option<&str>,
+    web_endpoint: Option<(u16, String)>,
 ) -> Vec<ResolvedExternalMcpServer> {
     let workspace = workspace_path.to_string_lossy().to_string();
     let app_config_dir = config_dir.to_string_lossy().to_string();
@@ -610,6 +611,7 @@ pub fn resolve_external_plugin_mcp_servers(
                 &app_config_dir,
                 ask_listener,
                 ask_route_session_id,
+                web_endpoint.clone(),
             );
             let args = server
                 .args_template
@@ -622,6 +624,7 @@ pub fn resolve_external_plugin_mcp_servers(
                         &app_config_dir,
                         ask_listener,
                         ask_route_session_id,
+                        web_endpoint.clone(),
                     )
                 })
                 .collect();
@@ -730,6 +733,7 @@ pub fn resolve_workspace_mcp_runtime_service(
     workspace_path: &Path,
     ask_listener: Option<crate::services::ask_listener::AskListenerHandle>,
     ask_route_session_id: Option<String>,
+    web_endpoint: Option<(u16, String)>,
 ) -> Result<(WorkspaceMcpConfigService, Vec<String>)> {
     let service =
         WorkspaceMcpConfigService::from_app_paths(config_dir.clone(), resource_dir, app_root)?;
@@ -742,6 +746,7 @@ pub fn resolve_workspace_mcp_runtime_service(
         &plugin_states,
         ask_listener.as_ref(),
         ask_route_session_id.as_deref(),
+        web_endpoint,
     );
 
     // 收集已启用插件的 toolProvider 声明（用于覆盖内置 MCP server）
@@ -764,13 +769,18 @@ fn expand_external_mcp_template(
     app_config_dir: &str,
     ask_listener: Option<&crate::services::ask_listener::AskListenerHandle>,
     ask_route_session_id: Option<&str>,
+    web_endpoint: Option<(u16, String)>,
 ) -> String {
-    let port = ask_listener
-        .map(|handle| handle.port.to_string())
-        .unwrap_or_default();
-    let token = ask_listener
-        .map(|handle| handle.token.clone())
-        .unwrap_or_default();
+    // {{polarisPort}}/{{polarisToken}} 语义 = 宿主 web 端点（router-dispatch 通道）。
+    // 优先运行时注入的 web_endpoint（实际绑定端口，可能被 env/顺延改变）；
+    // 回退 ask_listener（旧语义，兼容无 supervisor 场景）。
+    let (port, token) = match &web_endpoint {
+        Some((p, t)) => (p.to_string(), t.clone()),
+        None => match ask_listener {
+            Some(handle) => (handle.port.to_string(), handle.token.clone()),
+            None => (String::new(), String::new()),
+        },
+    };
     let session_id = ask_route_session_id.unwrap_or_default();
     value
         .replace("{{pluginDir}}", plugin_dir)
@@ -1616,6 +1626,7 @@ mod tests {
                 &workspace,
                 &[plugin],
                 &states,
+                None,
                 None,
                 None,
             );

@@ -1217,6 +1217,7 @@ pub async fn start_chat_inner(
                 ask_listener: state.ask_listener.get().cloned(),
                 ask_route_session_id,
                 disabled_mcp_servers: options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
+                web_endpoint: state.plugin_service_manager.web_endpoint(),
             })?
         }
     } else {
@@ -1811,6 +1812,7 @@ pub async fn continue_chat_inner(
                 ask_listener: state.ask_listener.get().cloned(),
                 ask_route_session_id,
                 disabled_mcp_servers: options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
+                web_endpoint: state.plugin_service_manager.web_endpoint(),
             })?
         }
     } else {

@@ -46,6 +46,8 @@ pub struct McpConfigParams<'a> {
     pub ask_listener: Option<AskListenerHandle>,
     pub ask_route_session_id: Option<String>,
     pub disabled_mcp_servers: &'a [String],
+    /// 宿主 web 端点（{{polarisPort}}/{{polarisToken}} 模板展开的优先来源）
+    pub web_endpoint: Option<(u16, String)>,
 }
 
 /// 读取 config.json 的 `mcp.sessionDefaults`（会话级 MCP 白名单）。
@@ -115,6 +117,7 @@ pub fn prepare_mcp_config(params: McpConfigParams) -> Result<McpSessionConfig> {
         Path::new(params.work_dir),
         params.ask_listener,
         params.ask_route_session_id,
+        params.web_endpoint,
     )?;
 
     // 合并禁用列表：请求层 + 持久化层
