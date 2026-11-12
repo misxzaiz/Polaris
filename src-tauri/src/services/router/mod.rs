@@ -63,6 +63,7 @@ pub use http_capability::HttpCapability;
 pub use plugin_discovery_capability::PluginDiscoveryCapability;
 pub use plugin_service_manager_capability::PluginServiceManagerCapability;
 pub use plugin_state_capability::PluginStateCapability;
+pub use plugin_state_capability::save_states_with_events;
 pub use history_capability::HistoryCapability;
 pub use demo_capability::{EchoCapability, FaultyCapability};
 pub use event_adapter::{EventAdapter, static_perm::StaticPermission};
