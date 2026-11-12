@@ -730,24 +730,33 @@ impl PluginService {
 
         std::fs::remove_dir(&link_path)?;
 
-        // 清除 dev 标记（保留用户其他开关状态）。manifest 不可读（源码目录已被
-        // 手动删除等）时按链接目标兜底匹配，避免残留悬空 dev 标记。
+        // 清除状态记录：卸载语义下移除整个 pluginStates[id] 条目（dev 标记随条目
+        // 一起消失，插件管理中心 P0 治理——残留会让前端复活幽灵插件）。
+        // manifest 不可读（源码目录已被手动删除等）时按链接目标兜底匹配，
+        // 避免残留悬空 dev 标记。
         let manifest = Self::find_manifest_path(install_path)
             .and_then(|path| Self::read_manifest(&path).ok());
         let state_service = PluginStateService::new(app_config_dir.to_path_buf());
         if let Ok(mut states) = state_service.load() {
-            for (id, entry) in states.iter_mut() {
+            let mut removed_ids = Vec::new();
+            states.retain(|id, entry| {
                 let hit = manifest.as_ref().map(|m| &m.id == id).unwrap_or(false)
                     || entry
                         .dev_link
                         .as_ref()
                         .map(|dev| Some(dev.source_path.as_str()) == link_target.as_deref())
                         .unwrap_or(false);
-                if hit && entry.dev_link.take().is_some() {
-                    tracing::info!("[PluginDevLink] 已清除 dev 标记: {}", id);
+                if hit {
+                    removed_ids.push(id.clone());
                 }
+                !hit
+            });
+            for id in &removed_ids {
+                tracing::info!("[PluginDevLink] 已移除插件状态记录: {}", id);
             }
-            let _ = state_service.save(&states);
+            if !removed_ids.is_empty() {
+                let _ = state_service.save(&states);
+            }
         }
 
         Ok(PluginOperationResult {
@@ -961,6 +970,38 @@ impl PluginService {
         serde_json::from_str(&text).ok()
     }
 
+    /// 从 state.json 移除指定插件的 pluginStates[id] 条目（卸载成功后调用）。
+    ///
+    /// 根因（插件管理中心 P0 治理，plans/plugin-management-center-analysis.md §4.5）：
+    /// 此前卸载只删插件目录，state.json 的状态记录残留——前端 pluginStore 重发现时
+    /// 会为幽灵插件保留开关状态并触发服务联动（usePluginServiceSync）。按 manifest id
+    /// 精确移除；manifest 不可读（目录已删）时无 id 可查，静默跳过（与旧路径一致）。
+    ///
+    /// 边界：只删 uninstall 调用链的成功路径；启用状态日常读写（plugin_state_save /
+    /// cap.pluginState）不走这里。dev-link 卸载不走本函数（uninstall_dev_link_plugin
+    /// 内部整条移除，含 dev 标记）。
+    fn remove_plugin_state_entry(app_config_dir: &Path, install_path: &Path) {
+        let (plugin_id, _version) = Self::manifest_id_version_best_effort(install_path);
+        if plugin_id.is_empty() {
+            return;
+        }
+        let state_service = PluginStateService::new(app_config_dir.to_path_buf());
+        let Ok(mut states) = state_service.load() else {
+            return;
+        };
+        if states.remove(&plugin_id).is_some() {
+            if let Err(e) = state_service.save(&states) {
+                tracing::warn!(
+                    "[PluginUninstall] 清理 state.json 残留条目失败（{}）: {}",
+                    plugin_id,
+                    e
+                );
+            } else {
+                tracing::info!("[PluginUninstall] 已清理 state.json 残留条目: {}", plugin_id);
+            }
+        }
+    }
+
     pub fn uninstall_local_plugin(
         app_config_dir: &Path,
         workspace_path: Option<&Path>,
@@ -991,6 +1032,10 @@ impl PluginService {
         )?;
 
         Self::remove_dir_all_with_retry(&target)?;
+
+        // 卸载成功 → 清理 state.json 的 pluginStates[id] 残留条目（插件管理中心
+        // P0 治理）：残留会让前端 store 复活幽灵插件并触发服务联动。
+        Self::remove_plugin_state_entry(app_config_dir, install_path);
 
         Ok(PluginOperationResult {
             success: true,
@@ -1044,6 +1089,10 @@ impl PluginService {
 
         // 3. 重试删除目录
         Self::remove_dir_all_with_retry(&target)?;
+
+        // 卸载成功 → 清理 state.json 的 pluginStates[id] 残留条目（插件管理中心
+        // P0 治理）：残留会让前端 store 复活幽灵插件并触发服务联动。
+        Self::remove_plugin_state_entry(app_config_dir, install_path);
 
         Ok(PluginOperationResult {
             success: true,
@@ -1252,6 +1301,8 @@ impl PluginService {
 
         // 先尝试正常删除
         if std::fs::remove_dir_all(&target).is_ok() {
+            // 卸载成功 → 清理 state.json 残留条目（插件管理中心 P0 治理）
+            Self::remove_plugin_state_entry(app_config_dir, install_path);
             return PluginOperationResult {
                 success: true,
                 message: Some(format!("强制卸载成功，已删除目录 {}", target.display())),
@@ -1277,6 +1328,8 @@ impl PluginService {
                     target.display(),
                     renamed.display()
                 );
+                // 重命名成功 = 插件不再被识别 → 同步清理 state.json 残留条目
+                Self::remove_plugin_state_entry(app_config_dir, install_path);
                 PluginOperationResult {
                     success: true,
                     message: Some(format!(

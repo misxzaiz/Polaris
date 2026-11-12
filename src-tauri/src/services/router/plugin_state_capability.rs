@@ -358,13 +358,14 @@ mod tests {
             save_states_with_events(temp.path(), &states, &broadcaster);
         assert!(overview.changed_plugins.contains(&"polaris.marketplace".to_string()));
 
-        // EventAdapter 订阅侧应收到 plugin.lifecycle（broadcast_plugin_lifecycle 落 EventBroadcaster）
+        // EventBroadcaster 订阅侧应收到 plugin.lifecycle（broadcast_plugin_lifecycle
+        // 发送 `{event, payload}` JSON 字符串，见 plugin_events.rs）
         let mut got = false;
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
         while !got && std::time::Instant::now() < deadline {
             match sub.try_recv() {
-                Ok(ev) => {
-                    if ev.kind == "plugin.lifecycle" {
+                Ok(msg) => {
+                    if msg.contains("plugin.lifecycle") {
                         got = true;
                     }
                 }
