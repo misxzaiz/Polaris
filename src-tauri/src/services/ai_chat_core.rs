@@ -1107,6 +1107,22 @@ fn extract_http_status(msg: &str) -> Option<u16> {
 // Inner functions (shared business logic)
 // ============================================================================
 
+/// MCP 准备的工作目录：无 work_dir 时以数据根兜底。
+///
+/// 此前 work_dir 缺失会直接跳过 MCP 准备（工具面为空）——外部发起的会话
+/// （cap.ai.chat / dispatch 等）因此拿不到任何 MCP 工具。数据根是安全缺省：
+/// 插件服务发现走 config_dir（与 work_dir 无关），project 级插件仅在
+/// workspace 下存在，兜底后仍按 user 级正常注入。
+fn effective_mcp_work_dir(work_dir: Option<&str>) -> String {
+    match work_dir {
+        Some(dir) if !dir.trim().is_empty() => dir.to_string(),
+        _ => crate::services::data_root::data_root()
+            .root()
+            .to_string_lossy()
+            .to_string(),
+    }
+}
+
 pub async fn start_chat_inner(
     message: String,
     options: ChatRequestOptions,
@@ -1185,7 +1201,8 @@ pub async fn start_chat_inner(
     // 统一 MCP 配置准备
     let enable_mcp = options.enable_mcp_tools.unwrap_or(false);
     let mcp_config: McpSessionConfig = if enable_mcp {
-        if let Some(dir) = options.work_dir.as_deref().filter(|d| !d.trim().is_empty()) {
+        let mcp_work_dir = effective_mcp_work_dir(options.work_dir.as_deref());
+        {
             let ask_route_session_id = options.context_id.as_deref().and_then(|id| {
                 id.strip_prefix("session-")
                     .map(str::to_string)
@@ -1193,7 +1210,7 @@ pub async fn start_chat_inner(
             });
             launcher::prepare_mcp_config(McpConfigParams {
                 engine_id: &engine,
-                work_dir: dir,
+                work_dir: &mcp_work_dir,
                 config_dir: &app_paths.config_dir,
                 resource_dir: app_paths.resource_dir.as_deref(),
                 app_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap(),
@@ -1201,8 +1218,6 @@ pub async fn start_chat_inner(
                 ask_route_session_id,
                 disabled_mcp_servers: options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
             })?
-        } else {
-            McpSessionConfig::default()
         }
     } else {
         McpSessionConfig::default()
@@ -1780,7 +1795,8 @@ pub async fn continue_chat_inner(
     // 统一 MCP 配置准备
     let enable_mcp = options.enable_mcp_tools.unwrap_or(false);
     let mcp_config: McpSessionConfig = if enable_mcp {
-        if let Some(dir) = options.work_dir.as_deref().filter(|d| !d.trim().is_empty()) {
+        let mcp_work_dir = effective_mcp_work_dir(options.work_dir.as_deref());
+        {
             let ask_route_session_id = options.context_id.as_deref().and_then(|id| {
                 id.strip_prefix("session-")
                     .map(str::to_string)
@@ -1788,7 +1804,7 @@ pub async fn continue_chat_inner(
             });
             launcher::prepare_mcp_config(McpConfigParams {
                 engine_id: &engine,
-                work_dir: dir,
+                work_dir: &mcp_work_dir,
                 config_dir: &app_paths.config_dir,
                 resource_dir: app_paths.resource_dir.as_deref(),
                 app_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap(),
@@ -1796,8 +1812,6 @@ pub async fn continue_chat_inner(
                 ask_route_session_id,
                 disabled_mcp_servers: options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
             })?
-        } else {
-            McpSessionConfig::default()
         }
     } else {
         McpSessionConfig::default()
