@@ -14,6 +14,12 @@
 import { z } from 'zod'
 
 export const VALID_VIEW_AREAS = ['activityBar'] as const
+/**
+ * 浮层覆盖插槽白名单（contributes.overlays[].slot；与 Rust
+ * `plugin_service::OVERLAY_SLOTS` 镜像，双侧 diff 测试守护）。
+ * 新增插槽须同步：本常量 + Rust 常量 + App.tsx 消费点。
+ */
+export const VALID_OVERLAY_SLOTS = ['session-history'] as const
 export const VALID_TRANSPORTS = ['stdio', 'http'] as const
 export const VALID_SOURCE_KINDS = ['user', 'project', 'adapter'] as const
 export const VALID_CARD_MODES = ['result', 'interaction'] as const

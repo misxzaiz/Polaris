@@ -8,6 +8,7 @@ const log = createLogger('App');
 
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelTabStrip, CenterStage, RightPanel } from './components/Layout';
+import { PluginPanelHost } from './components/Plugins/PluginPanelHost';
 // FE-A: 此前经 './components/Chat' barrel 静态导入 7 组件，barrel re-export 的渲染子树
 // （renderChatMessage/SessionMessagesView/MessageSearchPanel → chatBlocks/chatBubbles/tool-calls
 // 约 1 万行）因「懒 chunk 反向 import main」被拽进入口 chunk（main 内出现 ToolCallBlock/
@@ -443,13 +444,25 @@ function App() {
           </Suspense>
         )}
 
+        {/* 会话历史浮层（plans/session-history-plugin-prd.md P0）：
+            位置本体 = RightSlideOver + viewStore 开关，永不随插件变化；
+            内容 = 已启用插件的 overlays[session-history] shadow 接管，
+            未启用/禁用/卸载 → 内置 SessionHistoryPanel 原样恢复（天然回滚）。 */}
         {(showSessionHistory || sessionHistoryKept) && (
           <RightSlideOver
             open={showSessionHistory || sessionHistoryKept}
             exiting={!showSessionHistory && sessionHistoryKept}
             onExited={sessionHistoryExited}
           >
-            <SessionHistoryPanelLazy onClose={closeSessionHistory} />
+            <Suspense fallback={loadingFallback}>
+              {(() => {
+                const claim = pluginRegistry.getOverlayClaim('session-history');
+                const enabled = claim ? isPluginUiEnabled(pluginStates, claim.pluginId) : false;
+                return claim && enabled
+                  ? <PluginPanelHost panelType={claim.panelType} />
+                  : <SessionHistoryPanelLazy onClose={closeSessionHistory} />;
+              })()}
+            </Suspense>
           </RightSlideOver>
         )}
 

@@ -154,6 +154,9 @@ pub enum PluginManifestSourceKind {
 pub struct PluginManifestContributes {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub views: Vec<PluginViewContribution>,
+    /// 浮层覆盖声明（v1 插槽：session-history）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overlays: Vec<PluginOverlayContribution>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mcp_servers: Vec<PluginMcpServerManifestContribution>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -386,6 +389,24 @@ pub struct PluginPanelContribution {
     /// 是否支持全屏模式（隐藏其他面板，自适应填充整个工作区）
     #[serde(default)]
     pub supports_fullscreen: bool,
+}
+
+/// 插件浮层覆盖贡献（plans/session-history-plugin-prd.md P0）：
+/// 具名宿主浮层插槽的接管声明。插件声明后，宿主在对应浮层位置渲染本插件
+/// 面板（mode=shadow 覆盖默认实现）；插件禁用/卸载 → 宿主默认面板原样恢复
+/// （天然回滚）。首个插槽：`session-history`（会话历史右侧抽屉）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginOverlayContribution {
+    /// 插件内唯一 id
+    pub id: String,
+    /// 宿主具名插槽 id（白名单校验，见 plugin_service::OVERLAY_SLOTS）
+    pub slot: String,
+    /// 指向本插件 panel 的 panelType（宿主经 PluginPanelHost 加载）
+    pub panel_type: String,
+    /// 覆盖模式：v1 仅 shadow（缺省 shadow，其他值安装期报错）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 /// 插件 UI contribution

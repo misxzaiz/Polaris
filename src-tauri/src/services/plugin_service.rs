@@ -58,6 +58,11 @@ const VALID_PLUGIN_ICONS: &[&str] = &[
 ];
 const VALID_TRANSPORTS: &[&str] = &["stdio", "http"];
 
+/// 浮层覆盖插槽白名单（contributes.overlays[].slot；与前端
+/// `plugin-system/schema.ts VALID_OVERLAY_SLOTS` 镜像，双侧 diff 测试守护）。
+/// 新增插槽须同步：本常量 + 前端常量 + App.tsx 消费点。
+const OVERLAY_SLOTS: &[&str] = &["session-history"];
+
 /// 自定义图标文件允许的扩展名（大小写不敏感；svg 必须在列）
 const PLUGIN_ICON_IMAGE_EXTENSIONS: &[&str] = &[
     "svg", "png", "jpg", "jpeg", "webp", "gif", "ico", "bmp", "avif",
@@ -1949,6 +1954,35 @@ impl PluginService {
                 if !matches!(mode.as_str(), "shadow" | "chain" | "append") {
                     errors.push(format!(
                         "{}.slotMode has unsupported value: {} (supported: shadow | chain | append)",
+                        prefix, mode
+                    ));
+                }
+            }
+        }
+
+        // 浮层覆盖声明校验（plans/session-history-plugin-prd.md P0）：
+        // slot 白名单 + mode 值域 + panelType 必填。安装期 fail fast，
+        // 防「声明了但运行时静默不生效」的漂移（对齐 slotMode 校验先例）。
+        for (index, overlay) in manifest.contributes.overlays.iter().enumerate() {
+            let prefix = format!("contributes.overlays[{}]", index);
+            if overlay.id.trim().is_empty() {
+                errors.push(format!("{}.id is required", prefix));
+            }
+            if !OVERLAY_SLOTS.contains(&overlay.slot.as_str()) {
+                errors.push(format!(
+                    "{}.slot has unsupported value: {} (supported: {})",
+                    prefix,
+                    overlay.slot,
+                    OVERLAY_SLOTS.join(" | ")
+                ));
+            }
+            if overlay.panel_type.trim().is_empty() {
+                errors.push(format!("{}.panelType is required", prefix));
+            }
+            if let Some(mode) = &overlay.mode {
+                if mode != "shadow" {
+                    errors.push(format!(
+                        "{}.mode has unsupported value: {} (supported: shadow)",
                         prefix, mode
                     ));
                 }

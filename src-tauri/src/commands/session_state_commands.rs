@@ -51,6 +51,15 @@ fn db() -> Result<Arc<SessionStateDb>> {
     Ok(guard.as_ref().unwrap().clone())
 }
 
+/// 运行中会话投影（cap.history list_running 消费）：
+/// 事件日志里「最后一条事件是 session_start」的会话 id 列表。
+/// 失败返回空（调用方降级，不阻断）。
+pub fn running_projection_ids() -> Vec<String> {
+    db()
+        .and_then(|db| db.running_conversation_ids())
+        .unwrap_or_default()
+}
+
 // ============================================================================
 // inner 实现（共享给 IPC dispatch）
 // ============================================================================

@@ -503,7 +503,7 @@ export async function createV2SessionKernel(
   deps?: Partial<V2SessionKernelDeps>,
 ): Promise<V2SessionKernel> {
   const { sessionStoreManager } = await import('@/stores/conversationStore/sessionStoreManager')
-  const { historyService } = await import('@/services/historyService')
+  const { restoreFromHistory } = await import('@/services/sessionRestore')
   const { V2StateArbiter } = await import('../core/v2-session-event-log')
   const { aiChatDispatchStream } = await import('@/services/aiChatDispatch')
   const { dialogStorageService } = await import('@/services/dialogStorage')
@@ -511,7 +511,13 @@ export async function createV2SessionKernel(
 
   return new V2SessionKernel({
     sessionStoreManager: deps?.sessionStoreManager ?? sessionStoreManager,
-    historyService: deps?.historyService ?? historyService,
+    // P0（plans/session-history-plugin-prd.md）：恢复核心抽至 sessionRestore
+    // （宿主保留，历史面板 UI 外移后仍可用）；historyService.restoreFromHistory
+    // 保持向后兼容委托（v2-kernel 消费面切到 sessionRestore）。
+    historyService: deps?.historyService ?? {
+      restoreFromHistory: (...args) =>
+        restoreFromHistory(...(args as Parameters<typeof restoreFromHistory>)).then((id) => id !== null),
+    },
     eventDispatcher: deps?.eventDispatcher ?? sessionStoreManager.getState(),
     stateArbiter: deps?.stateArbiter ?? new V2StateArbiter(),
     streamDispatch: deps?.streamDispatch ?? ((payload) => aiChatDispatchStream(payload)),

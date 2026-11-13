@@ -108,6 +108,22 @@ export interface PluginPanelContribution {
 }
 
 /**
+ * 浮层覆盖贡献（plans/session-history-plugin-prd.md P0）：
+ * 插件声明接管宿主具名浮层插槽（mode=shadow 覆盖默认实现）；
+ * 禁用/卸载 → 宿主默认面板原样恢复（天然回滚）。
+ */
+export interface PluginOverlayContribution {
+  /** 插件内唯一 id */
+  id: string
+  /** 宿主具名插槽 id（白名单：VALID_OVERLAY_SLOTS） */
+  slot: string
+  /** 指向本插件 panel 的 panelType（宿主经 PluginPanelHost 加载） */
+  panelType: string
+  /** 覆盖模式：v1 仅 shadow（缺省 shadow） */
+  mode?: 'shadow'
+}
+
+/**
  * 聊天卡片渲染模式
  * - result: 展示型。消费 MCP 工具返回结果，追加独立卡片渲染（Rust 零改动）
  * - interaction: 交互型。插件 MCP server 经伴生通道请求同回合用户输入，
@@ -419,6 +435,8 @@ export interface PolarisPluginManifest {
   deprecated?: boolean | string
   contributes: {
     views?: Omit<PluginViewContribution, 'pluginId'>[]
+    /** 浮层覆盖声明（v1 插槽：session-history）；禁用/卸载即回宿主默认面板 */
+    overlays?: PluginOverlayContribution[]
     mcpServers?: Omit<PluginMcpServerContribution, 'pluginId'>[]
     services?: Omit<PluginServiceContribution, 'pluginId'>[]
     panel?: PluginPanelContribution
