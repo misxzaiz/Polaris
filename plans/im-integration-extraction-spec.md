@@ -4,11 +4,11 @@
 > 上游：`plans/core-slimdown-plugin-extraction-plan.md` §4.2 B2-2、`AGENTS.md` §五功能路由原则。
 > 用户定案（2026-11-10）：确定改造为插件的方案；实施另需批准。本文只定方案，不改代码。
 >
-> ## 落地进度（2026-11-13）
-> - **L0 cap 化 ✅**：`cap.integration`（services/router/integration_capability.rs）收敛 16 个旧命令；旧 `integration_*` Tauri 命令与 web 桥分支已删；前端 `integrationService.ts` 走 router_dispatch。主仓提交 `6840d5b7`。
-> - **L1/L2 插件 ✅**：`Polaris-plugin/plugins/im-bridge`（service 三平台适配 + MCP 三工具 + 面板），单测 27/27；junction 安装 dev 数据根，supervisor 拉起后 QQ/飞书/钉钉三平台真实连接 ready，MCP im_status/im_send/im_instances 冒烟通过。插件仓提交 `68053f6` + `a5c42e1`（icon 白名单修正）。
-> - **主仓删码（integrations/ 域整体删除）待办**：`src-tauri/src/integrations/`（7096 行）+ `AppState.integration_manager` 字段 + `web/integration_tests.rs` 构造点。等 im-bridge 灰度稳定（enabledByDefault 翻 true + 一段共存观察）后执行，删除 commit 独立可 revert。
-> - **坑位记录**：① views[].icon 必须在 18 值 lucide 白名单（MessageSquare 被拒，用 Bot）；② cap.pluginServiceManager start 的 installPath 传反斜杠路径经 JSON 双重转义会「目录名称无效 (os error 267)」，传正斜杠即可。
+> ## 落地进度（2026-11-13 L0+插件；2026-11-14 主仓删码完成，域出仓闭环 ✅）
+> - **L0 cap 化 ✅**：`cap.integration` 收敛 16 个旧命令；旧 `integration_*` Tauri 命令与 web 桥分支已删。主仓提交 `6840d5b7`。
+> - **L1/L2 插件 ✅**：`Polaris-plugin/plugins/im-bridge`（service 三平台适配 + MCP 三工具 + 面板），单测 27/27；junction 安装 dev 数据根，supervisor 拉起后 QQ/飞书/钉钉三平台真实连接 ready，MCP 冒烟通过。插件仓提交 `68053f6` + `a5c42e1`。
+> - **主仓删码 ✅（2026-11-14，`d9a0074e`）**：integrations/ 整目录（17 文件）+ integration_capability + commands/integration.rs + AppState.integration_manager + models/config.rs IM 配置段（凭证已迁 im-bridge cap.kv，spec D3）+ 前端 Integration 面板/ExecutionConsole 执行台/integrationService/类型/i18n，净删 12,010 行。aiConsole 席位换 SlotEmpty 空态卡，席位契约保留。回滚 = `git revert d9a0074e`。cap.integration 同步从总线删除（28 caps）。
+> - **坑位记录**：① views[].icon 必须在 18 值 lucide 白名单（MessageSquare 被拒，用 Bot）；② cap.pluginServiceManager start 的 installPath 传反斜杠路径经 JSON 双重转义会「目录名称无效 (os error 267)」，传正斜杠即可；③ 同工作区多线并行时暂存区可能被其他线的提交重置，add 后立即 commit。
 
 ## 1. 目标与边界
 
