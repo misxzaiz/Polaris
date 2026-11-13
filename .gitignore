@@ -147,3 +147,6 @@ release/
 # Local 3D render experiments (scratch frames / minified libs, not product code)
 glass-micro-world/
 release-artifacts/
+
+# 外部工具运行时产物（mentor 生命周期心跳，非本仓代码）
+.mentor/
