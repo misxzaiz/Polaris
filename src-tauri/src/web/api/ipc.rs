@@ -147,15 +147,6 @@ pub async fn handle_ipc_bridge(
         .map_err(WebError::BadRequest)
         .and_then(to_json),
 
-        // ── Integrations ───────────────────────────────────────────────────
-        "list_integration_instances" => dispatch_list_integration_instances(&state).await,
-        "list_integration_instances_by_platform" => {
-            dispatch_list_integration_instances_by_platform(&state, &args).await
-        }
-        "get_active_integration_instance" => {
-            dispatch_get_active_integration_instance(&state, &args).await
-        }
-
         // ── Context Memory ─────────────────────────────────────────────────
 
         // ── Config ──────────────────────────────────────────────────────────
@@ -268,11 +259,6 @@ pub async fn handle_ipc_bridge(
 
         // ── Chat session liveness（Web 断线重连状态恢复） ────────────────────
         "is_chat_session_running" => dispatch_is_chat_session_running(&state, &args).await,
-
-        // ── Integration ────────────────────────────────────────────────────
-        "init_integration" => Ok(Json(Value::Null)), // no-op in web mode (no AppHandle)
-        "get_all_integration_status" => dispatch_get_all_integration_status(&state).await,
-        "send_integration_message" => Err(WebError::BadRequest("send_integration_message requires local runtime".into())),
 
         // ── Plugin ─────────────────────────────────────────────────────────
         // 管理面（plugin_list ~ plugin_apply_update）已上总线（cap.pluginDiscovery），
@@ -659,61 +645,6 @@ fn dispatch_create_dispatch_task(
 // ═══════════════════════════════════════════════════════════════════════════
 
 
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Integrations
-// ═══════════════════════════════════════════════════════════════════════════
-
-async fn dispatch_list_integration_instances(state: &AppState) -> Result<Json<Value>, WebError> {
-    let manager = state.integration_manager.lock().await;
-    let instances = manager.list_instances().await;
-    Ok(Json(serde_json::to_value(instances).map_err(|e| {
-        WebError::Internal(format!("Serialization error: {}", e))
-    })?))
-}
-
-async fn dispatch_list_integration_instances_by_platform(
-    state: &AppState,
-    args: &Value,
-) -> Result<Json<Value>, WebError> {
-    let platform_str = require_string(args, "platform")?;
-    let platform: crate::integrations::types::Platform = platform_str
-        .parse()
-        .map_err(|e: String| WebError::BadRequest(format!("Invalid platform: {}", e)))?;
-    let manager = state.integration_manager.lock().await;
-    let instances = manager.list_instances_by_platform(platform).await;
-    Ok(Json(serde_json::to_value(instances).map_err(|e| {
-        WebError::Internal(format!("Serialization error: {}", e))
-    })?))
-}
-
-async fn dispatch_get_active_integration_instance(
-    state: &AppState,
-    args: &Value,
-) -> Result<Json<Value>, WebError> {
-    let platform_str = require_string(args, "platform")?;
-    let platform: crate::integrations::types::Platform = platform_str
-        .parse()
-        .map_err(|e: String| WebError::BadRequest(format!("Invalid platform: {}", e)))?;
-    let manager = state.integration_manager.lock().await;
-    let instance = manager.get_active_instance(platform).await;
-    Ok(Json(serde_json::to_value(instance).map_err(|e| {
-        WebError::Internal(format!("Serialization error: {}", e))
-    })?))
-}
-
-async fn dispatch_get_all_integration_status(state: &AppState) -> Result<Json<Value>, WebError> {
-    let manager = state.integration_manager.lock().await;
-    let statuses: std::collections::HashMap<String, _> = manager
-        .all_status()
-        .await
-        .into_iter()
-        .map(|(p, s)| (p.to_string(), s))
-        .collect();
-    Ok(Json(serde_json::to_value(statuses).map_err(|e| {
-        WebError::Internal(format!("Serialization error: {}", e))
-    })?))
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Context Memory

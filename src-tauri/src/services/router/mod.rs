@@ -48,6 +48,7 @@ mod self_mutate_capability;
 mod mcp_capability;
 mod hook_capability;
 mod ui_render_capability;
+mod integration_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use app_autolaunch_capability::AppAutolaunchCapability;
@@ -84,6 +85,7 @@ pub use registry_capability::RegistryCapability;
 pub(crate) use registry_capability::check_override_permission;
 pub use mcp_capability::{McpCapability, MCP_CAP_ID};
 pub use hook_capability::HookCapability;
+pub use integration_capability::IntegrationCapability;
 pub use ui_render_capability::UiRenderCapability;
 
 use crate::contracts::*;

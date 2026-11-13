@@ -1,251 +1,28 @@
-/*! 集成相关 Tauri 命令
+/*! 集成域配置持久化（原 Tauri 命令层残留）
  *
- * 提供平台集成的启动、停止、状态查询、消息发送等命令。
+ * L0 cap 化（plans/im-integration-extraction-spec.md）：16 个 `integration_*`
+ * Tauri 命令已删除，统一走 `cap.integration`（services/router/integration_capability.rs）。
+ * 本文件仅保留实例配置写回（sync_instances_to_config）与三个转换 helper——
+ * cap 的实例写动作（add/remove/switch/update/disconnect）与旧命令层共用同一
+ * 持久化语义，避免双写路径漂移。
  */
 
-use std::collections::HashMap;
-#[cfg(feature = "tauri-app")]
-use tauri::State;
-
 use crate::error::{Result, AppError};
-use crate::integrations::types::*;
-use crate::integrations::instance_registry::{PlatformInstance, InstanceId};
+use crate::integrations::types::Platform;
+use crate::integrations::instance_registry::PlatformInstance;
 use crate::models::config::{
-    QQBotConfig, QQBotInstanceConfig, FeishuConfig, FeishuInstanceConfig,
-    DingTalkConfig, DingTalkInstanceConfig,
+    QQBotInstanceConfig, FeishuInstanceConfig, DingTalkInstanceConfig,
 };
-
-/// 启动集成平台
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn start_integration(
-    platform: String,
-    state: State<'_, crate::AppState>,
-) -> Result<()> {
-    let platform: Platform = platform
-        .parse()
-        .map_err(|e: String| AppError::ValidationError(e))?;
-
-    let mut manager = state.integration_manager.lock().await;
-    manager.start(platform).await
-}
-
-/// 停止集成平台
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn stop_integration(
-    platform: String,
-    state: State<'_, crate::AppState>,
-) -> Result<()> {
-    let platform: Platform = platform
-        .parse()
-        .map_err(|e: String| AppError::ValidationError(e))?;
-
-    let mut manager = state.integration_manager.lock().await;
-    manager.stop(platform).await
-}
-
-/// 获取集成状态
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn get_integration_status(
-    platform: String,
-    state: State<'_, crate::AppState>,
-) -> Result<Option<IntegrationStatus>> {
-    let platform: Platform = platform
-        .parse()
-        .map_err(|e: String| AppError::ValidationError(e))?;
-
-    let manager = state.integration_manager.lock().await;
-    Ok(manager.status(platform).await)
-}
-
-/// 获取所有集成状态
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn get_all_integration_status(
-    state: State<'_, crate::AppState>,
-) -> Result<HashMap<String, IntegrationStatus>> {
-    let manager = state.integration_manager.lock().await;
-    Ok(manager
-        .all_status()
-        .await
-        .into_iter()
-        .map(|(p, s)| (p.to_string(), s))
-        .collect())
-}
-
-/// 发送集成消息
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn send_integration_message(
-    platform: String,
-    target: SendTarget,
-    content: MessageContent,
-    state: State<'_, crate::AppState>,
-) -> Result<()> {
-    let platform: Platform = platform
-        .parse()
-        .map_err(|e: String| AppError::ValidationError(e))?;
-
-    let manager = state.integration_manager.lock().await;
-    manager.send(platform, target, content).await
-}
-
-/// 获取集成会话列表
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn get_integration_sessions(
-    state: State<'_, crate::AppState>,
-) -> Result<Vec<IntegrationSession>> {
-    let manager = state.integration_manager.lock().await;
-    Ok(manager.sessions().into_iter().cloned().collect())
-}
-
-/// 初始化集成管理器
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn init_integration(
-    qqbot_config: Option<QQBotConfig>,
-    feishu_config: Option<FeishuConfig>,
-    dingtalk_config: Option<DingTalkConfig>,
-    app_handle: tauri::AppHandle,
-    state: State<'_, crate::AppState>,
-) -> Result<()> {
-    let mut manager = state.integration_manager.lock().await;
-    manager.init(qqbot_config, feishu_config, dingtalk_config, app_handle).await;
-    Ok(())
-}
-
-// ==================== 实例管理命令 ====================
-
-/// 添加实例
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn add_integration_instance(
-    instance: PlatformInstance,
-    state: State<'_, crate::AppState>,
-) -> Result<InstanceId> {
-    let id = {
-        let manager = state.integration_manager.lock().await;
-        manager.add_instance(instance).await
-    };
-    sync_instances_to_config(&state).await?;
-    Ok(id)
-}
-
-/// 移除实例
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn remove_integration_instance(
-    instance_id: String,
-    state: State<'_, crate::AppState>,
-) -> Result<Option<PlatformInstance>> {
-    let removed = {
-        let manager = state.integration_manager.lock().await;
-        manager.remove_instance(&instance_id).await
-    };
-    sync_instances_to_config(&state).await?;
-    Ok(removed)
-}
-
-/// 获取所有实例
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn list_integration_instances(
-    state: State<'_, crate::AppState>,
-) -> Result<Vec<PlatformInstance>> {
-    let manager = state.integration_manager.lock().await;
-    Ok(manager.list_instances().await)
-}
-
-/// 按平台获取实例列表
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn list_integration_instances_by_platform(
-    platform: String,
-    state: State<'_, crate::AppState>,
-) -> Result<Vec<PlatformInstance>> {
-    let platform: Platform = platform
-        .parse()
-        .map_err(|e: String| AppError::ValidationError(e))?;
-
-    let manager = state.integration_manager.lock().await;
-    Ok(manager.list_instances_by_platform(platform).await)
-}
-
-/// 获取当前激活的实例
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn get_active_integration_instance(
-    platform: String,
-    state: State<'_, crate::AppState>,
-) -> Result<Option<PlatformInstance>> {
-    let platform: Platform = platform
-        .parse()
-        .map_err(|e: String| AppError::ValidationError(e))?;
-
-    let manager = state.integration_manager.lock().await;
-    Ok(manager.get_active_instance(platform).await)
-}
-
-/// 切换实例
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn switch_integration_instance(
-    instance_id: String,
-    state: State<'_, crate::AppState>,
-) -> Result<()> {
-    {
-        let mut manager = state.integration_manager.lock().await;
-        manager.switch_instance(&instance_id).await?;
-    }
-    sync_instances_to_config(&state).await?;
-    Ok(())
-}
-
-/// 断开当前实例
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn disconnect_integration_instance(
-    platform: String,
-    state: State<'_, crate::AppState>,
-) -> Result<()> {
-    let platform: Platform = platform
-        .parse()
-        .map_err(|e: String| AppError::ValidationError(e))?;
-
-    {
-        let mut manager = state.integration_manager.lock().await;
-        manager.disconnect_instance(platform).await?;
-    }
-    sync_instances_to_config(&state).await?;
-    Ok(())
-}
-
-/// 更新实例配置
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn update_integration_instance(
-    instance: PlatformInstance,
-    state: State<'_, crate::AppState>,
-) -> Result<()> {
-    {
-        let mut manager = state.integration_manager.lock().await;
-        manager.update_instance(instance).await?;
-    }
-    sync_instances_to_config(&state).await?;
-    Ok(())
-}
-
-// ==================== 持久化同步 ====================
 
 /// 将 InstanceRegistry 中的实例数据同步写回 ConfigStore（config.json）
 ///
 /// 每次 add/update/remove/switch/disconnect 操作后调用，
 /// 确保实例配置在应用重启后不丢失。
-#[cfg(feature = "tauri-app")]
-async fn sync_instances_to_config(state: &State<'_, crate::AppState>) -> Result<()> {
+///
+/// L0 cap 化：签名从 `&State<'_, AppState>` 放宽为 `&AppState`——cap.integration
+/// 的实例写动作（add/remove/switch/update/disconnect）同样必须经此同步配置；
+/// tauri 命令层 `&state` 自动 deref，双轨期两条路径共用同一实现。
+pub(crate) async fn sync_instances_to_config(state: &crate::AppState) -> Result<()> {
     // Step 1: 从 InstanceRegistry 读取数据（async lock，用完立即释放）
     let (qqbot_instances, feishu_instances, dingtalk_instances, qqbot_active_id, feishu_active_id, dingtalk_active_id) = {
         let manager = state.integration_manager.lock().await;

@@ -1212,6 +1212,7 @@ mod tests {
             core: false,
             contributes: PluginManifestContributes {
                 views: Vec::new(),
+                overlays: Vec::new(),
                 adapters: Vec::new(),
                 panel: None,
                 mcp_servers: vec![PluginMcpServerManifestContribution {

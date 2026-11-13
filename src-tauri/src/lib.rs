@@ -61,15 +61,8 @@ use commands::file_io::{test_param_serialization, write_file_absolute, read_file
 #[cfg(feature = "tauri-app")]
 use commands::translate::baidu_translate;
 #[cfg(feature = "tauri-app")]
-use commands::integration::{
-    start_integration, stop_integration, get_integration_status,
-    get_all_integration_status, send_integration_message,
-    get_integration_sessions, init_integration,
-    add_integration_instance, remove_integration_instance,
-    list_integration_instances, list_integration_instances_by_platform,
-    get_active_integration_instance, switch_integration_instance,
-    disconnect_integration_instance, update_integration_instance,
-};
+// 集成命令已上总线 cap.integration（L0 cap 化，plans/im-integration-extraction-spec.md）；
+// commands/integration.rs 仅保留 sync_instances_to_config 供 cap 写动作共用。
 #[cfg(feature = "tauri-app")]
 use commands::terminal::{
     terminal_create, terminal_write, terminal_resize,
@@ -660,6 +653,12 @@ pub fn run() {
                 let _ = state.router.register_handle(Box::new(
                     crate::services::router::TerminalCapability::with_state(chat_state.clone()),
                 ));
+                // cap.integration —— IM 平台集成能力（integrations/manager 总线入口；
+                // plans/im-integration-extraction-spec.md L0 cap 化，旧 integration_*
+                // 命令并行双轨，插件化 L2 阶段随 integrations/ 一并删除）。
+                let _ = state.router.register_handle(Box::new(
+                    crate::services::router::IntegrationCapability::with_state(chat_state.clone()),
+                ));
                 let _ = state
                     .router
                     .register_streaming(Arc::new(crate::services::router::StreamEchoCapability));
@@ -1106,23 +1105,8 @@ pub fn run() {
             test_param_serialization,
             // 翻译相关
             baidu_translate,
-            // 集成相关
-            start_integration,
-            stop_integration,
-            get_integration_status,
-            get_all_integration_status,
-            send_integration_message,
-            get_integration_sessions,
-            init_integration,
-            // 实例管理
-            add_integration_instance,
-            remove_integration_instance,
-            list_integration_instances,
-            list_integration_instances_by_platform,
-            get_active_integration_instance,
-            switch_integration_instance,
-            disconnect_integration_instance,
-            update_integration_instance,
+            // 集成相关：已上总线 cap.integration（L0 cap 化，
+            // plans/im-integration-extraction-spec.md），旧 integration_* 命令删除。
             // 终端相关
             terminal_create,
             terminal_write,
@@ -1381,6 +1365,12 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let _ = state
         .router
         .register_handle(Box::new(crate::services::router::TerminalCapability::with_state(
+            state.clone(),
+        )));
+    // cap.integration —— IM 平台集成能力（独立 Web 模式；init 为 no-op 无 AppHandle）
+    let _ = state
+        .router
+        .register_handle(Box::new(crate::services::router::IntegrationCapability::with_state(
             state.clone(),
         )));
     let web_server = web::server::WebServer::new(state.clone());
