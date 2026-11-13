@@ -9,7 +9,9 @@ import { persist } from 'zustand/middleware'
 import type { ScmDiffEntry } from '@/types/scmDiff'
 import { useFileEditorStore } from './fileEditorStore'
 import { getFileNameFromPath } from '@/utils/path'
-import { browserClose, DEFAULT_BROWSER_HOME, makeBrowserWebviewLabel } from '@/services/tauri/browserService'
+
+/** 浏览器 tab 打开时的默认主页 */
+export const DEFAULT_BROWSER_HOME = 'https://en.wikipedia.org/wiki/Main_Page'
 
 /**
  * Tab 类型
@@ -89,15 +91,9 @@ interface TabActions {
 
 export type TabStore = TabState & TabActions
 
-function closeBrowserResources(tabs: Tab[]) {
-  tabs
-    .filter((tab) => tab.type === 'browser')
-    .forEach((tab) => {
-      browserClose(makeBrowserWebviewLabel(tab.id)).catch((e) => {
-         
-        console.warn(`[tabStore] browserClose failed for tab ${tab.id}:`, String(e))
-      })
-    })
+function closeBrowserResources(_tabs: Tab[]) {
+  // 内置浏览器（webview 形态）已由 browser-desk 插件承接；tab 关闭不再有
+  // 宿主侧 native webview 资源需要清理。函数保留占位以维持关闭链路形状。
 }
 
 let browserNavigationRequestSequence = 0

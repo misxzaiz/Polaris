@@ -16,7 +16,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, ChevronDown, Target, MessageSquarePlus, Check } from 'lucide-react'
-import type { BrowserRegion } from '@/services/tauri/browserService'
+import type { BrowserRegion } from '@/types/browserContext'
 import type { ContextBlock } from '@/stores/conversationStore/types'
 import { getKindSpec } from './contextBlockRegistry'
 

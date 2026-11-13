@@ -23,7 +23,7 @@ const EditorPanel = lazy(() => import('@/components/Editor/EditorPanel').then(m 
 import { TabContextMenu } from './TabContextMenu'
 import { ImagePreview } from '@/components/Preview/ImagePreview'
 import { VideoPreview } from '@/components/Preview/VideoPreview'
-import { BrowserPanel } from '@/components/Browser'
+import { PluginSlotPlaceholder } from '@/components/PluginSlotPlaceholder'
 import { UnsavedDialog } from '@/components/Common/UnsavedDialog'
 import { useToastStore } from '@/stores/toastStore'
 import { getFileNameFromPath, resolveWorkspacePath } from '@/utils/path'
@@ -565,39 +565,30 @@ export function TabContent({ className = '' }: TabContentProps) {
       )
 
     case 'browser': {
+      // 内置浏览器已由 browser-desk 插件承接（CDP 驱动系统 Chrome）。
+      // 插件以 slot:'browser' + slotMode:'shadow' 接管左侧席位；
+      // 中台 tab 打开浏览器 URL 时渲染插件引导占位（安装启用后由插件面板服务）。
       const requestedUrl =
         typeof activeTab.metadata?.requestedUrl === 'string' ? activeTab.metadata.requestedUrl : undefined
-      const navigationRequestId =
-        typeof activeTab.metadata?.navigationRequestId === 'number'
-          ? activeTab.metadata.navigationRequestId
-          : undefined
-      const hasPendingNavigationRequest =
-        activeTab.metadata?.navigationRequestPending === true &&
-        requestedUrl !== undefined &&
-        navigationRequestId !== undefined
-      const browserInitialUrl = hasPendingNavigationRequest
-        ? requestedUrl
-        : typeof activeTab.metadata?.currentUrl === 'string'
-          ? activeTab.metadata.currentUrl
-          : typeof activeTab.metadata?.initialUrl === 'string'
-            ? activeTab.metadata.initialUrl
-            : typeof activeTab.metadata?.url === 'string'
-              ? activeTab.metadata.url
-              : undefined
-
+      const fallbackUrl =
+        typeof activeTab.metadata?.currentUrl === 'string' ? activeTab.metadata.currentUrl : undefined
+      const url = requestedUrl ?? fallbackUrl
       return (
         <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
-          <BrowserPanel
-            tabId={activeTab.id}
-            initialUrl={browserInitialUrl}
-            navigationRequestUrl={hasPendingNavigationRequest ? requestedUrl : undefined}
-            navigationRequestId={hasPendingNavigationRequest ? navigationRequestId : undefined}
-            acquireRequestId={
-              typeof activeTab.metadata?.browserAcquireRequestId === 'string'
-                ? activeTab.metadata.browserAcquireRequestId
-                : undefined
+          <PluginSlotPlaceholder
+            title={t('pluginSlotPlaceholder.browserTabTitle', {
+              defaultValue: '浏览器已迁移为插件',
+            })}
+            hint={
+              url
+                ? t('pluginSlotPlaceholder.browserTabHintUrl', {
+                    defaultValue: '目标地址：{{url}}。安装并启用 browser-desk 插件后在插件面板打开；插件管理：设置 → 插件。',
+                    url,
+                  })
+                : t('pluginSlotPlaceholder.browserTabHint', {
+                    defaultValue: '安装并启用 browser-desk 插件后，浏览器能力由插件提供（多窗口、AI 搜索/阅读/交互）。插件管理：设置 → 插件。',
+                  })
             }
-            acquireCreated={activeTab.metadata?.browserAcquireCreated === true}
           />
         </div>
       )

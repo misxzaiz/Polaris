@@ -6,7 +6,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { OverlayGuard } from '@/components/Browser/OverlayGuard';
+import { OverlayGuard } from '@/components/Common/OverlayGuard';
 import { Save, FileText } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
 import { useTransitionState } from '@/hooks/useTransitionState';

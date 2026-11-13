@@ -3,7 +3,7 @@ import { Play, Plus, X } from 'lucide-react';
 import { useTerminalStore } from '@/stores/terminalStore';
 import { createLogger } from '@/utils/logger';
 
-import { OverlayGuard } from '@/components/Browser/OverlayGuard';
+import { OverlayGuard } from '@/components/Common/OverlayGuard';
 
 const log = createLogger('TerminalRunCommandModal');
 

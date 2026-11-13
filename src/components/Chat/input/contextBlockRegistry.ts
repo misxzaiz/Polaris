@@ -7,7 +7,7 @@
  * 输入框 chips / 草稿 / 落盘降级 / 末尾拼接 全链零改动接入。
  *
  * 内置 kind（模块加载时自注册）：
- * - marquee-context：浏览器圈选，复用 browserService 的圈选文案模板
+ * - marquee-context：浏览器圈选，复用 types/browserContext 的圈选文案模板
  * - cap-help：/cap 能力引用（detail=单能力 describe 协议 / digest=全量速查），
  *   格式化复用 capSlashCommand 纯函数，数据为选中时刻的快照（所见即所发）
  * - 其他/未注册 kind：降级为 data JSON 文本（不白屏、不阻塞发送）
@@ -20,7 +20,7 @@ import type { ContextBlock, ContextBlockKindSpec } from '@/stores/conversationSt
 import {
   formatMarqueeContextBlock,
   type MarqueeContextBlock,
-} from '@/services/tauri/browserService'
+} from '@/types/browserContext'
 import { invoke } from '@/services/tauri'
 import { joinPath } from '@/utils/path'
 import { createLogger } from '@/utils/logger'

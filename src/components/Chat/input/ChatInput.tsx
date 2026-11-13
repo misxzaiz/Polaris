@@ -44,7 +44,6 @@ import { getChatDisplayStyleVars } from '@/types'
 import type { Attachment } from '@/types/attachment'
 import type { ContextBlock } from '@/stores/conversationStore/types'
 import { materializeContextBlocks, upsertContextBlock } from './contextBlockRegistry'
-import { useMarqueeStore } from '@/stores/marqueeStore'
 import { createLogger } from '@/utils/logger'
 import { normalizeEngineId, getEngineFullName } from '@/utils/engineDisplay'
 import { dialogStorageService } from '@/services/dialogStorage/service'
@@ -448,13 +447,11 @@ export function ChatInput({
   }, [attachments, value, debouncedPersistDraft])
 
   // ── 上下文块（如浏览器圈选区域）──
-  // 由外部组件（BrowserPanel）经 addContextBlock 写入，这里负责移除与显示。
+  // 由外部组件经 addContextBlock 写入，这里负责移除与显示。
   const removeContextBlock = useCallback((id: string) => {
     const blocks = contextBlocksRef.current.filter((b) => b.id !== id)
     contextBlocksRef.current = blocks
     setLocalContextBlocks(blocks)
-    // 同步移除左侧边栏 marqueeStore 中的块，保持两处一致
-    useMarqueeStore.getState().removeBlock(id)
     // 整体替换 draft，保留 text/attachments
     updateInputDraft({ text: value, attachments: localAttachments, contextBlocks: blocks })
   }, [value, localAttachments, updateInputDraft])
@@ -1332,11 +1329,9 @@ export function ChatInput({
         attachments: attachments.length > 0 ? attachments : undefined,
         createdAt: Date.now(),
       })
-      // 上下文块已随消息入队，清除左侧边栏对应的圈选记录
-      const sentBlockIds = contextBlocksRef.current.map((b) => b.id)
-      for (const id of sentBlockIds) {
-        useMarqueeStore.getState().removeBlock(id)
-      }
+      // 上下文块已随消息入队（左侧边栏圈选记录 store 已随内置浏览器退役）
+      const _sentBlockIds = contextBlocksRef.current.map((b) => b.id)
+      void _sentBlockIds
       // 记录到 prompt 历史（记录用户正文；/cap 引用已转 chip，不入史）。
       // 入队是本地同步操作，不需要发送事务：
       // 真正送出发生在队列派发时，失败时队列本身会保留队首；历史按「已入队即记录」处理。
@@ -1430,11 +1425,9 @@ export function ChatInput({
       void commitPromptHistory(trimmed, () =>
         onSend(messageContent, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
       )
-      // 上下文块已随消息发出，清除左侧边栏对应的圈选记录
-      const sentBlockIds = contextBlocksRef.current.map((b) => b.id)
-      for (const id of sentBlockIds) {
-        useMarqueeStore.getState().removeBlock(id)
-      }
+      // 上下文块已随消息发出（左侧边栏圈选记录 store 已随内置浏览器退役）
+      const _sentBlockIds2 = contextBlocksRef.current.map((b) => b.id)
+      void _sentBlockIds2
     }
 
     // 清空本地 state

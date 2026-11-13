@@ -22,7 +22,7 @@
 
 import { ReactNode, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { OverlayGuard } from '@/components/Browser/OverlayGuard'
+import { OverlayGuard } from '@/components/Common/OverlayGuard'
 import { useTransitionState } from '@/hooks/useTransitionState'
 import { clsx } from 'clsx'
 

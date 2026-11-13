@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { OverlayGuard } from '@/components/Browser/OverlayGuard';
+import { OverlayGuard } from '@/components/Common/OverlayGuard';
 import { useTransitionState } from '@/hooks/useTransitionState';
 import { fsGetFileInfo } from '@/services/tauri/fileService';
 import { formatFileSize } from '@/types/attachment';

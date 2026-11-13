@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Archive, X, ChevronDown, Bot, Zap, Copy, FolderOpen } from 'lucide-react'
-import { OverlayGuard } from '@/components/Browser/OverlayGuard'
+import { OverlayGuard } from '@/components/Common/OverlayGuard'
 import { clsx } from 'clsx'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { isProfileForEngine } from '@/types/modelProfile'

@@ -12,7 +12,7 @@ import type {
   Workspace,
 } from '@/types'
 import type { Attachment } from '@/types/attachment'
-import type { BrowserRegion } from '@/services/tauri/browserService'
+import type { BrowserRegion } from '@/types/browserContext'
 import type { AIEvent, ModelUsageBreakdown } from '@/ai-runtime'
 import type { ProfileMode } from '@/types/sessionConfig'
 import type { StreamRateSnapshot } from '@/services/streamRateTracker'
@@ -482,7 +482,7 @@ export interface ConversationActions {
    */
   addContextBlock: (block: ContextBlock) => boolean
   /**
-   * 移除一条临时上下文块。同步清理跨store展示（如 marqueeStore 对应圈选记录）。
+   * 移除一条临时上下文块。
    * 兼容：scene 内边栏移除与输入框移除统一走本动作。
    */
   removeContextBlock: (blockId: string) => void

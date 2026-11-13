@@ -24,9 +24,6 @@ export * from './contextService';
 // 窗口控制、翻译、系统
 export * from './windowService';
 
-// 内置浏览器控制
-export * from './browserService';
-
 // 集成平台（钉钉、QQ、飞书、实例管理）
 
 // 定时任务（CRUD、锁、模板、协议、片段）

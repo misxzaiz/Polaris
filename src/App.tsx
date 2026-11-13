@@ -46,7 +46,6 @@ const TranslatePanel = lazy(() => import('./components/Translate/TranslatePanel'
 const TerminalPanel = lazy(() => import('./components/Terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
 import { SlotEmpty } from './components/Layout/SlotEmpty';
 const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel').then(m => ({ default: m.DemoPluginPanel })));
-const BrowserSidebarPanel = lazy(() => import('./components/Browser/BrowserSidebarPanel').then(m => ({ default: m.BrowserSidebarPanel })));
 const NotificationCenterPanel = lazy(() => import('./components/Notification/NotificationCenterPanel').then(m => ({ default: m.NotificationCenterPanel })));
 const FocusOverlay = lazy(() => import('./components/FocusMode/FocusOverlay').then(m => ({ default: m.FocusOverlay })));
 
@@ -64,7 +63,6 @@ import './App.css';
 
 // 拆分后的 Hooks
 import { useAppInit } from './hooks/useAppInit';
-import { useBrowserVisibilityGuard } from './hooks/useBrowserVisibilityGuard';
 import { usePluginServiceSync } from './hooks/usePluginServiceSync';
 import { useAppEvents } from './hooks/useAppEvents';
 import { useWindowManager } from './hooks/useWindowManager';
@@ -188,11 +186,6 @@ function App() {
     }, []),
   });
 
-  // 内置浏览器 WebView 可见性全局守护：非激活 browser tab 的 native webview
-  // 主动隐藏 + 重试关闭，防止 BrowserPanel unmount 的 fire-and-forget close 失败后
-  // WebView 残留置顶盖住界面（"关不掉"问题）。
-  useBrowserVisibilityGuard();
-
   usePluginServiceSync();
 
   useAppEvents();
@@ -301,7 +294,17 @@ function App() {
           })}
         />
       }
-      browserContent={<Suspense fallback={loadingFallback}><BrowserSidebarPanel /></Suspense>}
+      browserContent={
+        <PluginSlotPlaceholder
+          title={t('pluginSlotPlaceholder.browserTitle', {
+            defaultValue: '浏览器已迁移为插件',
+          })}
+          hint={t('pluginSlotPlaceholder.browserHint', {
+            defaultValue:
+              '安装并启用 browser-desk 插件后，此席位由插件面板接管（多窗口浏览、AI 搜索/阅读/交互，引擎驱动系统 Chrome）。插件管理：设置 → 插件。',
+          })}
+        />
+      }
       translateContent={<Suspense fallback={loadingFallback}><TranslatePanel onSendToChat={sendMessage} /></Suspense>}
       terminalContent={<Suspense fallback={loadingFallback}><TerminalPanel /></Suspense>}
       developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}

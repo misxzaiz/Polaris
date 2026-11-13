@@ -19,7 +19,7 @@
  *   )}
  */
 import { ReactNode, useEffect } from 'react'
-import { OverlayGuard } from '@/components/Browser/OverlayGuard'
+import { OverlayGuard } from '@/components/Common/OverlayGuard'
 
 interface RightSlideOverProps {
   children: ReactNode

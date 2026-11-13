@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { OverlayGuard } from '@/components/Browser/OverlayGuard';
+import { OverlayGuard } from '@/components/Common/OverlayGuard';
 import { useTransitionState } from '@/hooks/useTransitionState';
 
 interface InputDialogProps {

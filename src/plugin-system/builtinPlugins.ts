@@ -2,7 +2,6 @@ import type { PolarisPluginManifest } from './types'
 import { pluginRegistry } from './registry'
 import { chatCardRegistry } from './chatCardRegistry'
 import { askPluginManifest } from '@/plugins/ask/manifest'
-import { browserPluginManifest } from '@/plugins/browser/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -109,7 +108,6 @@ export function registerBuiltinPlugins(): void {
     registerScmEditorExtensions(),
   )
   pluginRegistry.register(askPluginManifest)
-  pluginRegistry.register(browserPluginManifest)
 
   // 文件树 Git 分支徽章改由 polaris-git 插件经 H7 UI 槽位注入
   // （contributes.uiSlots: ['fileExplorerToolbar']，宿主 registerUi 时注册）。

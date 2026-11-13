@@ -28,7 +28,6 @@ import { createLogger } from '@/utils/logger';
 import { currentMode } from '@/services/transport';
 import { pluginRegistry } from '../plugin-system';
 import { applyPluginStyles } from '../plugin-system/styles';
-import { browserClearOrphanedSessions } from '@/services/tauri/browserService';
 
 const log = createLogger('AppInit');
 
@@ -154,16 +153,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       } else {
         runPreload();
       }
-    }
-
-    // 清理残留的浏览器会话（页面刷新 / HMR 重挂载时，BrowserPanel cleanup 的
-    // browserSetBounds hide 调用可能被取消，导致 native WebView 子窗口残留且可见，
-    // 而 tabStore 不持久化导致没有 BrowserPanel 渲染出来去管理它——表现为
-    // "浏览器置顶盖住界面且关不掉"）。
-    if (currentMode === 'tauri') {
-      void browserClearOrphanedSessions().catch((e) =>
-        log.warn('Browser orphaned session cleanup failed', { error: String(e) })
-      );
     }
 
     // 获取配置

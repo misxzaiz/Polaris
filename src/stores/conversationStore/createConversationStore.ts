@@ -44,7 +44,6 @@ import { eventBus } from '@/services/eventBus'
 import { dedupeMessagesById, normalizeRecoveredMessages } from './dedupMessages'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useConfigStore } from '../configStore'
-import { useMarqueeStore } from '../marqueeStore'
 
 const log = createLogger('ConversationStore')
 
@@ -514,12 +513,6 @@ export function createConversationStore(
         const blocks = (cur.contextBlocks ?? []).filter((b) => b.id !== blockId)
         if (blocks.length === (cur.contextBlocks ?? []).length) return // 未找到，无变更
         set({ inputDraft: { ...cur, contextBlocks: blocks } })
-        // 同步清理跨 store 展示（浏览器圈选左侧边栏记录）
-        try {
-          useMarqueeStore.getState().removeBlock(blockId)
-        } catch {
-          // marqueeStore 不可用（测试/降级环境）时静默忽略
-        }
       },
 
       clearContextBlocks: () => {

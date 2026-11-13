@@ -5,7 +5,7 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
-import { OverlayGuard } from '@/components/Browser/OverlayGuard';
+import { OverlayGuard } from '@/components/Common/OverlayGuard';
 import { useTransitionState } from '@/hooks/useTransitionState';
 
 interface ConfirmDialogProps {
