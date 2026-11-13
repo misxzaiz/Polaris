@@ -252,6 +252,26 @@ impl PolicyPermission {
             verdict: RuleVerdict::Allow,
             require_auth: true,
         });
+        // cap.pluginState 对已鉴权 Remote 整域放行（2026-11-13，插件管理中心决策）：
+        // 插件状态读写是管理中心的跨端刚需（手机/Web 面板查看并切换插件启停）。
+        // 信任级论证：与 cap.pluginServiceManager 同判——token 即桌面信任级；
+        // 写路径（set_states）复用 plugin_state_save 保存核（保存+diff 广播+cap
+        // 贡献同步），与桌面 IPC 语义完全一致，cap 总线保留完整 dispatch 审计。
+        // deny 打底 + require_auth allow 后置覆盖：已鉴权 → Allow；未鉴权 → deny。
+        rules.push(CompiledRule {
+            capability: "cap.pluginState".to_string(),
+            wildcard: true,
+            source: SourceClass::Remote,
+            verdict: RuleVerdict::Deny,
+            require_auth: false,
+        });
+        rules.push(CompiledRule {
+            capability: "cap.pluginState".to_string(),
+            wildcard: true,
+            source: SourceClass::Remote,
+            verdict: RuleVerdict::Allow,
+            require_auth: true,
+        });
         // P1-h（2026-10-25）：cap.pluginDiscovery 只读动作对已鉴权 Remote 放行。
         // 根因：上方 `cap.plugin*` 通配 deny 把只读发现（discover/list 等）一并挡在
         // Remote 门外，移动端/Web 插件页完全无法列插件——商城（polaris.marketplace）
@@ -563,13 +583,14 @@ mod tests {
                 { "capability": "cap.valid", "source": "remote", "verdict": "deny" }
             ]
         }));
-        // 1 条合法 config 规则 + 16 条内置（6 通配 remote deny + cap.plugin deny
+        // 1 条合法 config 规则 + 18 条内置（6 通配 remote deny + cap.plugin deny
         // + pluginServiceManager require_auth allow + 6 条 pluginDiscovery 只读
         // require_auth allow（P1-h）+ install_remote require_auth allow（2026-11-02）
-        // + cap.app.update deny 打底 + require_auth allow 覆盖（2026-11-02）；
+        // + cap.app.update deny 打底 + require_auth allow 覆盖（2026-11-02）
+        // + cap.pluginState deny 打底 + require_auth allow 覆盖（2026-11-13）；
         // Plugin 审批名单已全量停用（2026-10-26）——
         // 原 5+4 条 prompt 仅注释保留；ui_control=true 无条件 deny）
-        assert_eq!(p.rule_count(), 17, "三条非法规则应被跳过，内置默认并入");
+        assert_eq!(p.rule_count(), 19, "三条非法规则应被跳过，内置默认并入");
         assert_eq!(
             p.check(&req("cap.valid", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny
@@ -701,6 +722,49 @@ mod tests {
         assert_eq!(
             p.check(&req_action("cap.pluginDiscovery", "discover", Source::Bootstrap)).unwrap(),
             PermissionVerdict::Allow
+        );
+    }
+
+    #[test]
+    fn plugin_state_allow_for_authenticated_remote() {
+        // cap.pluginState 对已鉴权 Remote 整域放行（2026-11-13，插件管理中心）：
+        // 插件状态读写是手机/Web 管理面板的跨端刚需；权限对齐 cap.pluginServiceManager。
+        // deny 打底 + require_auth allow 后置覆盖：已鉴权 → Allow，未鉴权 → deny。
+        let p = PolicyPermission::from_config(None, false);
+        p.set_web_token(Some("secret".into()));
+        let remote = Source::Remote { token: "secret".into() };
+
+        // 已鉴权：裸 id 与带 action（get_states/set_states）均放行（通配 require_auth）
+        assert_eq!(
+            p.check(&req("cap.pluginState", remote.clone())).unwrap(),
+            PermissionVerdict::Allow,
+            "已鉴权 Remote 应放行 cap.pluginState（裸 id）"
+        );
+        for action in ["get_states", "set_states"] {
+            assert_eq!(
+                p.check(&req_action("cap.pluginState", action, remote.clone())).unwrap(),
+                PermissionVerdict::Allow,
+                "已鉴权 Remote 应放行 {action}"
+            );
+        }
+
+        // 未鉴权：token 不匹配 → require_auth allow 被跳过 → deny 打底生效
+        let wrong = Source::Remote { token: "other".into() };
+        assert_eq!(
+            p.check(&req_action("cap.pluginState", "set_states", wrong)).unwrap(),
+            PermissionVerdict::Deny,
+            "未鉴权 Remote 应被 deny 打底拦下"
+        );
+
+        // Bootstrap（桌面 IPC）与 Plugin（AI 会话/面板）不受内置 Remote 规则影响
+        assert_eq!(
+            p.check(&req_action("cap.pluginState", "set_states", Source::Bootstrap)).unwrap(),
+            PermissionVerdict::Allow
+        );
+        assert_eq!(
+            p.check(&req("cap.pluginState", Source::Plugin { caller: crate::contracts::PluginId("polaris.marketplace".into()) })).unwrap(),
+            PermissionVerdict::Allow,
+            "Plugin 源（商城面板）默认放行"
         );
     }
 

@@ -367,8 +367,9 @@ pub fn create_app_state(
         use crate::services::router::{
             BashCapability, EventAdapter, FileAuditSink, FsCapability, KvCapability, PolicyPermission,
             ContextCapability, ConfigCapability, DataRootCapability, HttpCapability,
-            PluginDiscoveryCapability, PluginServiceManagerCapability, PromptSnippetCapability,
-            RouterBus, StreamEchoCapability, audit_sink, prompt_snippet_capability,
+            PluginDiscoveryCapability, PluginServiceManagerCapability, PluginStateCapability,
+            PromptSnippetCapability, RouterBus, StreamEchoCapability, audit_sink,
+            prompt_snippet_capability,
         };
         use crate::services::hook_registry::{HookSystem, put_hook_system};
         use crate::services::router::HookCapability;
@@ -513,6 +514,15 @@ pub fn create_app_state(
         let _ = bus.register_handle(Box::new(PluginServiceManagerCapability::new(
             plugin_service_manager.clone(),
             config_dir.clone(),
+        )));
+        // cap.pluginState —— 插件管理中心（plans/plugin-management-center-analysis.md）：
+        // state.json 读写唯一入口（get_states/set_states）。写路径复用 plugin_state_save
+        // 保存核（save + diff 广播 plugin.lifecycle + cap 贡献同步）。注入 config_dir +
+        // event_broadcast（与 Tauri/Web ipc 广播同源）。权限对齐 cap.pluginServiceManager
+        // 整域放行（决策 2026-11-13）。
+        let _ = bus.register_handle(Box::new(PluginStateCapability::new(
+            config_dir.clone(),
+            event_broadcast.clone().into(),
         )));
         // cap.config —— 第八步：系统配置统一入口（性能开关试点）。
         // on_patch：cascade（级联激活 Profile 凭证写 Claude settings.json，同步、无 Tauri
