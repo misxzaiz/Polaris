@@ -1,7 +1,7 @@
 # 终端插件化 spec（terminal-desk）
 
 > 目标：把内置终端改为插件实现——先实现插件（stdio 模式，不占端口），验证后接管内置席位，最后拆除内置代码。
-> 日期：2026-11-10。状态：实施中（A/B 已完成，C 完成 1/3，D 未做）。
+> 日期：2026-11-10。状态：**已完成**（2026-11-14：A/B/C/D 全部落地——P0/P1 视觉止损、P4 数据面验证、P5 摘装配、P6 删实现均完成，主仓 `8d9a6caf`；后续唯一执行规划见 `terminal-desk-optimization-and-removal-plan.md`）。
 >
 > **【2026-11-11 更新注记】** 后续执行以 `plans/terminal-desk-optimization-and-removal-plan.md` 为唯一规划依据，差距证据见 `plans/terminal-desk-gap-analysis.md`。本文件 §六/§七 与新规划冲突处以新规划为准：
 > - §七「阶段D 移除 shadow、恢复插件独立视图」**已被否决**（新规划 D3：保留 `terminal.panel` 席位契约，席位内容改空态引导卡，插件继续 shadow 接管，避免 tab/pin/宽度/全屏记忆迁移）。

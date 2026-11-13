@@ -1,6 +1,6 @@
 # terminal-desk 插件优化与内置终端移除规划
 
-> 日期：2026-11-11 · 状态：**规划定案，待评审批准；未修改任何代码 / 插件 / 配置 / 提交**
+> 日期：2026-11-11 · 状态：**P0-P6 已实施完成（2026-11-14）**：插件侧 P0/P1 视觉止损 + 画布右键菜单已并入 main（插件仓 `60a4528`，dist 与 dev 数据根已装包逐字节一致）；P4 数据面经 9829 验证通过（create/write/get/close/list、零孤儿 PTY）；P5 摘装配 + P6 删实现主仓 `8d9a6caf`。遗留 P7 收尾项：H1 宿主全屏桥（`__POLARIS_HOST_FULLSCREEN__`）接线、H2 export_saved_scripts / H3 rename action、真宿主双端回归。
 > 上位文档：`plans/terminal-plugin-spec.md`（2026-11-10 四阶段方案）、`plans/terminal-desk-gap-analysis.md`（2026-11-11 差距证据）、`plans/terminal-panel-refactor-prototype.html`（v4 视觉基线）、`AGENTS.md` §五（功能路由）与 §九（拆分须克制）。
 > 本文件是**终端插件化后续工作的唯一执行规划**；与 `terminal-plugin-spec.md` §六/§七 不一致处，以本文件为准（已在 spec 头部加注记）。
 
