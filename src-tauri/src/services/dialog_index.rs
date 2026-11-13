@@ -1218,11 +1218,19 @@ pub fn history_search_inner(
     let q_owned = q.to_string();
 
     with_conn(move |conn| {
+        // 根因（P2 验收实测）：MATCH 通道里 `snippet()` 与 `GROUP BY s.id` 同用会被
+        // SQLite 拒绝（"unable to use function snippet in the requested context"，
+        // snippet 依赖当前行游标，GROUP BY 聚合上下文不可用）→ 整条查询报错 →
+        // 搜索恒 0 命中。改为子查询先按 session_id 去重取代表行，外层再取 snippet。
         let sql = if use_match {
             r#"SELECT s.*, snippet(sessions_fts, 2, '[', ']', '…', 16) AS snip
-               FROM sessions_fts f JOIN sessions s ON s.id = f.session_id
-               WHERE sessions_fts MATCH ?1 AND s.archived = 0
-               GROUP BY s.id
+               FROM sessions s
+               JOIN sessions_fts f ON f.rowid = (
+                   SELECT f2.rowid FROM sessions_fts f2
+                   WHERE f2.session_id = s.id AND sessions_fts MATCH ?1
+                   ORDER BY f2.rowid DESC LIMIT 1
+               )
+               WHERE s.archived = 0 AND sessions_fts MATCH ?1
                ORDER BY s.pinned DESC, s.updated_at DESC
                LIMIT ?2"#
         } else {

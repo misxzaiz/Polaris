@@ -49,6 +49,16 @@ pub(crate) fn set_test_db_for_testing(db: SessionMessageDb) {
 // ============================================================================
 
 pub fn message_append_inner(entry: MessageEntry) -> Result<bool> {
+    // 会话级墓碑闸（审计 2.2 完整闭环）：删除流式中的会话后，晚到的消息写入
+    // （Web IPC / Tauri command 直连路径）不得复活已删会话——turn_persist 链路
+    // 已有闸，此处补 db 直连通道的最后缺口。
+    if db()?.is_conversation_tombstoned(&entry.conversation_id)? {
+        tracing::warn!(
+            "[SessionMessages] 会话已删除（墓碑），拒绝晚到消息写入: {}",
+            entry.conversation_id
+        );
+        return Ok(false);
+    }
     db()?.append(&entry)
 }
 
