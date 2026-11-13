@@ -44,8 +44,10 @@ const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal')
 // polaris-git 插件 shadow 接管；未启用插件时渲染通用席位占位兜底。
 // 翻译面板已插件化（2026-11-14）：translate 域移出主仓，translate.panel 席位由
 // translate 插件 shadow 接管；未启用插件时渲染通用席位占位兜底。
-const TerminalPanel = lazy(() => import('./components/Terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
+// 终端面板已插件化（2026-11-14，P5）：内置 TerminalPanel 移出主仓，terminal.panel
+// 席位由 terminal-desk 插件 shadow 接管；未启用插件时渲染席位空态引导卡。
 import { SlotEmpty } from './components/Layout/SlotEmpty';
+import { TerminalSlotEmpty } from './components/Layout/TerminalSlotEmpty';
 const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel').then(m => ({ default: m.DemoPluginPanel })));
 const NotificationCenterPanel = lazy(() => import('./components/Notification/NotificationCenterPanel').then(m => ({ default: m.NotificationCenterPanel })));
 const FocusOverlay = lazy(() => import('./components/FocusMode/FocusOverlay').then(m => ({ default: m.FocusOverlay })));
@@ -316,7 +318,7 @@ function App() {
           })}
         />
       }
-      terminalContent={<Suspense fallback={loadingFallback}><TerminalPanel /></Suspense>}
+      terminalContent={<TerminalSlotEmpty />}
       developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
       aiConsoleContent={<SlotEmpty icon="📊" title="AI 执行台" description="集成机器人监控已迁移至 im-bridge 插件；安装启用后在此查看执行状态。" />}
       demoPluginContent={<Suspense fallback={loadingFallback}><DemoPluginPanel onSendToChat={sendMessage} /></Suspense>}

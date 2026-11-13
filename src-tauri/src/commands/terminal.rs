@@ -534,122 +534,10 @@ impl TerminalManager {
 }
 
 // ============================================================================
-// Tauri Commands
+// 外部系统终端（桌面实现核心；cap.terminal open_in_external 与旧命令共用）
 // ============================================================================
 
-/// 创建终端会话
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-#[allow(clippy::too_many_arguments)] // 存量签名：调用方多，参数聚合重构另行立项（AGENTS.md 八）
-pub fn terminal_create(
-    app_handle: AppHandle,
-    state: tauri::State<AppState>,
-    name: Option<String>,
-    cwd: Option<String>,
-    cols: Option<u16>,
-    rows: Option<u16>,
-    initial_command: Option<String>,
-    env: Option<HashMap<String, String>>,
-    purpose: Option<String>,
-    script_id: Option<String>,
-) -> Result<TerminalSession> {
-    // 根因：portable_pty 会话创建与 TerminalEventSink::Tauri 事件出口是桌面专属实现，
-    // android target 被 cfg 掉，直接返回错误
-    #[cfg(target_os = "android")]
-    {
-        let _ = (
-            &app_handle, &state, &name, &cwd, cols, rows,
-            &initial_command, &env, &purpose, &script_id,
-        );
-        return Err(AppError::ProcessError("终端功能仅在桌面端可用".to_string()));
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-    let manager = state.terminal_manager.lock()
-        .map_err(|e| AppError::StateError(e.to_string()))?;
-
-    manager.create_session(
-        TerminalEventSink::Tauri(app_handle),
-        name,
-        cwd,
-        cols.unwrap_or(80),
-        rows.unwrap_or(24),
-        initial_command,
-        env,
-        purpose,
-        script_id,
-    )
-    }
-}
-
-/// 写入终端
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn terminal_write(
-    state: tauri::State<AppState>,
-    session_id: String,
-    data: String,
-) -> Result<()> {
-    let manager = state.terminal_manager.lock()
-        .map_err(|e| AppError::StateError(e.to_string()))?;
-
-    manager.write(&session_id, &data)
-}
-
-/// 调整终端大小
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn terminal_resize(
-    state: tauri::State<AppState>,
-    session_id: String,
-    cols: u16,
-    rows: u16,
-) -> Result<()> {
-    let manager = state.terminal_manager.lock()
-        .map_err(|e| AppError::StateError(e.to_string()))?;
-
-    manager.resize(&session_id, cols, rows)
-}
-
-/// 关闭终端会话
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn terminal_close(
-    state: tauri::State<AppState>,
-    session_id: String,
-) -> Result<()> {
-    let manager = state.terminal_manager.lock()
-        .map_err(|e| AppError::StateError(e.to_string()))?;
-
-    manager.close_session(&session_id)
-}
-
-/// 获取所有终端会话
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn terminal_list(
-    state: tauri::State<AppState>,
-) -> Result<Vec<TerminalSession>> {
-    let manager = state.terminal_manager.lock()
-        .map_err(|e| AppError::StateError(e.to_string()))?;
-
-    manager.list_sessions()
-}
-
-/// 获取单个终端会话
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn terminal_get(
-    state: tauri::State<AppState>,
-    session_id: String,
-) -> Result<TerminalSession> {
-    let manager = state.terminal_manager.lock()
-        .map_err(|e| AppError::StateError(e.to_string()))?;
-
-    manager.get_session(&session_id)
-}
-
-/// 在外部系统终端中运行命令（桌面实现核心；旧命令与 cap.terminal open_in_external 共用）
+/// 在外部系统终端中运行命令（桌面实现核心；cap.terminal open_in_external 共用）
 #[cfg(all(feature = "tauri-app", not(target_os = "android")))]
 pub fn open_in_external_impl(
     command: String,
@@ -758,23 +646,3 @@ pub fn open_in_external_impl(
     }
 }
 
-/// 在外部系统终端中运行命令
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn terminal_open_in_external(
-    command: String,
-    cwd: Option<String>,
-    env: Option<HashMap<String, String>>,
-) -> Result<()> {
-    // 根因：外部系统终端（cmd / gnome-terminal 等）是桌面概念，android 上
-    // 无外部终端可拉起，直接返回错误
-    #[cfg(target_os = "android")]
-    {
-        let _ = (&command, &cwd, &env);
-        return Err(AppError::ProcessError("外部终端仅在桌面端可用".to_string()));
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        open_in_external_impl(command, cwd, env)
-    }
-}

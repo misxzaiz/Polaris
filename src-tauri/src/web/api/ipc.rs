@@ -242,15 +242,6 @@ pub async fn handle_ipc_bridge(
         "mcp_remove_server" => dispatch_mcp_remove_server(&state, &args),
 
         // ── Terminal ───────────────────────────────────────────────────────
-        "terminal_create" => dispatch_terminal_create(&state, &args),
-        "terminal_write" => dispatch_terminal_write(&state, &args),
-        "terminal_resize" => dispatch_terminal_resize(&state, &args),
-        "terminal_close" => dispatch_terminal_close(&state, &args),
-        "terminal_list" => dispatch_terminal_list(&state),
-        "terminal_get" => dispatch_terminal_get(&state, &args),
-        "terminal_discover_scripts" => dispatch_terminal_discover_scripts(&args).await,
-        #[cfg(feature = "tauri-app")]
-        "terminal_open_in_external" => dispatch_terminal_open_in_external(&args),
 
         // ── Network ──────────────────────────────────────────────────────
         "get_local_ips" => dispatch_get_local_ips(),
@@ -740,33 +731,9 @@ fn optional_string_map(args: &Value, key: &str) -> Result<Option<HashMap<String,
 // 函数与该门控精确对齐拆成两份：android 返回显式 4xx，其余平台原实现不变
 // （web 独立版 polaris-web 的终端能力不受影响）。
 #[cfg(not(target_os = "android"))]
-fn dispatch_terminal_create(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let cols = optional_u16(args, "cols")?.unwrap_or(80);
-    let rows = optional_u16(args, "rows")?.unwrap_or(24);
-    let env = optional_string_map(args, "env")?;
-
-    let manager = state
-        .terminal_manager
-        .lock()
-        .map_err(|error| WebError::Internal(error.to_string()))?;
-
-    json_result!(manager.create_session(
-        crate::commands::terminal::TerminalEventSink::Web(state.event_broadcast.clone()),
-        optional_string(args, "name"),
-        optional_string(args, "cwd"),
-        cols,
-        rows,
-        optional_string(args, "initialCommand"),
-        env,
-        optional_string(args, "purpose"),
-        optional_string(args, "scriptId"),
-    ))
-}
-
-#[cfg(target_os = "android")]
-fn dispatch_terminal_create(_state: &AppState, _args: &Value) -> Result<Json<Value>, WebError> {
-    Err(WebError::BadRequest("终端功能仅在桌面端可用".into()))
-}
+// ═══════════════════════════════════════════════════════════════════════════
+// Other common commands
+// ═══════════════════════════════════════════════════════════════════════════
 
 /// 查询聊天会话是否仍在任一引擎中运行。
 ///
@@ -778,75 +745,6 @@ async fn dispatch_is_chat_session_running(state: &AppState, args: &Value) -> Res
     let running = registry.is_session_active(&session_id);
     Ok(Json(serde_json::json!({ "running": running })))
 }
-
-fn dispatch_terminal_write(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let session_id = require_string(args, "sessionId")?;
-    let data = require_string(args, "data")?;
-    let manager = state
-        .terminal_manager
-        .lock()
-        .map_err(|error| WebError::Internal(error.to_string()))?;
-    json_result!(manager.write(&session_id, &data))
-}
-
-fn dispatch_terminal_resize(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let session_id = require_string(args, "sessionId")?;
-    let cols = optional_u16(args, "cols")?
-        .ok_or_else(|| WebError::BadRequest("Missing required field: cols".into()))?;
-    let rows = optional_u16(args, "rows")?
-        .ok_or_else(|| WebError::BadRequest("Missing required field: rows".into()))?;
-    let manager = state
-        .terminal_manager
-        .lock()
-        .map_err(|error| WebError::Internal(error.to_string()))?;
-    json_result!(manager.resize(&session_id, cols, rows))
-}
-
-fn dispatch_terminal_close(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let session_id = require_string(args, "sessionId")?;
-    let manager = state
-        .terminal_manager
-        .lock()
-        .map_err(|error| WebError::Internal(error.to_string()))?;
-    json_result!(manager.close_session(&session_id))
-}
-
-fn dispatch_terminal_list(state: &AppState) -> Result<Json<Value>, WebError> {
-    let manager = state
-        .terminal_manager
-        .lock()
-        .map_err(|error| WebError::Internal(error.to_string()))?;
-    json_result!(manager.list_sessions())
-}
-
-fn dispatch_terminal_get(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let session_id = require_string(args, "sessionId")?;
-    let manager = state
-        .terminal_manager
-        .lock()
-        .map_err(|error| WebError::Internal(error.to_string()))?;
-    json_result!(manager.get_session(&session_id))
-}
-
-async fn dispatch_terminal_discover_scripts(args: &Value) -> Result<Json<Value>, WebError> {
-    let workspace_path = require_string(args, "workspacePath")?;
-    json_result!(crate::commands::terminal_script::terminal_discover_scripts(workspace_path).await)
-}
-
-#[cfg(feature = "tauri-app")]
-fn dispatch_terminal_open_in_external(args: &Value) -> Result<Json<Value>, WebError> {
-    let command = require_string(args, "command")?;
-    let cwd = args.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let env = args.get("env").and_then(|v| {
-        v.as_object().map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string())).collect())
-    });
-    json_result!(crate::commands::terminal::terminal_open_in_external(command, cwd, env))
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Other common commands
-// ═══════════════════════════════════════════════════════════════════════════
 
 fn dispatch_cli_get_agents(state: &AppState) -> Result<Json<Value>, WebError> {
     let p = state.lock_config()?.get().resolve_claude_cmd();

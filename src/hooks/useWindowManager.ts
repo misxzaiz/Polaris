@@ -74,13 +74,11 @@ export function useWindowManager({
           log.error('切换 DevTools 失败', error as Error);
         }
       }
+      // Ctrl+Shift+R：terminal 席位的运行命令面板已随内置终端出仓（插件面板自管该快捷键）；
+      // 其余席位维持全局文件搜索语义。
       if (e.key === 'R' && e.shiftKey && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        if (useViewStore.getState().leftPanelType === 'terminal') {
-          eventBus.emit('terminal:open-runner', undefined);
-        } else {
-          useOverlayStore.getState().toggleFileSearch();
-        }
+        useOverlayStore.getState().toggleFileSearch();
       }
       // Alt+F / Alt+Shift+F：全局阅读聚焦模式（语义聚焦 / 聚光灯强模式）
       // 用 Alt 修饰避免与编辑器搜索 Ctrl+F 冲突

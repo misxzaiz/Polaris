@@ -96,15 +96,6 @@ importers:
       '@tauri-apps/plugin-updater':
         specifier: ^2.11.0
         version: 2.11.0
-      '@xterm/addon-fit':
-        specifier: ^0.10.0
-        version: 0.10.0(@xterm/xterm@5.5.0)
-      '@xterm/addon-web-links':
-        specifier: ^0.10.0
-        version: 0.10.0(@xterm/xterm@5.5.0)
-      '@xterm/xterm':
-        specifier: ^5.5.0
-        version: 5.5.0
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -1502,19 +1493,6 @@ packages:
 
   '@vitest/utils@4.1.10':
     resolution: {integrity: sha512-fy9am/HWxbaGt/Sawrp90vt6Y6jQwf1RX77cz3uwoJwJVMli/e1IEwRPnMNJ7vKfPTwo0diXifkpPvwH9v7nGA==}
-
-  '@xterm/addon-fit@0.10.0':
-    resolution: {integrity: sha512-UFYkDm4HUahf2lnEyHvio51TNGiLK66mqP2JoATy7hRZeXaGMRDr00JiSF7m63vR5WKATF605yEggJKsw0JpMQ==}
-    peerDependencies:
-      '@xterm/xterm': ^5.0.0
-
-  '@xterm/addon-web-links@0.10.0':
-    resolution: {integrity: sha512-QhrHCUr8w6ATGviyXwcAIM1qN3nD1hdxwMC8fsW7z/6aaQlb2nt7zmByJt4eOn7ZzrHOzczljqV5S2pkdQp2xw==}
-    peerDependencies:
-      '@xterm/xterm': ^5.0.0
-
-  '@xterm/xterm@5.5.0':
-    resolution: {integrity: sha512-hqJHYaQb5OptNunnyAnkHyM8aCjZ1MEIDTQu1iIbbTD/xops91NB5yq1ZK/dC2JDbVWtF23zUtl9JE2NqwT87A==}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -5322,16 +5300,6 @@ snapshots:
       '@vitest/pretty-format': 4.1.10
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.1
-
-  '@xterm/addon-fit@0.10.0(@xterm/xterm@5.5.0)':
-    dependencies:
-      '@xterm/xterm': 5.5.0
-
-  '@xterm/addon-web-links@0.10.0(@xterm/xterm@5.5.0)':
-    dependencies:
-      '@xterm/xterm': 5.5.0
-
-  '@xterm/xterm@5.5.0': {}
 
   acorn-jsx@5.3.2(acorn@8.18.0):
     dependencies:

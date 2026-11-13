@@ -16,7 +16,6 @@ import { eventBus } from '@/services/eventBus';
 import { useViewStore } from '@/stores/viewStore';
 import { useNarrowTabStore } from '@/stores/narrowTabStore';
 import { initEditorFileChangeListener } from '@/stores/fileEditorStore';
-import { useTerminalStore } from '@/stores/terminalStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { getEventRouter } from '@/services/eventRouter';
@@ -113,11 +112,7 @@ export function useAppEvents() {
     return cleanup;
   }, []);
 
-  // 终端脚本运行状态监听
-  useEffect(() => {
-    const cleanup = useTerminalStore.getState().initScriptEventListeners();
-    return cleanup;
-  }, []);
+  // 终端脚本监听/自动运行已随内置终端出仓（terminal-desk 插件 + H4 事件桥承接）
 
   // 工作区切换时清除聊天错误
   useEffect(() => {
@@ -131,18 +126,9 @@ export function useAppEvents() {
       }
     };
 
-    const handleWorkspaceChanged = (detail: { path?: string }) => {
-      const workspacePath = detail.path;
-      if (!workspacePath) return;
-      useTerminalStore.getState().runAutoScripts('workspace_open', workspacePath)
-        .catch((error) => log.warn('Workspace auto scripts failed', { error: String(error) }));
-    };
-
     const offSwitched = eventBus.on('workspace-switched', handleWorkspaceSwitched)
-    const offChanged = eventBus.on('workspace-changed', handleWorkspaceChanged)
     return () => {
       offSwitched()
-      offChanged()
     }
   }, [])
 

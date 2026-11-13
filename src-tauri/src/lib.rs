@@ -60,14 +60,9 @@ use commands::file_io::{test_param_serialization, write_file_absolute, read_file
 // 翻译域已整体出仓（2026-11-14，B2-4）：baidu_translate 命令删除，
 // 百度 API 调用在 translate 插件 service（Node fetch + md5）内实现。
 #[cfg(feature = "tauri-app")]
-#[cfg(feature = "tauri-app")]
-use commands::terminal::{
-    terminal_create, terminal_write, terminal_resize,
-    terminal_close, terminal_list, terminal_get,
-    terminal_open_in_external,
-};
-#[cfg(feature = "tauri-app")]
-use commands::terminal_script::terminal_discover_scripts;
+// 终端命令包装层已随内置终端出仓（P5，terminal-desk 插件承接）：
+// terminal_* 8 个 tauri command 删除；PTY 核心（TerminalManager/sink/open_in_external_impl）
+// 与 cap.terminal（terminal_capability.rs）保留——见 plans/terminal-desk-optimization-and-removal-plan.md §4.5。
 #[cfg(feature = "tauri-app")]
 use commands::{test_model_profile_connection, fetch_models_for_profile};
 
@@ -1054,15 +1049,7 @@ pub fn run() {
             write_file_absolute,
             read_file_absolute,
             test_param_serialization,
-            // 终端相关
-            terminal_create,
-            terminal_write,
-            terminal_resize,
-            terminal_close,
-            terminal_list,
-            terminal_get,
-            terminal_discover_scripts,
-            terminal_open_in_external,
+            // 终端相关命令已随内置终端出仓（P5）：terminal_* 走 cap.terminal（插件承接）
             // Plugin 相关：管理面已上总线（cap.pluginDiscovery + cap.pluginServiceManager，
             // 见 services/router/plugin_discovery_capability.rs / plugin_service_manager_capability.rs）。
             // 旧命令层 commands/plugin.rs + commands/plugin_service.rs 已整体删除，不再注册

@@ -33,10 +33,8 @@ export type PolarisEventMap = {
   'polaris:open-settings': { tab?: string }
   /** 开发模式服务发现就绪 */
   'polaris:dev-discovery-ready': undefined
-  /** 终端运行器打开请求 */
-  'terminal:open-runner': undefined
-  /** 终端输出（外部消费，如悬浮窗） */
-  'terminal-output': { data: string; sessionId?: string }
+  /* terminal:open-runner / terminal-output 已随内置终端出仓（terminal-desk 插件
+     经宿主 terminal:output/exit Tauri 事件订阅，不经此 bus） */
   /** 工作区变更（路径/切换） */
   'workspace-changed': { workspaceId?: string; workspacePath?: string; path?: string }
   /** 工作区切换完成 */

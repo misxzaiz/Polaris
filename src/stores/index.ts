@@ -16,7 +16,6 @@ export { useTabStore } from './tabStore';
 export { useEditorSettingsStore } from './editorSettingsStore';
 export { useEditorContextStore } from './editorContextStore';
 export { useToastStore, type Toast, type ToastType, type NotificationRecord } from './toastStore';
-export { useTerminalStore } from './terminalStore';
 export { useModelProfileStore, getActiveModelProfile } from './modelProfileStore';
 export { usePluginStore } from './pluginStore';
 export type { PluginState, PluginStateMap, PluginStore } from './pluginStore';

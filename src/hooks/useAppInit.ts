@@ -16,7 +16,6 @@ import { useThemeStore } from '@/stores/themeStore';
 import { useSnippetStore } from '@/stores/snippetStore';
 import { useSkillStore } from '@/stores/skillStore';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
-import { useTerminalStore } from '@/stores/terminalStore';
 import { usePluginStore } from '@/stores/pluginStore';
 import { usePluginServiceStore } from '@/stores/pluginServiceStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
@@ -178,15 +177,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       log.warn('设置数据预加载部分失败', { error: String(error) });
     }
 
-    const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace();
-    if (currentWorkspace?.path) {
-      try {
-        setInitPhase('正在检查终端脚本...');
-        await useTerminalStore.getState().runAutoScripts('app_start', currentWorkspace.path);
-      } catch (error) {
-        log.warn('终端脚本自动执行失败', { error: String(error) });
-      }
-    }
+    // 终端脚本自动运行（app_start）已随内置终端出仓：terminal-desk 插件经 H4 事件桥承接
 
     // OPFS 存量会话上行（幂等，后台静默）：Web 端历史会话统一收敛到服务端存储
     void import('@/services/dialogStorage').then(({ maybeAutoMigrateOpfs }) =>

@@ -18,12 +18,7 @@ pub struct DiscoveredTerminalScript {
 }
 
 /// 发现工作区可运行脚本。首期支持 package.json scripts。
-#[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn terminal_discover_scripts(workspace_path: String) -> Result<Vec<DiscoveredTerminalScript>> {
-    discover_scripts_in_workspace(Path::new(&workspace_path))
-}
-
-/// pub(crate)（cap.terminal discover_scripts 复用）：扫描工作区可运行脚本
+/// （terminal_discover_scripts tauri command 已随内置终端出仓，P5；cap.terminal 复用本核。）
 pub fn discover_scripts_in_workspace(workspace_path: &Path) -> Result<Vec<DiscoveredTerminalScript>> {
     if !workspace_path.exists() || !workspace_path.is_dir() {
         return Err(AppError::InvalidPath("工作区路径不存在或不是目录".to_string()));
