@@ -8,6 +8,8 @@ import type { PluginPanelComponent } from '@/plugin-system/types'
 interface PluginPanelHostProps {
   panelType: string
   onSendToChat?: (message: string) => void | Promise<void>
+  /** 请求关闭承载本面板的宿主容器（overlay 抽屉传 viewStore 开关；左面板传 closeLeftPanel） */
+  onClose?: () => void
 }
 
 function ErrorFallback({ panelType, error, onRetry }: { panelType: string; error: string; onRetry: () => void }) {
@@ -70,7 +72,7 @@ class PanelErrorBoundary extends Component<
   }
 }
 
-export function PluginPanelHost({ panelType, onSendToChat }: PluginPanelHostProps) {
+export function PluginPanelHost({ panelType, onSendToChat, onClose }: PluginPanelHostProps) {
   const [Component, setComponent] = useState<PluginPanelComponent | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -118,7 +120,7 @@ export function PluginPanelHost({ panelType, onSendToChat }: PluginPanelHostProp
     <div data-plugin-scope={pluginId} className="contents">
       <PanelErrorBoundary panelType={panelType} onError={(msg) => setError(msg)}>
         <Suspense fallback={<LoadingFallback />}>
-          <Component pluginId={pluginId} onSendToChat={onSendToChat} />
+          <Component pluginId={pluginId} onSendToChat={onSendToChat} onClose={onClose} />
         </Suspense>
       </PanelErrorBoundary>
     </div>

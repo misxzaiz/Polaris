@@ -130,6 +130,15 @@ function App() {
   const sessionHistoryExited = useCallback(() => {
     setSessionHistoryKept(false);
   }, []);
+  // 关闭会话历史抽屉：viewStore 开关翻转 + 退场保活（对齐 closeNotificationCenter）。
+  // P4 收尾：PluginPanelHost 现向插件面板注入 onClose，history-desk 的
+  // 「继续 → restore 成功 → 关抽屉」链路由此真正生效（此前 onClose 为 no-op）。
+  const closeSessionHistoryDrawer = useCallback(() => {
+    if (useViewStore.getState().showSessionHistory) {
+      useViewStore.getState().toggleSessionHistory();
+    }
+    setSessionHistoryKept(true);
+  }, []);
   // 关闭消息中心：同上
   const closeNotificationCenter = useCallback(() => {
     if (useViewStore.getState().showNotificationCenter) {
@@ -452,7 +461,12 @@ function App() {
                 const claim = pluginRegistry.getOverlayClaim('session-history');
                 const enabled = claim ? isPluginUiEnabled(pluginStates, claim.pluginId) : false;
                 return claim && enabled
-                  ? <PluginPanelHost panelType={claim.panelType} />
+                  ? (
+                    <PluginPanelHost
+                      panelType={claim.panelType}
+                      onClose={closeSessionHistoryDrawer}
+                    />
+                  )
                   : (
                     <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
                       <p className="text-sm text-text-secondary">会话历史由 history-desk 插件提供</p>

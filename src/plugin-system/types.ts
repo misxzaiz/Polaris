@@ -481,6 +481,8 @@ export interface PluginDevLinkInfo {
 export type PluginPanelComponent = ComponentType<{
   pluginId: string
   onSendToChat?: (message: string) => void | Promise<void>
+  /** 请求关闭承载面板的宿主容器（overlay 抽屉 / 左面板）；宿主按容器注入，面板可空安全调用 */
+  onClose?: () => void
 }>
 
 export type PluginPanelLoader = () => Promise<{ default: PluginPanelComponent }>
