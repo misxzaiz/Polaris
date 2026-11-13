@@ -11,7 +11,6 @@ pub mod services;
 pub mod commands;
 pub mod capabilities;
 pub mod contracts; // 重构第一步：核心契约冻结（Envelope/Source/6+1 trait）
-mod integrations;
 pub mod ai;  // 公开 ai 模块以支持适配层测试
 mod state;
 mod utils;
@@ -61,8 +60,6 @@ use commands::file_io::{test_param_serialization, write_file_absolute, read_file
 #[cfg(feature = "tauri-app")]
 use commands::translate::baidu_translate;
 #[cfg(feature = "tauri-app")]
-// 集成命令已上总线 cap.integration（L0 cap 化，plans/im-integration-extraction-spec.md）；
-// commands/integration.rs 仅保留 sync_instances_to_config 供 cap 写动作共用。
 #[cfg(feature = "tauri-app")]
 use commands::terminal::{
     terminal_create, terminal_write, terminal_resize,
@@ -77,7 +74,6 @@ use commands::{test_model_profile_connection, fetch_models_for_profile};
 use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
 use ai::EngineRegistry;
-use integrations::IntegrationManager;
 #[cfg(feature = "tauri-app")]
 use tauri::{Emitter, Manager};
 
@@ -577,10 +573,6 @@ pub fn run() {
     // 使用 Arc 共享 engine_registry (使用 tokio::sync::Mutex 支持异步)
     let engine_registry_arc = Arc::new(AsyncMutex::new(engine_registry));
 
-    // 初始化 IntegrationManager，共享 engine_registry
-    let integration_manager = IntegrationManager::new()
-        .with_engine_registry(engine_registry_arc.clone());
-
     // 实例身份：必须先于任何路径解析调用。`data_root()` 是懒初始化的
     // `OnceLock`，一旦有路径被解析，实例号就固定下来。
     let instance_id = services::instance::resolve();
@@ -602,7 +594,6 @@ pub fn run() {
         .manage(state::create_app_state(
             config_store,
             engine_registry_arc,
-            integration_manager,
         ))
         .setup(|app| {
             // Store AppHandle in AppState for dual emission (Web API → Tauri webview)
@@ -652,12 +643,6 @@ pub fn run() {
                 // 与 cap.ai.chat 同装配点：需要 Arc<AppState>（terminal_manager 持有）。
                 let _ = state.router.register_handle(Box::new(
                     crate::services::router::TerminalCapability::with_state(chat_state.clone()),
-                ));
-                // cap.integration —— IM 平台集成能力（integrations/manager 总线入口；
-                // plans/im-integration-extraction-spec.md L0 cap 化，旧 integration_*
-                // 命令并行双轨，插件化 L2 阶段随 integrations/ 一并删除）。
-                let _ = state.router.register_handle(Box::new(
-                    crate::services::router::IntegrationCapability::with_state(chat_state.clone()),
                 ));
                 let _ = state
                     .router
@@ -1105,8 +1090,6 @@ pub fn run() {
             test_param_serialization,
             // 翻译相关
             baidu_translate,
-            // 集成相关：已上总线 cap.integration（L0 cap 化，
-            // plans/im-integration-extraction-spec.md），旧 integration_* 命令删除。
             // 终端相关
             terminal_create,
             terminal_write,
@@ -1277,15 +1260,10 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let _ = engine_registry.set_default(default_engine);
     let engine_registry_arc = Arc::new(AsyncMutex::new(engine_registry));
 
-    // 初始化 IntegrationManager
-    let integration_manager = IntegrationManager::new()
-        .with_engine_registry(engine_registry_arc.clone());
-
     // 创建应用状态
     let app_state = state::create_app_state(
         config_store,
         engine_registry_arc,
-        integration_manager,
     );
 
     // 遗留存储一次性迁移（normalize spec F2/F4）：与桌面端同一纪律，
@@ -1365,12 +1343,6 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let _ = state
         .router
         .register_handle(Box::new(crate::services::router::TerminalCapability::with_state(
-            state.clone(),
-        )));
-    // cap.integration —— IM 平台集成能力（独立 Web 模式；init 为 no-op 无 AppHandle）
-    let _ = state
-        .router
-        .register_handle(Box::new(crate::services::router::IntegrationCapability::with_state(
             state.clone(),
         )));
     let web_server = web::server::WebServer::new(state.clone());

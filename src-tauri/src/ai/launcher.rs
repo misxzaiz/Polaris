@@ -2,7 +2,7 @@
  *
  * 集中管理 MCP 配置准备与 SessionOptions 构建，消除以下入口间的重复代码：
  * - commands/chat.rs::start_chat_inner / continue_chat_inner
- * - integrations/manager.rs::process_ai_message
+ * - Polaris-plugin im-bridge service（原 integrations/manager.rs）
  *
  * 使用方式：
  * ```ignore
@@ -27,7 +27,7 @@ use crate::services::mcp_config_service::{
 ///
 /// 替代：
 /// - `commands/chat.rs::PreparedMcpConfig`
-/// - `integrations/manager.rs::IntegrationMcpConfig`
+/// - `im-bridge 插件的 MCP 配置语义（原 integrations/manager.rs）`
 #[derive(Default, Clone)]
 pub struct McpSessionConfig {
     /// Claude Code：JSON 配置文件路径（.polaris/claude/mcp.json）
@@ -103,7 +103,7 @@ fn load_session_mcp_whitelist(config_dir: &Path) -> Option<Vec<String>> {
 ///
 /// 替代：
 /// - `commands/chat.rs::prepare_mcp_config_with_paths()`
-/// - `integrations/manager.rs` 中内联的 MCP 准备逻辑
+/// - `im-bridge 插件（原 integrations/manager.rs）中内联的 MCP 准备逻辑
 pub fn prepare_mcp_config(params: McpConfigParams) -> Result<McpSessionConfig> {
     let app_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

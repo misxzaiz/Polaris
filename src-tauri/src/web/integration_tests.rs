@@ -10,7 +10,6 @@ use tower::ServiceExt;
 use crate::ai::EngineRegistry;
 use crate::services::context_core::ContextMemoryStore;
 use crate::commands::terminal::TerminalManager;
-use crate::integrations::IntegrationManager;
 use crate::models::config::{Config, WebConfig};
 use crate::services::config_store::ConfigStore;
 use crate::services::file_watcher::FileWatcherManager;
@@ -69,7 +68,6 @@ let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/
         config_store: config_store_arc.clone(),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         context_store: Arc::new(Mutex::new(ContextMemoryStore::new())),
-        integration_manager: AsyncMutex::new(IntegrationManager::new()),
         engine_registry: Arc::new(AsyncMutex::new(EngineRegistry::new())),
         terminal_manager: Mutex::new(TerminalManager::new()),
         file_watcher_manager: Mutex::new(FileWatcherManager::new()),

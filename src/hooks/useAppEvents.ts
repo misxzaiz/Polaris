@@ -23,7 +23,6 @@ import { getEventRouter } from '@/services/eventRouter';
 import { initDispatchTaskListener } from '@/services/dispatchTaskService';
 import { initPluginLifecycleSubscriber } from '@/stores/pluginLifecycleSubscriber';
 import { browserAcquireComplete, normalizeBrowserUrl, type BrowserAcquireRequest } from '@/services/tauri/browserService';
-import { initExecutionConsoleListeners } from '@/stores/executionConsoleStore';
 import { isAIEvent } from '@/ai-runtime';
 import { createLogger } from '@/utils/logger';
 
@@ -51,13 +50,6 @@ export function useAppEvents() {
       eventListenerCleanupRef.current?.();
       eventListenerCleanupRef.current = null;
     };
-  }, []);
-
-  // AI 执行控制台：App 级安装集成执行监听（面板未打开也累计历史）
-  useEffect(() => {
-    initExecutionConsoleListeners().catch((e) =>
-      log.warn('Execution console listeners init failed', { error: String(e) })
-    );
   }, []);
 
   // 派发任务请求（dispatch_task MCP）→ 创建静默后台会话执行

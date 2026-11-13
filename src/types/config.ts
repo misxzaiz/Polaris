@@ -154,109 +154,6 @@ export interface BaiduTranslateConfig {
   secretKey: string;
 }
 
-/** 消息显示模式 */
-export type IntegrationDisplayMode = 'chat' | 'separate' | 'both';
-
-/** QQ Bot 实例配置 */
-export interface QQBotInstanceConfig {
-  /** 实例 ID */
-  id: string;
-  /** 显示名称 */
-  name: string;
-  /** 是否启用 */
-  enabled: boolean;
-  /** 应用 ID */
-  appId: string;
-  /** 应用密钥 */
-  clientSecret: string;
-  /** 是否沙箱环境 */
-  sandbox: boolean;
-  /** 消息显示模式 */
-  displayMode: IntegrationDisplayMode;
-  /** 启动时自动连接 */
-  autoConnect: boolean;
-  /** 创建时间 (ISO 8601) */
-  createdAt?: string;
-  /** 最后活跃时间 (ISO 8601) */
-  lastActive?: string;
-  /** 默认工作目录（新会话自动使用） */
-  workDir?: string;
-}
-
-/** QQ Bot 集成配置 */
-export interface QQBotConfig {
-  /** 是否启用 QQ Bot 集成（全局开关） */
-  enabled: boolean;
-  /** QQ Bot 实例列表 */
-  instances: QQBotInstanceConfig[];
-  /** 当前激活的实例 ID */
-  activeInstanceId?: string;
-}
-
-/** Feishu 实例配置 */
-export interface FeishuInstanceConfig {
-  /** 实例 ID */
-  id: string;
-  /** 显示名称 */
-  name: string;
-  /** 是否启用 */
-  enabled: boolean;
-  /** 应用 ID (App ID) */
-  appId: string;
-  /** 应用密钥 (App Secret) */
-  appSecret: string;
-  /** 事件验证 Token */
-  verificationToken: string;
-  /** 事件加密 Key */
-  encryptKey: string;
-  /** 消息显示模式 */
-  displayMode: IntegrationDisplayMode;
-  /** 启动时自动连接 */
-  autoConnect: boolean;
-  /** 创建时间 (ISO 8601) */
-  createdAt?: string;
-  /** 最后活跃时间 (ISO 8601) */
-  lastActive?: string;
-  /** 默认工作目录（新会话自动使用） */
-  workDir?: string;
-}
-
-/** Feishu 集成配置 */
-export interface FeishuConfig {
-  /** 是否启用飞书集成（全局开关） */
-  enabled: boolean;
-  /** 飞书实例列表 */
-  instances: FeishuInstanceConfig[];
-  /** 当前激活的实例 ID */
-  activeInstanceId?: string;
-}
-
-/** DingTalk (钉钉) 实例配置 */
-export interface DingTalkInstanceConfig {
-  id: string;
-  name: string;
-  enabled: boolean;
-  /** 应用 Key (App Key) */
-  appKey: string;
-  /** 应用密钥 (App Secret) */
-  appSecret: string;
-  /** 企业机器人 Webhook URL（用于发送回复） */
-  webhookUrl: string;
-  displayMode: IntegrationDisplayMode;
-  autoConnect: boolean;
-  createdAt?: string;
-  lastActive?: string;
-  /** 默认工作目录（新会话自动使用） */
-  workDir?: string;
-}
-
-/** DingTalk 集成配置 */
-export interface DingTalkConfig {
-  enabled: boolean;
-  instances: DingTalkInstanceConfig[];
-  activeInstanceId?: string;
-}
-
 /** Web 服务配置 */
 export interface WebConfig {
   /** 是否启用 Web 服务 */
@@ -335,12 +232,6 @@ export interface Config {
   autoLaunch?: boolean;
   /** 百度翻译配置 */
   baiduTranslate?: BaiduTranslateConfig;
-  /** QQ Bot 集成配置 */
-  qqbot: QQBotConfig;
-  /** Feishu 集成配置 */
-  feishu?: FeishuConfig;
-  /** DingTalk 集成配置 */
-  dingtalk?: DingTalkConfig;
   /** Web 服务配置 */
   web?: WebConfig;
   /** 派发任务配置（策略/结果注入/队员预设） */

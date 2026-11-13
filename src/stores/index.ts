@@ -16,18 +16,6 @@ export { useTabStore } from './tabStore';
 export { useEditorSettingsStore } from './editorSettingsStore';
 export { useEditorContextStore } from './editorContextStore';
 export { useTranslateStore } from './translateStore';
-export {
-  useIntegrationStore,
-  useIntegrationStatus,
-  useIntegrationMessages,
-  useIntegrationSessions,
-  useIntegrationLoading,
-  useIntegrationError,
-  // 实例管理选择器
-  useIntegrationInstances,
-  useActiveIntegrationInstance,
-  useHasActiveInstance,
-} from './integrationStore';
 export { useToastStore, type Toast, type ToastType, type NotificationRecord } from './toastStore';
 export { useTerminalStore } from './terminalStore';
 export { useModelProfileStore, getActiveModelProfile } from './modelProfileStore';

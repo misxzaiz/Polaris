@@ -65,7 +65,6 @@ pub mod history_index;
 #[cfg(feature = "tauri-app")]
 pub use history_index::{history_mark, history_query, history_search};
 
-pub mod integration;
 pub mod terminal;
 pub mod terminal_script;
 pub mod file_watcher;

@@ -28,7 +28,6 @@ export * from './windowService';
 export * from './browserService';
 
 // 集成平台（钉钉、QQ、飞书、实例管理）
-export * from './integrationService';
 
 // 定时任务（CRUD、锁、模板、协议、片段）
 

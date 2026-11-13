@@ -9,7 +9,6 @@ export * from './fileExplorer';
 export * from './fileEditor';
 export * from './context';
 export * from './scmDiff';
-export * from './integration';
 export * from './terminal';
 export * from './terminalScript';
 export * from './attachment';

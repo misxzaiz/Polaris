@@ -13,7 +13,6 @@ import { useEffect, useRef } from 'react';
 import { useConfigStore, initPerformanceHotSwitch } from '@/stores/configStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useThemeStore } from '@/stores/themeStore';
-import { useIntegrationStore } from '@/stores/integrationStore';
 import { useSnippetStore } from '@/stores/snippetStore';
 import { useSkillStore } from '@/stores/skillStore';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
@@ -178,52 +177,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     // 按需初始化传统 AI Engine
     await bootstrapEngines(defaultEngine);
 
-    // 初始化集成管理器
-    const qqbotConfig = config?.qqbot ?? null;
-    const feishuConfig = config?.feishu ?? null;
-    const dingtalkConfig = config?.dingtalk ?? null;
-
-    if (qqbotConfig || feishuConfig || dingtalkConfig) {
-      try {
-        const { initialize, startPlatform } = useIntegrationStore.getState();
-        await initialize(qqbotConfig, feishuConfig, dingtalkConfig);
-
-        if (dingtalkConfig && dingtalkConfig.instances.length > 0) {
-          const activeInstance = dingtalkConfig.activeInstanceId
-            ? dingtalkConfig.instances.find(i => i.id === dingtalkConfig.activeInstanceId)
-            : dingtalkConfig.instances.find(i => i.enabled);
-
-          if (activeInstance && activeInstance.autoConnect !== false) {
-            log.info('自动连接 DingTalk...');
-            await startPlatform('dingtalk');
-          }
-        }
-
-        if (qqbotConfig && qqbotConfig.instances.length > 0) {
-          const activeInstance = qqbotConfig.activeInstanceId
-            ? qqbotConfig.instances.find(i => i.id === qqbotConfig.activeInstanceId)
-            : qqbotConfig.instances.find(i => i.enabled);
-
-          if (activeInstance && activeInstance.autoConnect !== false) {
-            log.info('自动连接 QQ Bot...');
-            await startPlatform('qqbot');
-          }
-        }
-
-        if (feishuConfig && feishuConfig.instances.length > 0) {
-          const activeInstance = feishuConfig.activeInstanceId
-            ? feishuConfig.instances.find(i => i.id === feishuConfig.activeInstanceId)
-            : feishuConfig.instances.find(i => i.enabled);
-
-          if (activeInstance && activeInstance.autoConnect !== false) {
-            log.info('自动连接 Feishu...');
-            await startPlatform('feishu');
-          }
-        }
-      } catch (error) {
-        log.error('集成管理器初始化失败', error as Error);
-      }
-    }
 
 // 预加载设置相关数据
     try {
@@ -231,7 +184,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       await Promise.all([
         useSnippetStore.getState().loadSnippets(),
         useSkillStore.getState().loadSkills(),
-        useIntegrationStore.getState().loadInstances(),
       ]);
     } catch (error) {
       log.warn('设置数据预加载部分失败', { error: String(error) });
@@ -299,8 +251,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     return () => {
       cancelled = true;
       controller.abort();
-      const { cleanup } = useIntegrationStore.getState();
-      cleanup();
       cleanupCliListeners();
       perfHotSwitchCleanupRef.current?.();
       disconnectTransport();

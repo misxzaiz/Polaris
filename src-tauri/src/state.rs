@@ -10,7 +10,6 @@ use tokio::sync::Mutex as AsyncMutex;
 use crate::ai::EngineRegistry;
 use crate::services::context_core::ContextMemoryStore;
 use crate::commands::terminal::TerminalManager;
-use crate::integrations::IntegrationManager;
 use crate::services::config_store::ConfigStore;
 use crate::services::data_root::data_root;
 use crate::services::usage_db::init_usage_db;
@@ -240,8 +239,6 @@ pub struct AppState {
     pub sessions: Arc<Mutex<HashMap<String, u32>>>,
     /// 上下文存储
     pub context_store: Arc<Mutex<ContextMemoryStore>>,
-    /// 集成管理器 (使用 tokio::sync::Mutex 支持异步操作)
-    pub integration_manager: AsyncMutex<IntegrationManager>,
     /// AI 引擎注册表（使用 tokio::sync::Mutex 支持异步操作和共享）
     pub engine_registry: Arc<AsyncMutex<EngineRegistry>>,
     /// 终端管理器
@@ -313,7 +310,6 @@ pub struct AppState {
 pub fn create_app_state(
     config_store: ConfigStore,
     engine_registry: Arc<AsyncMutex<EngineRegistry>>,
-    integration_manager: IntegrationManager,
 ) -> AppState {
     let config_dir = data_root().config_dir();
 
@@ -692,7 +688,6 @@ pub fn create_app_state(
         config_store: config_store_arc.clone(),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         context_store: state_context_store.clone(),
-        integration_manager: AsyncMutex::new(integration_manager),
         engine_registry: engine_registry.clone(),
             terminal_manager: Mutex::new(TerminalManager::new()),
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
@@ -743,7 +738,7 @@ impl AppState {
 
     /// Clone shared Arc fields for the web server.
     ///
-    /// Non-shared fields (integration_manager, terminal_manager, etc.) get fresh
+    /// Non-shared fields (terminal_manager, etc.) get fresh
     /// empty instances — the web server never accesses them.
     pub fn clone_for_web(&self) -> AppState {
         // Carry over app_config_dir if set, fallback to DataRoot
@@ -771,7 +766,6 @@ impl AppState {
             config_store: self.config_store.clone(),
             sessions: self.sessions.clone(),
             context_store: self.context_store.clone(),
-            integration_manager: AsyncMutex::new(IntegrationManager::new()),
             engine_registry: self.engine_registry.clone(),
         terminal_manager: Mutex::new(TerminalManager::new()),
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
