@@ -24,6 +24,8 @@ describe('plugin MCP contributions', () => {
   })
 
   it('filters a single MCP server when only that server is disabled', () => {
+    // 现存内置 MCP 壳仅剩 polaris.ask（bus/scheduler/browser 已分别出仓或退役）。
+    // 本用例验证「按 server 粒度禁用」：ask 的 polaris-ask 被禁后应从启用清单消失。
     const pluginStates: PluginStateMap = {
       'polaris.ask': {
         enabled: true,
@@ -35,20 +37,16 @@ describe('plugin MCP contributions', () => {
       },
     }
 
-    expect(listEnabledPluginMcpServers(pluginStates)).not.toEqual(
+    const enabled = listEnabledPluginMcpServers(pluginStates)
+    expect(enabled).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 'polaris-ask',
         }),
       ])
     )
-    expect(listEnabledPluginMcpServers(pluginStates)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'polaris-browser',
-        }),
-      ])
-    )
+    // ask 整体 enabled:true，仅单个 server 被禁 → 不应连带清空其它来源（如有）
+    expect(enabled.every((s) => s.id !== 'polaris-ask')).toBe(true)
   })
 
 
