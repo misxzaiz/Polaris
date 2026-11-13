@@ -1,5 +1,6 @@
 import type {
   PluginMcpServerContribution,
+  PluginOverlayContribution,
   PluginStyleContribution,
   PluginToolProviderContribution,
   PluginViewArea,
@@ -115,6 +116,16 @@ class PluginRegistry {
     for (const view of views) {
       pluginPanelRegistry.register(
         view.panelType,
+        manifest.id,
+        createPanelLoader(manifest.installPath, panel.entry)
+      )
+    }
+
+    // 浮层覆盖声明（plans/session-history-plugin-prd.md P0）：overlay 的
+    // panelType 同样需要面板 loader（纯 overlay 插件可以没有 views）。
+    for (const overlay of manifest.contributes.overlays ?? []) {
+      pluginPanelRegistry.register(
+        overlay.panelType,
         manifest.id,
         createPanelLoader(manifest.installPath, panel.entry)
       )
@@ -370,6 +381,31 @@ class PluginRegistry {
   getShadowedSlot(slotId: string): PluginViewContribution | undefined {
     return this.listViewContributions('activityBar')
       .find((v) => v.slot === slotId && v.slotMode === 'shadow')
+  }
+
+  /**
+   * 查询某浮层插槽的接管声明（plans/session-history-plugin-prd.md P0）。
+   *
+   * 返回首个（order 升序）声明了 `contributes.overlays[].slot === slotId` 且
+   * mode=shadow 的贡献。调用方（App.tsx 浮层挂载点）命中时渲染插件面板，
+   * 未命中（无声明 / 插件禁用 / 卸载）时渲染宿主默认实现——天然回滚。
+   *
+   * 注意：启用状态复核（isPluginUiEnabled）由调用方做（本方法保持纯清单查询，
+   * 与 listViewContributions 同语义）。
+   */
+  getOverlayClaim(slotId: string): PluginOverlayContribution & { pluginId: string } | undefined {
+    return this.listPlugins()
+      .flatMap((plugin) =>
+        (plugin.contributes.overlays ?? [])
+          .filter((o) => o.slot === slotId && (o.mode ?? 'shadow') === 'shadow')
+          .map((o) => ({ ...o, pluginId: plugin.id })),
+      )
+      .sort((a, b) => {
+        // order 取插件首个 view 的 order（无 view 的纯 overlay 插件排后）
+        const orderOf = (pid: string) =>
+          this.manifests.get(pid)?.contributes.views?.[0]?.order ?? 1000
+        return orderOf(a.pluginId) - orderOf(b.pluginId)
+      })[0]
   }
 
   /**

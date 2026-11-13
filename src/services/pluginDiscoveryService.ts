@@ -14,6 +14,7 @@ import type {
   PluginMcpServerContribution,
   PluginChatCardContribution,
   PluginEngineContribution,
+  PluginOverlayContribution,
   PluginPanelContribution,
   PluginPermissionDeclaration,
   PluginStyleContribution,
@@ -26,6 +27,7 @@ import type {
 import {
   VALID_CARD_MODES as VALID_CARD_MODES_SINGLE_SOURCE,
   isValidPluginIconValue,
+  VALID_OVERLAY_SLOTS as VALID_OVERLAY_SLOTS_SINGLE_SOURCE,
   VALID_SOURCE_KINDS as VALID_SOURCE_KINDS_SINGLE_SOURCE,
   VALID_TRANSPORTS as VALID_TRANSPORTS_SINGLE_SOURCE,
   VALID_VIEW_AREAS as VALID_VIEW_AREAS_SINGLE_SOURCE,
@@ -142,6 +144,47 @@ function normalizeSource(value: unknown): PluginManifestSource | undefined {
     // 方言适配器来源（plans/plugin-adapter-capability-spec.md）：透传适配器贡献 id
     adapterId: asString(value.adapterId),
   }
+}
+
+/**
+ * 浮层覆盖声明 normalize（plans/session-history-plugin-prd.md P0）。
+ * slot 不在白名单 / mode 非法 → 条目丢弃 + error（安装期 fail fast 的前端侧镜像；
+ * Rust validate_manifest_fields 同规则，双侧防「声明了但运行时静默不生效」）。
+ */
+function normalizeOverlays(
+  value: unknown,
+  errors: string[]
+): PluginOverlayContribution[] {
+  if (!Array.isArray(value)) return []
+  const validSlots: readonly string[] = VALID_OVERLAY_SLOTS_SINGLE_SOURCE
+
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`contributes.overlays[${index}] must be an object`)
+      return []
+    }
+    const id = asString(item.id)
+    const slot = asString(item.slot)
+    const panelType = asString(item.panelType)
+    const mode = asString(item.mode)
+
+    if (!id || !slot || !panelType || !validSlots.includes(slot)) {
+      errors.push(
+        `contributes.overlays[${index}] is invalid and was ignored` +
+          (!validSlots.includes(slot ?? '') && slot
+            ? ` (unknown slot: ${slot}; supported: ${validSlots.join(' | ')})`
+            : '')
+      )
+      return []
+    }
+    if (mode && mode !== 'shadow') {
+      errors.push(
+        `contributes.overlays[${index}].mode has unsupported value: ${mode} (supported: shadow)`
+      )
+      return []
+    }
+    return [{ id, slot, panelType, mode: 'shadow' as const }]
+  })
 }
 
 function normalizeViews(
@@ -581,6 +624,7 @@ export function validateDiscoveredPlugin(raw: unknown): {
       core: raw.core === true,
       contributes: {
         views: normalizeViews(contributes.views, errors),
+        overlays: normalizeOverlays(contributes.overlays, errors),
         mcpServers,
         panel: normalizePanel(contributes.panel),
         chatCards: normalizeChatCards(contributes.chatCards, ownMcpServerIds, errors),

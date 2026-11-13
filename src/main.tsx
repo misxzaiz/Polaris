@@ -12,6 +12,7 @@ import { remoteSessionFollower } from '@/services/remoteSessionFollower';
 import { invoke, listen } from '@/services/transport';
 import { createHostWorkspaceApi } from '@/plugin-system/hostWorkspaceApi';
 import { createHostThemeApi } from '@/plugin-system/themeHostApi';
+import { createHostSessionApi } from '@/plugin-system/sessionHostApi';
 import { eventBus } from '@/services/eventBus';
 import { initPluginToolUsageObserver } from '@/services/pluginToolUsageObserver';
 
@@ -59,9 +60,20 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
 ) => {
   return listen<{ contextId?: string }>(event, (envelope) => {
     if (event === 'chat-event') {
-      // 只透传插件会话命名空间（mc- 前缀）；主会话/其他端内容不进插件面板
+      // 插件可见面（plans/session-history-plugin-prd.md P0）：
+      // 1. mc- 前缀信封（插件会话命名空间，MultiChat）——既有；
+      // 2. 会话生命周期事件 session_start/session_end（低敏元数据：
+      //    sessionId/engineId/reason）——history-desk 面板据此做自动刷新与
+      //    「其他设备进行中」增量；正文（token/thinking/工具流）不透传。
+      const type = (envelope as { payload?: { payload?: { type?: string } } })
+        ?.payload?.payload?.type;
       if (typeof envelope?.contextId === 'string' && envelope.contextId.startsWith('mc-')) {
         handler(envelope)
+        return
+      }
+      if (type === 'session_start' || type === 'session_end') {
+        handler(envelope)
+        return
       }
       return
     }
@@ -79,6 +91,13 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
 // 不旁路 localStorage / 直写 CSS 变量（结构化数据回传由本 API 承担，弥补
 // cap.ui.theme forward-only 无数据返回的缺口）。
 ;(window as any).__POLARIS_THEME_API__ = createHostThemeApi();
+// 会话桥（plans/session-history-plugin-prd.md P0）：插件面板（history-desk 等）
+// 经此恢复历史会话 / 创建分支。内部委托 sessionRestore（宿主保留的恢复核心），
+// conversationId 必须经调用方证实存在（cap.history query/archive_page）后才传入；
+// 不暴露 store 句柄（最小面）。eslint-disable 与上方既有 window 挂载点同款
+// （window 全局桥是本文件的既定模式，逐点豁免而非全局关闭规则）。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+;(window as any).__POLARIS_SESSION_API__ = createHostSessionApi();
 
 // 暴露当前工作区路径给外部插件面板（wheel：监听 workspace-changed 事件，
 // 初始取 localStorage 兜底。外部插件如 polaris-git 可据此自动初始化。）
