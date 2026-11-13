@@ -69,7 +69,7 @@
 
 ### 3.2 后端（`src-tauri/src/`）
 - 目录划分：
-  - `commands/`（40 个 tauri command，多为旧路径）
+  - `commands/`（31 个文件，多为旧路径；browser.rs/browser_scripts.rs 已随浏览器域出仓删除）
   - `services/`（业务核：ai_chat_core、ask_listener、plugin_service 等）
   - `models/`（AIEvent 等跨进程协议类型）
   - `services/router/`（**RouterBus —— cap 总线**）
@@ -161,5 +161,5 @@
 
 - **本机 `cargo test --lib` 不可用**（Tauri DLL 启动限制），测试验证用 `cargo check` + 已有前端 vitest 代替。
 - **`src-tauri/src/commands/` 是旧路径 + 迁移中**；新增功能优先走 RouterBus。
-- **巨型文件**（>1800 行，9 个）：`commands/browser.rs`(3977)、`web/api/ipc.rs`(2686)、`services/ai_chat_core.rs`(2547)、`stores/conversationStore/createConversationStore.ts`(2535)、`services/ask_listener.rs`(2384)、`services/plugin_service.rs`(2046)、`components/Chat/input/ChatInput.tsx`(2010)、`services/mcp_config_service.rs`(1893)、`models/ai_event.rs`(1868)。**拆分须克制**：在没有架构门槛的情况下，只拆「新增改动经常触碰」的文件，不做无收益的大规模重构。
+- **巨型文件**（>1800 行，7 个）：`web/api/ipc.rs`(1924)、`services/ai_chat_core.rs`(2928)、`stores/conversationStore/createConversationStore.ts`(3082)、`services/plugin_service.rs`(2820)、`components/Chat/input/ChatInput.tsx`(2131)、`services/ask_listener.rs`(1812)、`services/mcp_config_service.rs`(1873)。（commands/browser.rs 已随浏览器域出仓删除。）**拆分须克制**：在没有架构门槛的情况下，只拆「新增改动经常触碰」的文件，不做无收益的大规模重构。
 - **协议无运行时 schema 校验**是已知缺口；改动协议时以「保持双边类型同步」为最低纪律。
