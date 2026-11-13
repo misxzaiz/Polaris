@@ -1,6 +1,6 @@
 # 主仓瘦身：存量功能插件化拆分方案（core-slimdown）
 
-> 状态：**实施中**（B1 完成 6/7、B2 完成 1.5/4；B1-6 于 2026-11-11 合入并发布 v1.0.1 修复版；B2-3 PetOverlay 与 B2-1 语音电台均已直接移除而非插件化） · 日期：2026-11-06 · 状态复核：2026-11-12
+> 状态：**实施中**（B1 完成 7/7、B2 完成 3/4；B1-6 于 2026-11-11 合入并发布 v1.0.1 修复版；B2-3 PetOverlay 与 B2-1 语音电台均已直接移除而非插件化；**B2-2 IM 与 B2-4 Translate 已于 2026-11-14 出仓完成**（im-bridge 真机三平台 + translate v1.0.0，主仓删码 d9a0074e / 4a2cc635）；**B1-7 Browser 已于 2026-11-14 按方案 D 全外迁完成**（browser-desk 插件 CDP 驱动系统 Chrome，主仓删码 359e4281 + 12600607，席位保留+占位兜底；遗留：真宿主 shadow 接管验收 + 插件 enabledByDefault 翻转 + 商城 index 收录）） · 日期：2026-11-06 · 状态复核：2026-11-14
 > 上游定案：`plans/plugin-first-slim-plan.md`（2026-10-30 用户定案「新功能一律插件化」）+ `AGENTS.md` §五功能路由原则。
 > 本方案定位：把该定案从**增量纪律**推进到**存量迁移**——盘点主仓已有功能，判定哪些拆出为 `Polaris-plugin` 仓插件，给出分批路径、验收标准与不拆清单。
 > 数据口径：行数为 2026-11-06 工作区实测（`wc -l`，前端含 .ts/.tsx）；改动热度为 `git log --since=2026-08-01` 文件触碰次数。
@@ -78,18 +78,18 @@
 | ~~B1-4~~ | PersonalHub | ✅ 已完成（2026-11-09：插件仓 personal-hub v1.0.0 新建承接，stdio MCP + 面板） | personal-hub 插件 | ~2.5k | |
 | ~~B1-5~~ | Computer 控制 | ✅ 已完成（2026-11-09：MCP server 面摘除，业务核 computer_control 保留给 SimpleAI 引擎；独立 bin polaris-computer-mcp 随插件 zip 分发） | computer 插件 | ~1.5k | 桌面专属能力，Web 端按不可用声明 |
 | ~~B1-6~~ | Scheduler | ✅ 已完成（2026-11-11：主仓净删 17.9k 行含 executor 子系统连带；插件仓 `ai-scheduler` v1.0.0 承接——MCP 七工具 + 常驻服务(contributes.services, cap.ai.chat 触发 + WS 终态回收) + 面板三件套；顺带修复自动路径裸 start_chat 存量断链；sqlite 数据只读迁移） | — | ~10.1k→17.9k | spec：`scheduler-plugin-extraction-spec.md` |
-| B1-7 | Browser | `commands/browser.rs` 4049 + `browser_scripts.rs` 407 + `browser_mcp_server.rs` 977 + Browser 组件 2707 + `browserService.ts` 774 | browser 插件 | ~8.9k | **最难**：webview 实例属宿主（Tauri 桌面）。路径分两步：①核心保留薄 `cap.browser`（webview 控制原语，按 RouterBus 范式收编 commands/browser.rs）；②脚本库/自动化逻辑/面板/MCP 全部外移。TCB 圈选上下文块与 ChatInput 的联动改走 chatCards/contextBlock 公共机制 |
+| ~~B1-7~~ | Browser | ✅ 已完成（2026-11-14：**方案 D 全外迁**，替代本行原「两步走薄 cap.browser」路径——见 `plans/browser-plugin-full-extraction-spec.md`。插件仓 `browser-desk` service 用 puppeteer-core 驱动系统 Chrome（CDP 协议），web/桌面同构；主仓净删 ~12.1k 行（P1 前端 `359e4281` −4058：Browser 组件/service/圈选 3 store/guard/壳 manifest，OverlayGuard 上移 Common，BrowserRegion 类型救出 `types/browserContext.ts`；P2 后端 `12600607` −8020：commands/browser.rs+browser_scripts.rs+browser_mcp_server.rs+26 注入脚本+simple_ai browser 工具+ask_listener browser 帧+polaris_mcp browser 子命令+BROWSER_* MCP 注册）。席位契约保留：`browser.panel` 声明与 tabStore openBrowserTab 未删，未启用插件时渲染 PluginSlotPlaceholder。插件 service 稳定性修复（search 重试+read 三级降级）`759d530`，mcp-smoke 4×ALL-PASS。**遗留**：真宿主 shadow 接管验收、插件 enabledByDefault 翻 true、商城 index.json 收录） | browser-desk 插件 | ~12.1k | spec：`browser-plugin-full-extraction-spec.md` |
 
-B1 合计 ~30k 行。外移后同步动作（每项相同，下称「三处同步」）：主仓删码 + `builtinPlugins.ts`/`builtin_plugin_mcp_manifests` 注册表摘除；插件仓新增（plugin.json + dist + update.json + marketplace `index.json`）；`AGENTS.md` §五 cap 清单如有增删同步更新。
+B1 合计 ~42k 行（B1-7 实际删码超预估）。外移后同步动作（每项相同，下称「三处同步」）：主仓删码 + `builtinPlugins.ts`/`builtin_plugin_mcp_manifests` 注册表摘除；插件仓新增（plugin.json + dist + update.json + marketplace `index.json`）；`AGENTS.md` §五 cap 清单如有增删同步更新。
 
 ### 4.2 B2：无壳独立功能域，新建插件
 
 | 序 | 功能 | 主仓删除（约） | 行数 | 说明 |
 |---|---|---|---|---|
 | ~~B2-1~~ | 语音电台 / 伴播 | ✅ **已整体移除**（2026-11-12 用户定案：平时不用，直接删而非插件化；前端 `5869dd11` −13,578 行 / 后端 `7c7012bf` −1,254 行）。插件化被否的原因：电台控制器依赖宿主 session kernel 自建 AI 会话、语音伙伴是全局浮层、移动端 ASR 桥接在宿主 Android 工程内——需新增 5 类宿主槽位，成本高于收益。详见 `plans/voice-domain-removal-record.md` | ~~7.2k~~ | 原判「发布解耦收益最大」不再成立 |
-| B2-2 | IM 集成 | `integrations/` 7095（钉钉/飞书/QQ bot）+ Integration 组件 771 + `integrationService.ts` 168 | ~8k | 典型独立进程形态（`contributes.services` 常驻 + webhook），与宿主仅共享 config |
+| ~~B2-2~~ | IM 集成 | ✅ 已完成（2026-11-13/14：L0 cap.integration 收敛 16 命令 `6840d5b7` → 插件 `im-bridge` v0.1.0 真机三平台连通 → 主仓删码 `d9a0074e` −12.0k 行（integrations/ 整目录+capability+命令+config 字段+ExecutionConsole 连带）。spec：`im-integration-extraction-spec.md`。遗留：enabledByDefault 翻 true 灰度） | im-bridge 插件 | ~12k |
 | ~~B2-3~~ | PetOverlay | ✅ 已移除（2026-11-10 用户定案：主仓直接删除，不新建插件；插件仓 `whale-pet` 为替代） | ~~1.5k~~ | 独立浮窗；宿主 `__POLARIS_PET_OVERLAY__` 桥与 `?petOverlay=1` 分支同步拆除，whale-pet 桌面悬浮按钮按存在性降级 |
-| B2-4 | Translate | `commands/translate.rs` 107 + Translate 组件 705 | 0.8k | 顺手项；方案见 `translate-extraction-spec.md`（2026-11-10 定案待批，实施另需批准） |
+| ~~B2-4~~ | Translate | ✅ 已完成（2026-11-14：主仓删码 `4a2cc635` −1.2k 行（Translate 组件/translateStore/translate.rs/baidu_translate web 分支/BaiduTranslateConfig/translate i18n）；插件仓 `translate` v1.0.0 `c7d9bad`（service lib.js 纯函数与 Rust 版语义等价 + stdio MCP translate_text + 面板经 pluginServiceManager.request 调自身 service，凭证走 configSchema；单测 11/11）。划词菜单按 spec D2 裁定随域退役，未留宿主垫层。遗留：真宿主面板/划词回归） | translate 插件 | ~1.2k |
 
 B2 合计 ~17.5k。
 
@@ -140,8 +140,8 @@ B2 合计 ~17.5k。
 - [ ] 三处同步完成：主仓 / 插件仓 / `AGENTS.md` §五清单（如涉及 cap 契约）。
 
 **整体（全部批次完成后）**：
-- [ ] 主仓前后端合计出仓 ≥ 40k 行；`commands/` 目录剩余为不可拆核心命令。
-- [x] `src/plugins/` 内置插件壳仅剩核心通道（2026-11-10：core/ask/browser/scheduler；contracts 契约浏览器壳已移除，dispatch 已移除，双轨状态消除）。2026-11-11 复核：B1-6 后仅剩 `ask`、`browser` 两个壳。
+- [x] 主仓前后端合计出仓 ≥ 40k 行（2026-11-14 复核：B1-1~7 + B2-1~4 累计出仓/删除约 75k 行；本轮 IM −12.0k、Browser −12.1k、Translate −1.2k 已落地）。`commands/` 剩余 31 文件为不可拆核心命令。
+- [x] `src/plugins/` 内置插件壳仅剩核心通道（2026-11-14 复核：仅剩 `ask` 一个壳；browser 壳已随 B1-7 删除，translate/browser 面板均由插件 shadow 接管）。
 - [ ] 新功能全部落在插件仓（既有定案的可验证状态）。
 
 ---
