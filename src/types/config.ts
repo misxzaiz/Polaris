@@ -146,14 +146,6 @@ export interface EngineConfig {
   available?: boolean;
 }
 
-/** 百度翻译配置 */
-export interface BaiduTranslateConfig {
-  /** 百度翻译 App ID */
-  appId: string;
-  /** 百度翻译密钥 */
-  secretKey: string;
-}
-
 /** Web 服务配置 */
 export interface WebConfig {
   /** 是否启用 Web 服务 */
@@ -230,8 +222,6 @@ export interface Config {
    *  意图真源：走设置保存流（SettingsPage buildPatch → cap.config 透传）；
    *  OS 事实由 configStore 保存成功后的 cap.app.autolaunch apply 与启动对账同步 */
   autoLaunch?: boolean;
-  /** 百度翻译配置 */
-  baiduTranslate?: BaiduTranslateConfig;
   /** Web 服务配置 */
   web?: WebConfig;
   /** 派发任务配置（策略/结果注入/队员预设） */

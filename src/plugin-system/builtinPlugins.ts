@@ -43,16 +43,6 @@ const corePluginManifest: PolarisPluginManifest = {
         slot: 'browser',
       },
       {
-        id: 'translate.panel',
-        area: 'activityBar',
-        panelType: 'translate',
-        icon: 'Languages',
-        labelKey: 'labels.translatePanel',
-        labelDefault: 'Translate',
-        order: 40,
-        slot: 'translate',
-      },
-      {
         id: 'terminal.panel',
         area: 'activityBar',
         panelType: 'terminal',

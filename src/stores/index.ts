@@ -15,7 +15,6 @@ export { useViewStore } from './viewStore';
 export { useTabStore } from './tabStore';
 export { useEditorSettingsStore } from './editorSettingsStore';
 export { useEditorContextStore } from './editorContextStore';
-export { useTranslateStore } from './translateStore';
 export { useToastStore, type Toast, type ToastType, type NotificationRecord } from './toastStore';
 export { useTerminalStore } from './terminalStore';
 export { useModelProfileStore, getActiveModelProfile } from './modelProfileStore';

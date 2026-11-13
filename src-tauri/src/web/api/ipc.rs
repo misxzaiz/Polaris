@@ -216,7 +216,6 @@ pub async fn handle_ipc_bridge(
         "cli_check_installed" => dispatch_cli_check_installed(&args),
         "cli_find_paths" => dispatch_cli_find_paths(&args),
         "cli_get_version_for" => dispatch_cli_get_version_for(&args),
-        "baidu_translate" => dispatch_baidu_translate(&args).await,
         "find_claude_paths" => dispatch_find_claude_paths(),
         "validate_claude_path" => dispatch_validate_claude_path(&args),
         "detect_claude" => dispatch_detect_claude(&state),
@@ -876,13 +875,6 @@ fn dispatch_cli_find_paths(args: &Value) -> Result<Json<Value>, WebError> {
 fn dispatch_cli_get_version_for(args: &Value) -> Result<Json<Value>, WebError> {
     let _ = args;
     Ok(Json(Value::Null))
-}
-async fn dispatch_baidu_translate(args: &Value) -> Result<Json<Value>, WebError> {
-    let text = require_string(args, "text")?;
-    let app_id = require_string(args, "appId")?;
-    let secret_key = require_string(args, "secretKey")?;
-    let to = args.get("to").and_then(|v| v.as_str()).map(String::from);
-    Ok(Json(serde_json::to_value(crate::commands::translate::baidu_translate(text, app_id, secret_key, to).await).unwrap_or_default()))
 }
 fn dispatch_find_claude_paths() -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::services::config_store::ConfigStore::find_claude_paths()).unwrap_or_default()))

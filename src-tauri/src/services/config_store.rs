@@ -1000,7 +1000,6 @@ impl OldConfig {
             git_bin_path: self.git_bin_path,
             auto_launch: false,
             floating_window: Default::default(),
-            baidu_translate: None,
             speech: Default::default(),
             tts: Default::default(),
             wake_word: None,

@@ -48,7 +48,6 @@ export function getToolGroup(panelType: string): ToolGroupId {
     case 'terminal':
     case 'aiConsole':
       return 'run'
-    case 'translate':
     case 'integration':
       return 'integrations'
     case 'developer':

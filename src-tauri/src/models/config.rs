@@ -81,19 +81,8 @@ pub struct FloatingWindowConfig {
     pub collapse_delay: u64,
 }
 
-/// 百度翻译配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[derive(Default)]
-pub struct BaiduTranslateConfig {
-    /// 百度翻译 App ID
-    #[serde(default)]
-    pub app_id: String,
-
-    /// 百度翻译密钥
-    #[serde(default)]
-    pub secret_key: String,
-}
+// 百度翻译凭证已随 translate 域出仓（2026-11-14，B2-4）：
+// BaiduTranslateConfig 删除，凭证走 translate 插件 configSchema。
 
 ///
 /// 当 `wire_api` 为 `"openai-chat-completions"` 时，Polaris 内嵌代理会透明地
@@ -1045,13 +1034,7 @@ pub struct Config {
     #[serde(default)]
     pub floating_window: FloatingWindowConfig,
 
-    /// 百度翻译配置
-    #[serde(default)]
-    pub baidu_translate: Option<BaiduTranslateConfig>,
-
-
-
-
+    /// 百度翻译配置已出仓（translate 插件 configSchema 承接）
 
     /// 语音输入配置
     #[serde(default)]
@@ -1242,7 +1225,6 @@ impl Default for Config {
             git_bin_path: None,
             auto_launch: false,
             floating_window: FloatingWindowConfig::default(),
-            baidu_translate: None,
             speech: SpeechConfig::default(),
             tts: TTSConfig::default(),
             wake_word: None,

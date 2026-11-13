@@ -57,8 +57,8 @@ use commands::file_io::{test_param_serialization, write_file_absolute, read_file
 // Git 域已整体出仓（2026-11-12，架构方案 C）：git_* 命令、cap.git 与
 // transport shim 全部删除；Git 引擎在 polaris-git 插件 service（本机 git CLI），
 // 面板经 cap.pluginServiceManager.request 转发，AI 工具经插件 MCP 提供。
-#[cfg(feature = "tauri-app")]
-use commands::translate::baidu_translate;
+// 翻译域已整体出仓（2026-11-14，B2-4）：baidu_translate 命令删除，
+// 百度 API 调用在 translate 插件 service（Node fetch + md5）内实现。
 #[cfg(feature = "tauri-app")]
 #[cfg(feature = "tauri-app")]
 use commands::terminal::{
@@ -1054,8 +1054,6 @@ pub fn run() {
             write_file_absolute,
             read_file_absolute,
             test_param_serialization,
-            // 翻译相关
-            baidu_translate,
             // 终端相关
             terminal_create,
             terminal_write,

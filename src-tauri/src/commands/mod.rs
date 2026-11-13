@@ -11,7 +11,8 @@ pub mod window;
 // write_file_absolute / read_file_absolute / test_param_serialization（无 git
 // 业务关联）迁往 commands/file_io.rs。
 pub mod file_io;
-pub mod translate;
+// translate 域已整体出仓（2026-11-14，B2-4）：commands/translate.rs 删除，
+// 百度 API 调用在 translate 插件 service 内实现（语义等价搬移）。
 // plugin.rs（PluginDiscovery 管理面命令层）+ plugin_service.rs（PluginServiceManager
 // 命令层）已整体删除，管理面迁入 cap.pluginDiscovery / cap.pluginServiceManager
 // （services/router/plugin_discovery_capability.rs / plugin_service_manager_capability.rs）。

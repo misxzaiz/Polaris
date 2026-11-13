@@ -30,7 +30,7 @@ const MultiSessionGridLazy = lazy(() => import('./components/Chat/session/MultiS
 const NarrowTabOverlayLazy = lazy(() => import('./components/Editor/NarrowTabOverlay').then(m => ({ default: m.NarrowTabOverlay })));
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { RightSlideOver } from './components/Common/RightSlideOver';
-import { SelectionContextMenu } from './components/Translate';
+import { PluginSlotPlaceholder } from './components/PluginSlotPlaceholder';
 
 // 懒加载大型组件，减少初始 bundle 大小
 const SettingsPage = lazy(() => import('./components/Settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -42,7 +42,8 @@ const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal')
 // 懒加载大型面板组件，减少初始 bundle 大小
 // Git 面板已插件化（2026-11-12）：内置 GitPanel 移出主仓，git.panel 席位由
 // polaris-git 插件 shadow 接管；未启用插件时渲染通用席位占位兜底。
-const TranslatePanel = lazy(() => import('./components/Translate/TranslatePanel').then(m => ({ default: m.TranslatePanel })));
+// 翻译面板已插件化（2026-11-14）：translate 域移出主仓，translate.panel 席位由
+// translate 插件 shadow 接管；未启用插件时渲染通用席位占位兜底。
 const TerminalPanel = lazy(() => import('./components/Terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
 import { SlotEmpty } from './components/Layout/SlotEmpty';
 const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel').then(m => ({ default: m.DemoPluginPanel })));
@@ -51,7 +52,6 @@ const FocusOverlay = lazy(() => import('./components/FocusMode/FocusOverlay').th
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
 import { useNarrowTabStore } from './stores/narrowTabStore';
-import { PluginSlotPlaceholder } from './components/PluginSlotPlaceholder';
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
@@ -305,7 +305,17 @@ function App() {
           })}
         />
       }
-      translateContent={<Suspense fallback={loadingFallback}><TranslatePanel onSendToChat={sendMessage} /></Suspense>}
+      translateContent={
+        <PluginSlotPlaceholder
+          title={t('pluginSlotPlaceholder.translateTitle', {
+            defaultValue: '翻译已迁移为插件',
+          })}
+          hint={t('pluginSlotPlaceholder.translateHint', {
+            defaultValue:
+              '安装并启用 translate 插件后，此席位由插件面板接管（百度翻译工作台 + 划词翻译，凭证走插件配置）。插件管理：设置 → 插件。',
+          })}
+        />
+      }
       terminalContent={<Suspense fallback={loadingFallback}><TerminalPanel /></Suspense>}
       developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
       aiConsoleContent={<SlotEmpty icon="📊" title="AI 执行台" description="集成机器人监控已迁移至 im-bridge 插件；安装启用后在此查看执行状态。" />}
@@ -492,7 +502,7 @@ function App() {
           </RightSlideOver>
         )}
 
-        <SelectionContextMenu />
+        {/* 全局划词菜单已随 translate 域出仓（translate 插件承接） */}
 
         {/* 全局 Toast 通知：挂载在视图切换之外，经 Portal 渲染到 body，浮于所有面板/弹窗之上 */}
         <ToastContainer />

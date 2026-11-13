@@ -45,7 +45,6 @@
     "gitPanel": "Git 面板",
     "browserPanel": "内置浏览器",
     "sessionsPanel": "会话管理",
-    "translatePanel": "翻译面板",
     "schedulerPanel": "定时任务",
     "terminalPanel": "终端",
     "toolPanel": "工具面板",

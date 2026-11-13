@@ -86,7 +86,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   }, [config]);
 
   const topLevelKeysByTab: Partial<Record<SettingsTabId, (keyof Config)[]>> = {
-    general: ['language', 'baiduTranslate', 'uiControlEnabled', 'autoLaunch'],
+    general: ['language', 'uiControlEnabled', 'autoLaunch'],
     theme: ['theme'],
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],

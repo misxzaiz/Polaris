@@ -1,8 +1,7 @@
 /**
- * 窗口控制、翻译、系统相关 Tauri 命令
+ * 窗口控制、系统相关 Tauri 命令（翻译已随 translate 域出仓）
  */
 
-import { invoke } from '@/services/transport';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('WindowService');
@@ -79,27 +78,6 @@ export async function openInBrowser(url: string): Promise<void> {
   } else {
     window.open(url, '_blank');
   }
-}
-
-// ============================================================================
-// 翻译相关命令
-// ============================================================================
-
-/** 翻译结果 */
-export interface TranslateResult {
-  success: boolean;
-  result?: string;
-  error?: string;
-}
-
-/** 百度翻译 */
-export async function baiduTranslate(
-  text: string,
-  appId: string,
-  secretKey: string,
-  to?: string
-): Promise<TranslateResult> {
-  return invoke<TranslateResult>('baidu_translate', { text, appId, secretKey, to });
 }
 
 // ============================================================================
