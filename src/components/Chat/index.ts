@@ -19,7 +19,6 @@ export { ChatInput } from './input/ChatInput';
 export type { EditMode } from './input/ChatInput';
 export { ChatStatusBar } from './common/ChatStatusBar';
 export { ErrorBanner } from './common/ErrorBanner';
-export { SessionHistoryPanel } from './session/SessionHistoryPanel';
 export { CompactHandoffButton } from './compact-handoff/CompactHandoffButton';
 export { CompactHandoffProgress } from './compact-handoff/CompactHandoffProgress';
 export { PendingBriefingCard } from './compact-handoff/PendingBriefingCard';
@@ -30,10 +29,6 @@ export { MultiWindowMenu } from './session/MultiWindowMenu';
 export { SessionCell } from './session/SessionCell';
 export { NewSessionButton } from './session/NewSessionButton';
 
-// Fork/PR 关系可视化组件
-export { ForkIndicator, ForkTreeLine } from './session/ForkIndicator';
-export { SessionTree } from './session/SessionTree';
-export { ForkSessionDialog } from './session/ForkSessionDialog';
 
 // 工具调用渲染
 export { AgentRunBlockRenderer } from './tool-calls/AgentRunBlockRenderer';
@@ -49,7 +44,6 @@ export { MessageSearchPanel } from './search/MessageSearchPanel';
 
 // 会话相关
 export { SessionConfigSelector } from './session/SessionConfigSelector';
-export { SessionPreviewModal } from './session/SessionPreviewModal';
 export { ChatNavigator } from './session/ChatNavigator';
 
 // 通用组件

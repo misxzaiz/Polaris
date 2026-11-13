@@ -20,8 +20,8 @@ import { useHistoryPrefsStore } from '@/stores/historyPrefsStore'
 import { dedupeMessagesById, normalizeRecoveredMessages } from '@/stores/conversationStore/dedupMessages'
 import { dialogStorageService } from './dialogStorage'
 import { loadBackendMessages } from './sessionArchive'
-import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
 import { aiHistoryDispatch } from './aiHistoryDispatch'
+import { convertClaudeHistoryToChatMessages, type ClaudeCodeMessage } from './claudeHistoryConvert'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 
 const log = createLogger('SessionRestore')
@@ -173,23 +173,31 @@ export async function loadMessagesForItem(
     log.warn('后端消息库兜底读取失败', { error: e instanceof Error ? e.message : String(e) })
   }
 
-  // 2. Claude Code 原生
+  // 2. Claude Code 原生（P4：cap.history get_claude_history 直读 + 本地转换核，
+  //    claudeCodeHistoryService 查询编排已随面板域拆除）
   if (!engineId || engineId === 'claude-code') {
-    const claudeCodeService = getClaudeCodeHistoryService()
-    const messages = await claudeCodeService.getSessionHistory(sessionId, claudeProjectName)
-    if (messages.length > 0) {
-      return {
-        messages: withAssistantEngineId(
-          claudeCodeService.convertToChatMessages(messages),
-          'claude-code',
-        ),
-        title: titleHint || '恢复的会话',
-        engineId: 'claude-code',
-        externalSessionId: sessionId,
-        workspacePath: null,
-        source: 'claude-code-native',
-        paging: null,
+    try {
+      const nativeMessages = await aiHistoryDispatch<ClaudeCodeMessage[]>({
+        action: 'get_claude_history',
+        sessionId,
+        projectPath: claudeProjectName,
+      })
+      if (nativeMessages.length > 0) {
+        return {
+          messages: withAssistantEngineId(
+            convertClaudeHistoryToChatMessages(nativeMessages),
+            'claude-code',
+          ),
+          title: titleHint || '恢复的会话',
+          engineId: 'claude-code',
+          externalSessionId: sessionId,
+          workspacePath: null,
+          source: 'claude-code-native',
+          paging: null,
+        }
       }
+    } catch (e) {
+      log.warn('Claude 原生历史读取失败（跳过该数据源）', { sessionId, error: String(e) })
     }
   }
 

@@ -22,7 +22,6 @@ import { CompactHandoffProgress } from './components/Chat/compact-handoff/Compac
 import { MultiWindowMenu } from './components/Chat/session/MultiWindowMenu';
 import { NewSessionButton } from './components/Chat/session/NewSessionButton';
 // 条件渲染的重组件统一懒加载，避免首帧解析 400+ 模块的 Chat barrel 传递依赖
-const SessionHistoryPanelLazy = lazy(() => import('./components/Chat/session/SessionHistoryPanel').then(m => ({ default: m.SessionHistoryPanel })));
 const MultiSessionGridLazy = lazy(() => import('./components/Chat/session/MultiSessionGrid').then(m => ({ default: m.MultiSessionGrid })));
 // FE-2: NarrowTabOverlay 原经 Editor barrel 静态 import，会把 EditorPanel/Editor.tsx
 // 传导的 @codemirror 全家（manualChunks 钉入单一 codemirror chunk，~1MB）拽回首载。
@@ -128,13 +127,6 @@ function App() {
   const [sessionHistoryKept, setSessionHistoryKept] = useState(false);
   const [notificationCenterKept, setNotificationCenterKept] = useState(false);
 
-  // 关闭会话历史：立即翻转 store（播退场信号），同时保留渲染直到退场结束
-  const closeSessionHistory = useCallback(() => {
-    if (useViewStore.getState().showSessionHistory) {
-      useViewStore.getState().toggleSessionHistory();
-    }
-    setSessionHistoryKept(true);
-  }, []);
   const sessionHistoryExited = useCallback(() => {
     setSessionHistoryKept(false);
   }, []);
@@ -444,10 +436,11 @@ function App() {
           </Suspense>
         )}
 
-        {/* 会话历史浮层（plans/session-history-plugin-prd.md P0）：
+        {/* 会话历史浮层（plans/session-history-plugin-prd.md P0-P4）：
             位置本体 = RightSlideOver + viewStore 开关，永不随插件变化；
-            内容 = 已启用插件的 overlays[session-history] shadow 接管，
-            未启用/禁用/卸载 → 内置 SessionHistoryPanel 原样恢复（天然回滚）。 */}
+            内容 = 已启用插件的 overlays[session-history] shadow 接管。
+            P4：内置 SessionHistoryPanel 已拆除，未启用/禁用/卸载 →
+            空态提示（重新启用插件或重装即可恢复，历史数据在宿主数据根不丢）。 */}
         {(showSessionHistory || sessionHistoryKept) && (
           <RightSlideOver
             open={showSessionHistory || sessionHistoryKept}
@@ -460,7 +453,12 @@ function App() {
                 const enabled = claim ? isPluginUiEnabled(pluginStates, claim.pluginId) : false;
                 return claim && enabled
                   ? <PluginPanelHost panelType={claim.panelType} />
-                  : <SessionHistoryPanelLazy onClose={closeSessionHistory} />;
+                  : (
+                    <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
+                      <p className="text-sm text-text-secondary">会话历史由 history-desk 插件提供</p>
+                      <p className="text-xs text-text-tertiary">当前插件未启用。启用后此处恢复面板；历史数据不受影响。</p>
+                    </div>
+                  );
               })()}
             </Suspense>
           </RightSlideOver>

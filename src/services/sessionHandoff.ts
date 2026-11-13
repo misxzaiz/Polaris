@@ -21,9 +21,9 @@ import i18n from 'i18next'
 import { createLogger } from '@/utils/logger'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
+import { aiHistoryDispatch } from './aiHistoryDispatch'
+import { convertClaudeHistoryToChatMessages, type ClaudeCodeMessage } from './claudeHistoryConvert'
 import { dialogStorageService } from './dialogStorage/service'
-import type { UnifiedHistoryItem } from './historyService'
 import { normalizeRecoveredMessages } from '@/stores/conversationStore/dedupMessages'
 import type { ChatMessage, EngineId } from '@/types'
 import {
@@ -131,13 +131,22 @@ export interface HistoryHandoffEligibility {
   reasonKey?: string
 }
 
+/** 历史会话条目最小面（P4：原 UnifiedHistoryItem 内联，historyService 已随面板域拆除） */
+export interface HistoryHandoffItem {
+  id: string
+  title: string
+  engineId: string
+  projectPath?: string
+  claudeProjectName?: string
+}
+
 /**
  * 判断历史会话是否可续接。
  *
  * 不再限制引擎。工作区优先使用历史 projectPath，若没有则回退当前工作区。
  */
 export function getHistoryHandoffEligibility(
-  item: UnifiedHistoryItem,
+  item: HistoryHandoffItem,
   fallbackWorkspaceId?: string | null,
 ): HistoryHandoffEligibility {
   if (!item.id) return { enabled: false, reasonKey: 'handoff.reasonNoSession' }
@@ -149,7 +158,7 @@ export function getHistoryHandoffEligibility(
  * 将历史会话续接到一个新会话（可指定目标引擎，默认沿用源引擎）。
  */
 export async function handoffHistorySessionToNewSession(
-  item: UnifiedHistoryItem,
+  item: HistoryHandoffItem,
   fallbackWorkspaceId?: string | null,
   targetEngineId?: EngineId,
 ): Promise<HandoffResult> {
@@ -287,9 +296,12 @@ export async function loadConversationMessages(
   if (conversationId) {
     try {
       if (engineId === 'claude-code') {
-        const service = getClaudeCodeHistoryService()
-        const raw = await service.getSessionHistory(conversationId)
-        if (raw.length > 0) return withAssistantEngineId(service.convertToChatMessages(raw), engineId)
+        // P4：cap.history get_claude_history 直读（claudeCodeHistoryService 已拆）
+        const raw = await aiHistoryDispatch<ClaudeCodeMessage[]>({
+          action: 'get_claude_history',
+          sessionId: conversationId,
+        })
+        if (raw.length > 0) return withAssistantEngineId(convertClaudeHistoryToChatMessages(raw), engineId)
       } else {
         // simple-ai：self JSONL（externalId = conversationId）
         const msgs = await dialogStorageService.getConversationMessages(conversationId)
@@ -317,14 +329,17 @@ export async function loadConversationMessages(
  * - claude-code-native：CLI 原生历史
  * - self：self JSONL
  */
-async function loadHistoryChatMessages(item: UnifiedHistoryItem): Promise<ChatMessage[]> {
+async function loadHistoryChatMessages(item: HistoryHandoffItem): Promise<ChatMessage[]> {
   const engineId = normalizeEngineId(item.engineId)
 
   try {
     if (engineId === 'claude-code') {
-      const service = getClaudeCodeHistoryService()
-      const messages = await service.getSessionHistory(item.id, item.claudeProjectName)
-      return messages.length > 0 ? withAssistantEngineId(service.convertToChatMessages(messages), engineId) : []
+      const raw = await aiHistoryDispatch<ClaudeCodeMessage[]>({
+        action: 'get_claude_history',
+        sessionId: item.id,
+        projectPath: item.claudeProjectName,
+      })
+      return raw.length > 0 ? withAssistantEngineId(convertClaudeHistoryToChatMessages(raw), engineId) : []
     }
     // simple-ai：self JSONL（externalId = item.id）
     const msgs = await dialogStorageService.getConversationMessages(item.id)
@@ -345,7 +360,7 @@ function withAssistantEngineId(messages: ChatMessage[], engineId: EngineId): Cha
 }
 
 async function resolveHistoryWorkspaceId(
-  item: UnifiedHistoryItem,
+  item: HistoryHandoffItem,
   fallbackWorkspaceId?: string | null,
 ): Promise<string | undefined> {
   const projectPath = item.projectPath?.trim()
