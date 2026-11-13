@@ -335,18 +335,12 @@ pub async fn handle_ipc_bridge(
         "get_usage_daily_trends" => dispatch_get_usage_daily_trends(&args),
         "get_usage_recent_logs" => dispatch_get_usage_recent_logs(&args),
 
-        // ── Built-in Browser（web 模式不支持）─────────────────────────────
-        // 内置浏览器完全依赖 Tauri 原生 WebView（commands/browser.rs 全量
-        // tauri-app 门控）。web/内嵌 webview 场景没有原生能力，任何 browser_*
-        // 命令在此显式返回 4xx 明确错误，而不是落到下面 NotFound ——
-        // 否则前端 MCP/面板调用会得到「Command not supported via HTTP」这种
-        // 与浏览器无关的误导性信息。
-        //
-        // 例外：browser_check_embed 是 iframe 降级模式的轻量预检（HEAD 探测
-        // X-Frame-Options / frame-ancestors），不需要 Tauri AppHandle，web 模式可用。
-        "browser_check_embed" => dispatch_browser_check_embed(&args).await,
+        // ── Built-in Browser（已退役）────────────────────────────────────
+        // 内置浏览器已出仓为 browser-desk 插件（CDP 驱动系统 Chrome，独立进程），
+        // 主仓不再有 browser_* 命令。落到此分支的调用显式给出域相关提示，
+        // 而不是下方 NotFound 的「Command not supported via HTTP」误导信息。
         cmd if cmd.starts_with("browser_") => Err(WebError::BadRequest(
-            "内置浏览器需要桌面 Tauri 运行时（tauri-app feature），web 模式不可用".into(),
+            "内置浏览器已迁移为 browser-desk 插件：请安装并启用该插件，经其面板/MCP 工具使用".into(),
         )),
 
         // ── Unsupported ────────────────────────────────────────────────────
@@ -445,114 +439,6 @@ fn to_json<T: serde::Serialize>(value: T) -> Result<Json<Value>, WebError> {
 
 fn bad_request(e: crate::error::AppError) -> WebError {
     WebError::BadRequest(e.to_message())
-}
-
-/// iframe 降级模式的嵌入性预检：HEAD/GET 目标 URL，解析 X-Frame-Options 与
-/// CSP frame-ancestors，判断该站点是否允许被第三方 iframe 嵌入。
-///
-/// 背景：web 模式内置浏览器用 `<iframe>` 渲染页面；Bing/Google/GitHub/MDN
-/// 等站点通过 X-Frame-Options / frame-ancestors 拒绝嵌入，导致 iframe 白屏
-/// 且不触发 onLoad。前端导航前调用本命令可提前给出明确提示。
-async fn dispatch_browser_check_embed(args: &Value) -> Result<Json<Value>, WebError> {
-    let url = require_string(args, "url")?;
-    // 仅允许 http/https，避免 SSRF 打到内网协议
-    let parsed = url.parse::<reqwest::Url>().map_err(|_| {
-        WebError::BadRequest(format!("无效的 URL: {}", url))
-    })?;
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return Ok(Json(serde_json::json!({
-            "embeddable": false,
-            "reason": "unsupported_scheme",
-            "finalUrl": url,
-        })));
-    }
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        // 用真实浏览器 UA，尽量拿到与浏览器一致的最终响应（302 → cn.bing.com 等）
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36".to_string())
-        .build()
-        .map_err(|e| WebError::Internal(format!("创建 HTTP 客户端失败: {}", e)))?;
-
-    let resp = match client.get(parsed.clone()).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            // 网络失败不判定为"禁止嵌入"（可能是内网地址/离线），返回未知
-            return Ok(Json(serde_json::json!({
-                "embeddable": true,
-                "reason": format!("probe_failed: {}", e),
-                "finalUrl": url,
-            })));
-        }
-    };
-
-    let final_url = resp.url().to_string();
-    let headers = resp.headers();
-
-    // 1) X-Frame-Options: DENY / SAMEORIGIN
-    let xfo = headers
-        .get("x-frame-options")
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.to_ascii_lowercase());
-    if let Some(v) = &xfo {
-        if v.contains("deny") || v.contains("sameorigin") {
-            return Ok(Json(serde_json::json!({
-                "embeddable": false,
-                "reason": "x_frame_options",
-                "detail": v,
-                "finalUrl": final_url,
-            })));
-        }
-    }
-
-    // 2) CSP frame-ancestors（多个 CSP 头都要检查）
-    let csp_headers = headers.get_all("content-security-policy");
-    for csp in csp_headers.iter() {
-        if let Ok(csp_str) = csp.to_str() {
-            for directive in csp_str.split(';') {
-                let d = directive.trim();
-                if !d.to_ascii_lowercase().starts_with("frame-ancestors") {
-                    continue;
-                }
-                let value = d.split_whitespace().skip(1).collect::<Vec<_>>();
-                if value.is_empty() {
-                    // frame-ancestors 无值 = 不允许任何来源
-                    return Ok(Json(serde_json::json!({
-                        "embeddable": false,
-                        "reason": "csp_frame_ancestors",
-                        "detail": d.to_string(),
-                        "finalUrl": final_url,
-                    })));
-                }
-                if value.iter().any(|v| {
-                    v.eq_ignore_ascii_case("'none'")
-                }) {
-                    return Ok(Json(serde_json::json!({
-                        "embeddable": false,
-                        "reason": "csp_frame_ancestors",
-                        "detail": d.to_string(),
-                        "finalUrl": final_url,
-                    })));
-                }
-                // 仅 self 或明确白名单域名：self 对其他站点等于禁止嵌入
-                if value.iter().any(|v| v.eq_ignore_ascii_case("'self'")) {
-                    return Ok(Json(serde_json::json!({
-                        "embeddable": false,
-                        "reason": "csp_frame_ancestors_self",
-                        "detail": d.to_string(),
-                        "finalUrl": final_url,
-                    })));
-                }
-            }
-        }
-    }
-
-    Ok(Json(serde_json::json!({
-        "embeddable": true,
-        "reason": "ok",
-        "finalUrl": final_url,
-    })))
 }
 
 fn dispatch_report_dispatch_status(

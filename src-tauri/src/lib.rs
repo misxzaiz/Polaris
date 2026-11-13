@@ -700,8 +700,6 @@ pub fn run() {
                 }
             }
 
-            commands::browser::set_browser_app_handle(app.handle().clone());
-
             // ── cap.app.autolaunch 装配（开机自启，plans/autostart-boot-launch-spec.md）──
             // OS 后端注入 + 注册总线，并 spawn 一次启动对账：意图=Config.autoLaunch，
             // 事实=OS 启动项；升级/挪目录后 Run 键路径漂移经 ensure(current_exe) 自愈。
@@ -1047,39 +1045,7 @@ pub fn run() {
             set_always_on_top,
             is_always_on_top,
             notify_session_complete,
-            commands::browser::browser_create,
-            commands::browser::browser_clear_orphaned_sessions,
-            commands::browser::browser_set_bounds,
-            commands::browser::browser_set_ai_overlay,
-            commands::browser::browser_close,
-            commands::browser::browser_clear_data,
-            commands::browser::browser_register,
-            commands::browser::browser_unregister,
-            commands::browser::browser_list_sessions,
-            commands::browser::browser_acquire,
-            commands::browser::browser_acquire_complete,
-            commands::browser::browser_navigate,
-            commands::browser::browser_reload,
-            commands::browser::browser_history,
-            commands::browser::browser_get_page_context,
-            commands::browser::browser_get_diagnostics,
-            commands::browser::browser_set_marquee,
-            commands::browser::browser_get_marquee_result,
-            commands::browser::browser_select_region,
-            commands::browser::browser_get_region_screenshot,
-            commands::browser::browser_toggle_devtools,
-            commands::browser::browser_get_history_state,
-            commands::browser::browser_show_overflow_menu,
-            commands::browser::browser_find,
-            commands::browser::browser_find_next,
-            commands::browser::browser_zoom,
-            commands::browser::browser_get_network_info,
-            commands::browser::browser_network_requests,
-            commands::browser::browser_storage_get,
-            commands::browser::browser_storage_set,
-            commands::browser::browser_storage_clear,
-            commands::browser::browser_assert,
-            commands::browser::browser_status,
+            // 浏览器命令已整体退役（browser-desk 插件承接，AI 走插件 MCP desk_* 工具面）
             // 上下文管理相关
             // Git 相关 —— 已摘除（git 面板 vNext PR-2b）：git_* 全域走 cap.git 总线，
             // 见 services/router/git_capability.rs；仅存的非 git 文件 IO 命令迁至

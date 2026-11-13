@@ -10,11 +10,9 @@ use crate::services::plugin_state_service::PluginStateService;
 const MCP_CONFIG_RELATIVE_PATH: &str = ".polaris/claude/mcp.json";
 const MCP_BIN_NAME: &str = "polaris-mcp";
 const ASK_MCP_SERVER_NAME: &str = "polaris-ask";
-const BROWSER_MCP_SERVER_NAME: &str = "polaris-browser";
 const BUS_MCP_SERVER_NAME: &str = "polaris-bus";
 const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
 const ASK_PLUGIN_ID: &str = "polaris.ask";
-const BROWSER_PLUGIN_ID: &str = "polaris.browser";
 const BUS_PLUGIN_ID: &str = "polaris.bus";
 const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
 
@@ -132,15 +130,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             ASK_MCP_SERVER_NAME,
             "POLARIS_ASK_MCP_PATH",
-            McpServerArgsMode::AskListener,
-            false,
-        ),
-    );
-    registry.register_plugin_server(
-        BROWSER_PLUGIN_ID,
-        PluginMcpServerContribution::builtin(
-            BROWSER_MCP_SERVER_NAME,
-            "POLARIS_BROWSER_MCP_PATH",
             McpServerArgsMode::AskListener,
             false,
         ),
@@ -453,7 +442,7 @@ impl WorkspaceMcpConfigService {
     ) -> Vec<ResolvedExternalMcpServer> {
         let mut servers: Vec<ResolvedExternalMcpServer> = Vec::new();
 
-        // 内置 MCP（ask/browser/bus）
+        // 内置 MCP（ask/bus）
         for binary in &self.binaries {
             if is_server_disabled(disabled_server_names, &binary.server_name) {
                 tracing::info!("[MCP] SimpleAI 跳过已禁用内置 MCP: {}", binary.server_name);
@@ -801,14 +790,16 @@ fn is_server_disabled(disabled_server_names: &[String], server_name: &str) -> bo
 /// 解析时用插件声明的 mcpServerId 对应的 server 替换这里列出的内置 server。
 ///
 /// 两类 capability：
-/// - **内置 MCP server 能力**（computer/browser/ask/...）：替换已有同名内置 server
+/// - **内置 MCP server 能力**（computer/ask/...）：替换已有同名内置 server
 /// - **硬编码工具能力**（shell/filesystem/plan/skill/subagent）：注入"虚拟 server"
 ///   （polaris-bash 等），因为内置没有同名 MCP server，ToolRegistry 在 dispatch
 ///   时检查这些虚拟 server 名，优先路由到插件的 MCP server 而非硬编码实现。
+///
+/// browser capability 已退役：内置浏览器出仓为 browser-desk 插件（自带 stdio MCP），
+/// 插件声明 capability: "browser" 时走通用插件 server 替换语义，无内置可替换。
 fn capability_to_builtin_servers(capability: &str) -> Vec<&'static str> {
     match capability {
         // 内置 MCP server 能力
-        "browser" => vec![BROWSER_MCP_SERVER_NAME],
         "ask" => vec![ASK_MCP_SERVER_NAME],
         // 硬编码工具能力（虚拟 server，无内置同名 MCP server）
         "shell" => vec![BUILTIN_BASH_MCP_SERVER_NAME],

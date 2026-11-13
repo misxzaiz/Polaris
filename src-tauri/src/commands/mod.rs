@@ -3,8 +3,9 @@ pub mod workspace;
 pub mod file_explorer;
 pub mod file_clipboard;
 pub mod window;
-pub mod browser;
-pub mod browser_scripts;
+// 浏览器域已整体出仓（2026-11-14，方案 D）：commands/browser.rs、browser_scripts.rs、
+// services/browser_mcp_server.rs、simple_ai tools/browser.rs 全部删除，浏览器能力
+// 移入 browser-desk 插件（CDP 驱动系统 Chrome）。cap/命令层零残留。
 // Git 域已整体出仓（2026-11-12，架构方案 C）：commands/git.rs、services/git/、
 // cap.git、models/git.rs 全部删除，Git 引擎移入 polaris-git 插件 service。仅存的
 // write_file_absolute / read_file_absolute / test_param_serialization（无 git

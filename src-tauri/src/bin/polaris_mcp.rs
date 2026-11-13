@@ -12,14 +12,14 @@
 //! ## Bridge MCP server（通过 TCP 连接主进程）
 //! ```shell
 //! polaris-mcp ask --polaris-port <PORT> --polaris-token <TOKEN> [--polaris-session <ID>]
-//! polaris-mcp browser --polaris-port <PORT> --polaris-token <TOKEN> [--polaris-session <ID>]
 //! ```
+//!
+//! browser 子命令已随内置浏览器退役（browser-desk 插件自带 stdio MCP）。
 
 use std::path::PathBuf;
 
 use polaris_lib::services::{
     ask_mcp_server::{run_ask_mcp_server, AskMcpConfig},
-    browser_mcp_server::{run_browser_mcp_server, BrowserMcpConfig},
 };
 use polaris_lib::{AppError, Result};
 
@@ -38,7 +38,7 @@ fn main_impl() -> Result<()> {
     let subcommand = args.get(1).ok_or_else(|| {
         AppError::ValidationError(
             "缺少子命令。用法：polaris-mcp <subcommand> [args...]\n\
-             可用子命令：bus, ask, browser"
+             可用子命令：bus, ask"
                 .to_string(),
         )
     })?;
@@ -64,16 +64,8 @@ fn main_impl() -> Result<()> {
             let cfg = parse_ask_listener_args(sub_args, "ask")?;
             run_ask_mcp_server(cfg)
         }
-        "browser" => {
-            let cfg = parse_ask_listener_args(sub_args, "browser")?;
-            run_browser_mcp_server(BrowserMcpConfig {
-                port: cfg.port,
-                token: cfg.token,
-                session_id: cfg.session_id,
-            })
-        }
         other => Err(AppError::ValidationError(format!(
-            "未知子命令：{other}。可用子命令：bus, ask, browser"
+            "未知子命令：{other}。可用子命令：bus, ask"
         ))),
     }
 }
@@ -158,7 +150,7 @@ fn parse_ask_listener_args(args: &[String], subcommand: &str) -> Result<AskMcpCo
     let port = port.ok_or_else(|| AppError::ValidationError("缺少 --polaris-port".into()))?;
     let token = token.ok_or_else(|| AppError::ValidationError("缺少 --polaris-token".into()))?;
 
-    // 复用 AskMcpConfig（字段名相同，传给 browser 也 OK）
+    // 复用 AskMcpConfig（ask 桥参数语义）
     Ok(AskMcpConfig {
         port,
         token,

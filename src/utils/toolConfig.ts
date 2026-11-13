@@ -120,7 +120,6 @@ const TOOL_SHORT_NAMES: Record<string, string> = {
   'update_plan': 'P',
   'read_skill': 'K',
   'dispatch_agent': 'A',
-  'browser': 'W',
   'computer': 'C',
 };
 
@@ -272,7 +271,6 @@ const NAME_WORD_ZH: Record<string, string> = {
   marketplace: '商城',
   'marketplace-server': '商城',
   'polaris-bus': '总线',
-  'polaris-browser': '浏览器',
   'chrome-devtools': '浏览器',
   'polaris-ask': '询问',
   'mimo-tts': '语音',
@@ -459,7 +457,6 @@ const TOOL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
   'update_plan': ListChecks,
   'read_skill': Layers,
   'dispatch_agent': Cpu,
-  'browser': Globe2,
   'computer': Cpu,
   'default': Wrench,
 };
@@ -620,7 +617,6 @@ const TOOL_CATEGORY: Record<string, ToolCategory> = {
   'update_plan': 'manage',
   'read_skill': 'agent',
   'dispatch_agent': 'agent',
-  'browser': 'network',
   'computer': 'execute',
 };
 
@@ -694,7 +690,6 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   'update_plan': 'labels.updatePlan',
   'read_skill': 'labels.skill',
   'dispatch_agent': 'labels.agent',
-  'browser': 'labels.browser',
   'computer': 'labels.computer',
 };
 

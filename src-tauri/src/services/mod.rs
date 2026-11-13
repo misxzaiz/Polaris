@@ -26,7 +26,6 @@ pub mod storage;
 pub mod ask_listener_meta;
 pub mod ask_mcp_server;
 pub mod ask_listener;
-pub mod browser_mcp_server;
 pub mod bus_mcp_server;
 pub mod nexus_verdict;
 pub mod nexus_pipeline;

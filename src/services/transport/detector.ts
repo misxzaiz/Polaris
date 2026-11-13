@@ -19,9 +19,8 @@ function isMobilePlatform(): boolean {
 /**
  * 检测当前是否运行在 Polaris 内置浏览器的动态 webview 中。
  *
- * 内置浏览器（BrowserPanel）由 Rust 后端用 `browser_acquire` 创建动态 webview，
- * label 恒为 `browser-<tabId>`（见 src/services/tauri/browserService.ts
- * makeBrowserWebviewLabel）。该 webview 里加载的可能是任意远程页面，
+ * 内置浏览器（BrowserPanel，已退役）曾由 Rust 后端用 `browser_acquire` 创建动态 webview，
+ * label 恒为 `browser-<tabId>`。该 webview 里加载的可能是任意远程页面，
  * 主旨等同"普通浏览器"——不应暴露 Tauri IPC 能力，应走 HTTP 传输。
  * 主窗口 webview label 固定为 "main"（tauri.conf.json 主窗口配置）。
  *

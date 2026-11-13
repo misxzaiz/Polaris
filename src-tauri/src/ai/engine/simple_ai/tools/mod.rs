@@ -11,8 +11,6 @@
 mod apply_patch;
 mod agent;
 mod bash;
-#[cfg(feature = "tauri-app")]
-mod browser;
 #[cfg(windows)]
 mod computer;
 mod file_state;
@@ -34,8 +32,6 @@ use agent::DispatchAgentTool;
 use apply_patch::ApplyPatchTool;
 pub(crate) use bash::detect_shell;
 use bash::BashTool;
-#[cfg(feature = "tauri-app")]
-use browser::BrowserTool;
 pub(crate) use file_state::FileStateRegistry;
 use fs::{EditFileTool, ListDirectoryTool, ReadFileTool, WriteFileTool};
 use plan::UpdatePlanTool;
@@ -154,9 +150,7 @@ impl ToolRegistry {
             Box::new(ReadSkillTool),
             Box::new(DispatchAgentTool),
         ];
-        // 内置浏览器工具仅桌面 Tauri 运行时可用：它依赖 AppHandle 控制当前打开的 WebView。
-        #[cfg(feature = "tauri-app")]
-        tools.push(Box::new(BrowserTool));
+        // 浏览器工具已随内置浏览器退役（browser-desk 插件承接，AI 走其 MCP desk_* 工具面）。
         // 电脑操作工具（截图/输入/控件树）。仅在 Windows 编入（依赖 Windows UI Automation 等平台能力），
         // 故 Windows 主程序内的 SimpleAI 默认可用；其它平台不提供。
         #[cfg(windows)]
@@ -389,12 +383,11 @@ mod tests {
         ] {
             assert!(names.contains(&expected), "missing tool: {}", expected);
         }
-        #[cfg(feature = "tauri-app")]
-        assert!(names.contains(&"browser"));
+        // 浏览器工具已退役（browser-desk 插件承接），tauri-app 下不再有额外工具。
         // Windows 上额外注册 1 个 computer 工具（电脑操作）。
         #[cfg(all(windows, feature = "tauri-app"))]
         {
-            assert_eq!(specs.len(), 13);
+            assert_eq!(specs.len(), 12);
             assert!(names.contains(&"computer"));
         }
         #[cfg(all(windows, not(feature = "tauri-app")))]
@@ -403,7 +396,7 @@ mod tests {
             assert!(names.contains(&"computer"));
         }
         #[cfg(all(not(windows), feature = "tauri-app"))]
-        assert_eq!(specs.len(), 12);
+        assert_eq!(specs.len(), 11);
         #[cfg(all(not(windows), not(feature = "tauri-app")))]
         assert_eq!(specs.len(), 11);
 

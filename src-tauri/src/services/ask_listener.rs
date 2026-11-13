@@ -14,7 +14,7 @@
 //! ## 端口稳定性（MCP Bridge 自愈）
 //!
 //! 历史上用 `bind("127.0.0.1:0")`（端口 0 = 系统随机），每次主进程重启都会拿到
-//! 新端口，而 mcp.json 固化旧端口 → Bridge MCP（dispatch/ask/browser）失联。
+//! 新端口，而 mcp.json 固化旧端口 → Bridge MCP（dispatch/ask）失联。
 //! 现改为**固定端口池**：优先尝试 `[ASK_LISTENER_PORT_POOL]` 中空闲的端口，
 //! 全部占用才回落随机。绑定成功后把真实 port/token/pid **原子落盘**
 //! （`data_root().meta_dir()/ask-listener.json`），Bridge 侧连接被拒时读此文件自愈重连。
@@ -288,11 +288,10 @@ async fn handle_connection(
         "ask" => handle_ask_frame(&mut stream, frame, state, &expected_token).await,
         "form" => handle_form_frame(&mut stream, frame, state, &expected_token).await,
         "card" => handle_card_frame(&mut stream, frame, state, &expected_token).await,
-        #[cfg(feature = "tauri-app")]
-        "browser" => handle_browser_frame(&mut stream, frame, &expected_token).await,
-        #[cfg(not(feature = "tauri-app"))]
+        // browser 帧已退役：内置浏览器出仓为 browser-desk 插件，AI 经插件 MCP
+        // （desk_* 工具面，stdio 直连插件 server）交互，不再经 AskListener 中转。
         "browser" => Err(AppError::ValidationError(
-            "browser 帧需要 tauri-app 功能".into(),
+            "browser 帧已退役：浏览器能力由 browser-desk 插件 MCP 提供".into(),
         )),
         "cancel" => {
             // Cancel frames arrive when the CLI sends notifications/cancelled
@@ -1227,50 +1226,6 @@ fn emit_dispatch_event(state: &AppState, event_name: &str, payload: &Value) {
     if let Ok(msg) = serde_json::to_string(&ws_msg) {
         let _ = state.event_broadcast.send(msg);
     }
-}
-
-#[cfg(feature = "tauri-app")]
-async fn handle_browser_frame(
-    stream: &mut TcpStream,
-    frame: Value,
-    expected_token: &str,
-) -> Result<()> {
-    let token = frame
-        .get("token")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    if token != expected_token {
-        return Err(AppError::ValidationError(
-            "ask_listener token 不匹配".into(),
-        ));
-    }
-
-    let outcome = match dispatch_browser_frame(frame).await {
-        Ok(result) => json!({
-            "type": "browser_result",
-            "ok": true,
-            "result": result,
-        }),
-        Err(error) => json!({
-            "type": "browser_result",
-            "ok": false,
-            "error": error.to_message(),
-        }),
-    };
-
-    write_frame(stream, &outcome).await?;
-    let _ = stream.shutdown().await;
-    Ok(())
-}
-
-#[cfg(feature = "tauri-app")]
-async fn dispatch_browser_frame(frame: Value) -> Result<Value> {
-    // Phase 3: 收敛到 BrowserActionDispatcher (ADR 0004 P0 #2)
-    use crate::commands::browser::{BrowserActionDispatcher, BrowserActionSource};
-    let dispatcher = BrowserActionDispatcher::from_app_handle()?;
-    dispatcher
-        .dispatch(&frame, BrowserActionSource::Mcp)
-        .await
 }
 
 fn handle_cancel_frame(frame: Value, state: Arc<AppState>, expected_token: &str) {
