@@ -13,12 +13,19 @@ import { invoke, listen } from '@/services/transport';
 import { createHostWorkspaceApi } from '@/plugin-system/hostWorkspaceApi';
 import { createHostThemeApi } from '@/plugin-system/themeHostApi';
 import { createHostSessionApi } from '@/plugin-system/sessionHostApi';
+import { createChatCardsApi } from '@/plugin-system/chatCardsHostApi';
+import { currentPluginContext } from '@/plugin-system/pluginContext';
+import { pluginRegistry, chatCardRegistry } from '@/plugin-system';
 import { eventBus } from '@/services/eventBus';
 import { initPluginToolUsageObserver } from '@/services/pluginToolUsageObserver';
 
 // 暴露宿主 React 给外部插件面板使用
 ;(window as any).__POLARIS_HOST_REACT__ = React;
 ;(window as any).__POLARIS_HOST_REACT_JSX__ = ReactJSXRuntime;
+// react-dom shim（ai-chat-plugin-extraction-spec P1.4）：Chat 域插件（chat-desk）
+// 面板含 createPortal（NewSessionPanel/MarkdownImageViewer 等），宿主 bundle
+// 已含 react-dom，导出同一实例避免插件内嵌第二份 React 副本。
+;(window as unknown as { __POLARIS_HOST_REACT_DOM__: typeof ReactDOM }).__POLARIS_HOST_REACT_DOM__ = ReactDOM;
 
 // ============================================================================
 // 批 7（审计 1.9）：宿主桥白名单包装。
@@ -60,11 +67,24 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
 ) => {
   return listen<{ contextId?: string }>(event, (envelope) => {
     if (event === 'chat-event') {
-      // 插件可见面（plans/session-history-plugin-prd.md P0）：
-      // 1. mc- 前缀信封（插件会话命名空间，MultiChat）——既有；
-      // 2. 会话生命周期事件 session_start/session_end（低敏元数据：
-      //    sessionId/engineId/reason）——history-desk 面板据此做自动刷新与
-      //    「其他设备进行中」增量；正文（token/thinking/工具流）不透传。
+      // chat-event 订阅授权（ai-chat-plugin-extraction-spec P1.3）：
+      // 按调用方插件 manifest permissions.chatEvents 裁决——
+      // - full：全量透传（chat-desk 对话域插件；正文 token/thinking/工具流可见）；
+      // - lifecycle（缺省，现状行为）：mc- 前缀命名空间（MultiChat）+
+      //   session_start/session_end 低敏元数据（history-desk 自动刷新）；
+      // - none：不透传。
+      // 插件上下文由面板 loader 同步 import 期间标记（pluginContext 栈）；
+      // 无上下文（非插件脚本）按 lifecycle 兜底——正文永不泄露给未知调用方。
+      const pluginId = currentPluginContext();
+      const chatEvents = pluginId
+        ? (pluginRegistry.getPlugin(pluginId)?.permissions?.chatEvents ?? 'lifecycle')
+        : 'lifecycle';
+      if (chatEvents === 'none') return;
+      if (chatEvents === 'full') {
+        handler(envelope);
+        return;
+      }
+      // lifecycle 过滤（既有语义，plans/session-history-plugin-prd.md P0）
       const type = (envelope as { payload?: { payload?: { type?: string } } })
         ?.payload?.payload?.type;
       if (typeof envelope?.contextId === 'string' && envelope.contextId.startsWith('mc-')) {
@@ -98,6 +118,13 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
 // （window 全局桥是本文件的既定模式，逐点豁免而非全局关闭规则）。
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ;(window as any).__POLARIS_SESSION_API__ = createHostSessionApi();
+// 聊天卡片只读桥（ai-chat-plugin-extraction-spec P1.6）：chat-desk 插件渲染
+// plugin_card 块时查宿主 chatCardRegistry（他插件注册的卡片渲染器）。
+// 只读（match/resolve/listKeys），不含 loader 与注册入口；卡片组件加载仍走
+// 各自插件的模块通道。模型目录/引擎元数据走既有 cap.config / engine metadata，
+// 不设新桥（spec §5.6）。
+;(window as unknown as { __POLARIS_CHAT_CARDS_API__: ReturnType<typeof createChatCardsApi> })
+  .__POLARIS_CHAT_CARDS_API__ = createChatCardsApi(chatCardRegistry);
 
 // 暴露当前工作区路径给外部插件面板（wheel：监听 workspace-changed 事件，
 // 初始取 localStorage 兜底。外部插件如 polaris-git 可据此自动初始化。）

@@ -190,6 +190,10 @@ pub struct PluginManifestContributes {
     /// 插件声明的样式贡献（CSS 注入）
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub styles: Vec<PluginStyleManifestContribution>,
+    /// 插件 hook 订阅声明（P1.5，ai-chat-plugin-extraction-spec）：启用时经
+    /// cap.hook.register 绑定回调 cap，禁用/卸载时注销。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hooks: Vec<PluginHookManifestContribution>,
     /// 插件配置项 schema（参照 VSCode contributes.configuration）
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config_schema: Vec<PluginConfigFieldSchemaManifest>,
@@ -306,6 +310,16 @@ pub struct PluginSkillManifestContribution {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+/// 插件 hook 订阅声明（P1.5，ai-chat-plugin-extraction-spec）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginHookManifestContribution {
+    /// hook 点 id（ai.session.start/end、ai.tool.before/after 等）
+    pub id: String,
+    /// 回调目标 cap id（插件经 contributes.capabilities 注册的 cap.*）
+    pub cap_id: String,
 }
 
 /// 插件提供的 cap 声明（P2-d）。handler 以 JSON 承载（与 cap.registry 的
@@ -640,6 +654,14 @@ pub struct PluginManifestPermissions {
     pub network: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ai_tool_access: Option<bool>,
+    /// chat-event 订阅授权（ai-chat-plugin-extraction-spec P1.3）：
+    /// - `full`：全量透传（正文 token/thinking/工具流可见；chat-desk 对话域插件用，
+    ///   审计链对 full 授权打标——对话正文对插件可见属高权限）；
+    /// - `lifecycle`（缺省）：仅 mc- 前缀命名空间 + session_start/session_end
+    ///   低敏元数据（现状行为，正文不透传）；
+    /// - `none`：完全不透传 chat-event。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat_events: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
