@@ -2,7 +2,12 @@ import type { ComponentType } from 'react'
 
 export type PluginId = string
 
-export type PluginViewArea = 'activityBar'
+/**
+ * views[].area 值域（schema.ts VALID_VIEW_AREAS 镜像）：
+ * - `activityBar`：左侧活动栏面板席位；
+ * - `mainSurface`：主内容区席位（chat-desk 对话域接管，spec P1.2）。
+ */
+export type PluginViewArea = 'activityBar' | 'mainSurface'
 
 export type PluginIconId =
   | 'Files'
@@ -368,6 +373,28 @@ export interface PluginPermissionDeclaration {
   appConfigWrite?: boolean
   network?: boolean
   aiToolAccess?: boolean
+  /**
+   * chat-event 订阅授权（ai-chat-plugin-extraction-spec P1.3）：
+   * - `full`：全量透传（正文 token/thinking/工具流可见；chat-desk 用，审计打标）；
+   * - `lifecycle`（缺省）：仅 mc- 前缀命名空间 + session_start/end 元数据（现状）；
+   * - `none`：不透传。
+   */
+  chatEvents?: 'full' | 'lifecycle' | 'none'
+}
+
+/**
+ * 插件 hook 订阅声明（ai-chat-plugin-extraction-spec P1.5；后端 HookSystem +
+ * cap.hook 已就绪，本字段补前端声明面）。
+ *
+ * 插件声明 `contributes.hooks: [{ id, capId }]` 后，宿主在插件启用时经
+ * `cap.hook.register` 绑定回调 cap；hook 派发时后端经 RouterBus 调该 cap
+ * （复用权限 gate + 审计）。v1 全部 observe-only（回调返回值被忽略）。
+ */
+export interface PluginHookContribution {
+  /** hook 点 id（如 ai.session.start / ai.session.end / ai.tool.before / ai.tool.after） */
+  id: string
+  /** 回调目标 cap id（插件经 contributes.capabilities 注册的 cap.* ） */
+  capId: string
 }
 
 /**
@@ -447,6 +474,11 @@ export interface PolarisPluginManifest {
     capabilities?: PluginCapabilityContribution[]
     /** 插件提供的 skill（P4）：<pluginDir>/skills/<id>/SKILL.md，同步到 DataRoot */
     skills?: PluginSkillContribution[]
+    /**
+     * hook 订阅声明（P1.5，ai-chat-plugin-extraction-spec）：插件启用时经
+     * cap.hook.register 绑定回调 cap；插件禁用/卸载时注销。
+     */
+    hooks?: PluginHookContribution[]
     styles?: PluginStyleContribution[]
     /**
      * 第三方 UI 模板注册（spec [R-12..R-15]）：id 以插件 id 为命名空间；

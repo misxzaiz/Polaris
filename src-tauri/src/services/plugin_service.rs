@@ -58,6 +58,12 @@ const VALID_PLUGIN_ICONS: &[&str] = &[
 ];
 const VALID_TRANSPORTS: &[&str] = &["stdio", "http"];
 
+/// views[].area 值域（与前端 `plugin-system/schema.ts VALID_VIEW_AREAS` 镜像，
+/// 双侧 diff 测试守护）。`mainSurface` 为对话域插件化（chat-desk）新增的主
+/// 面板席位（plans/ai-chat-plugin-extraction-spec.md P1.2）：App.tsx 主内容区
+/// shadow 接管，区别于左侧活动栏 activityBar。
+const VALID_VIEW_AREAS: &[&str] = &["activityBar", "mainSurface"];
+
 /// 浮层覆盖插槽白名单（contributes.overlays[].slot；与前端
 /// `plugin-system/schema.ts VALID_OVERLAY_SLOTS` 镜像，双侧 diff 测试守护）。
 /// 新增插槽须同步：本常量 + 前端常量 + App.tsx 消费点。
@@ -1974,6 +1980,16 @@ impl PluginService {
         if manifest.id.trim().is_empty() {
             errors.push("id is required and must be a non-empty string".to_string());
         }
+        // chat-event 订阅授权值域（ai-chat-plugin-extraction-spec P1.3）：
+        // full | lifecycle | none；缺省 lifecycle（现状过滤行为）。
+        if let Some(chat_events) = &manifest.permissions.chat_events {
+            if !matches!(chat_events.as_str(), "full" | "lifecycle" | "none") {
+                errors.push(format!(
+                    "permissions.chatEvents has unsupported value: {} (supported: full | lifecycle | none)",
+                    chat_events
+                ));
+            }
+        }
         if manifest.name.trim().is_empty() {
             errors.push("name is required and must be a non-empty string".to_string());
         }
@@ -1986,8 +2002,13 @@ impl PluginService {
             if view.id.trim().is_empty() {
                 errors.push(format!("{}.id is required", prefix));
             }
-            if view.area != "activityBar" {
-                errors.push(format!("{}.area has unsupported value: {}", prefix, view.area));
+            if !VALID_VIEW_AREAS.contains(&view.area.as_str()) {
+                errors.push(format!(
+                    "{}.area has unsupported value: {} (supported: {})",
+                    prefix,
+                    view.area,
+                    VALID_VIEW_AREAS.join(" | ")
+                ));
             }
             if view.panel_type.trim().is_empty() {
                 errors.push(format!("{}.panelType is required", prefix));
@@ -2281,6 +2302,67 @@ mod tests {
         assert!(PluginService::validate_manifest_fields(&empty_entry)
             .iter()
             .any(|e| e.contains("contributes.panel.entry is required")));
+    }
+
+    #[test]
+    fn view_area_whitelist_accepts_main_surface() {
+        // ai-chat-plugin-extraction-spec P1.2：mainSurface 席位（chat-desk 对话域
+        // 接管）必须通过安装期校验；未知 area 仍拒绝。
+        let main_surface: PluginManifestFile = serde_json::from_str(
+            r#"{
+              "id": "example.chat",
+              "name": "Chat",
+              "version": "1.0.0",
+              "contributes": {
+                "views": [
+                  { "id": "example.chat.main", "area": "mainSurface", "panelType": "chat-desk",
+                    "icon": "Bot", "labelKey": "plugins.chat-desk", "labelDefault": "AI 对话",
+                    "order": 10, "slot": "chat.main", "slotMode": "shadow" }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        assert!(PluginService::validate_manifest_fields(&main_surface).is_empty());
+
+        let activity_bar: PluginManifestFile = serde_json::from_str(
+            r#"{
+              "id": "example.side",
+              "name": "Side",
+              "version": "1.0.0",
+              "contributes": {
+                "views": [
+                  { "id": "example.side.panel", "area": "activityBar", "panelType": "side",
+                    "icon": "Bot", "labelKey": "side:title", "order": 100 }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        assert!(PluginService::validate_manifest_fields(&activity_bar).is_empty());
+
+        let unknown_area: PluginManifestFile = serde_json::from_str(
+            r#"{
+              "id": "example.bad",
+              "name": "Bad",
+              "version": "1.0.0",
+              "contributes": {
+                "views": [
+                  { "id": "example.bad.panel", "area": "sidebar", "panelType": "bad",
+                    "icon": "Bot", "labelKey": "bad:title", "order": 100 }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let errors = PluginService::validate_manifest_fields(&unknown_area);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("contributes.views[0].area has unsupported value")),
+            "{:?}",
+            errors
+        );
     }
 
     #[test]

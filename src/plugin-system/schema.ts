@@ -13,7 +13,15 @@
  */
 import { z } from 'zod'
 
-export const VALID_VIEW_AREAS = ['activityBar'] as const
+/**
+ * views[].area 值域（与 Rust `plugin_service::VALID_VIEW_AREAS` 镜像，双侧 diff
+ * 测试守护）。
+ * - `activityBar`：左侧活动栏面板席位（既有）；
+ * - `mainSurface`：主内容区席位（chat-desk 对话域插件化新增，
+ *   plans/ai-chat-plugin-extraction-spec.md P1.2）——App.tsx 主内容区 shadow
+ *   接管，插件声明 `slot: 'chat.main'` + `slotMode: 'shadow'`。
+ */
+export const VALID_VIEW_AREAS = ['activityBar', 'mainSurface'] as const
 /**
  * 浮层覆盖插槽白名单（contributes.overlays[].slot；与 Rust
  * `plugin_service::OVERLAY_SLOTS` 镜像，双侧 diff 测试守护）。

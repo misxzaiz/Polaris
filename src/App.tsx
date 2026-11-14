@@ -31,6 +31,12 @@ const NarrowTabOverlayLazy = lazy(() => import('./components/Editor/NarrowTabOve
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { RightSlideOver } from './components/Common/RightSlideOver';
 import { PluginSlotPlaceholder } from './components/PluginSlotPlaceholder';
+// 主面板席位接管（ai-chat-plugin-extraction-spec P1.2）：chat 域插件化后，
+// mainSurface 席位命中已启用插件时 RightPanel 内容改由 PluginPanelHost 承载；
+// 未命中渲染 ChatMainSlot 空态引导卡。PluginPanelHost 懒加载（非 mainSurface
+// 用户不为其付出 bundle 成本）。
+const PluginPanelHostLazy = lazy(() => import('./components/Plugins/PluginPanelHost').then(m => ({ default: m.PluginPanelHost })));
+const ChatMainSlot = lazy(() => import('./components/Layout/ChatMainSlot').then(m => ({ default: m.ChatMainSlot })));
 
 // 懒加载大型组件，减少初始 bundle 大小
 const SettingsPage = lazy(() => import('./components/Settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -232,6 +238,10 @@ function App() {
   }, [workspaces, currentWorkspace]);
 
   // === 面板显示状态 ===
+  // 主面板内置 Chat 是否已拆除（ai-chat-plugin-extraction-spec P6）：构建期开关，
+  // P2-P5 灰度期保持 false（接管失败回内置）；P6 删码 commit 翻 true 并随删码
+  // 同步移除本开关（届时 ChatMainSlot 成为唯一兜底）。
+  const chatHostRemoved = import.meta.env.VITE_CHAT_HOST_REMOVED === '1';
   const activeLeftPanelContribution = pluginRegistry
     .listViewContributions('activityBar')
     .find(view => view.panelType === leftPanelType);
@@ -384,26 +394,51 @@ function App() {
                 避免折叠/展开时多窗口消息组件卸载重建导致闪白+位置丢失 */}
             {(isCompact || !terminalFullscreen) && (
               <RightPanel fillRemaining={rightPanelFillRemaining} forceShow={isCompact}>
-                {error && <ErrorBanner error={error} />}
-
-                <MultiSessionGridLazy onEditMessage={handleEditMessage} />
-
-                <ChatInput
-                  onSend={sendMessage}
-                  onInterrupt={interruptChat}
-                  disabled={!currentWorkspace && !activeSessionIsFree}
-                  isStreaming={isStreaming}
-                  editMode={editMode}
-                  onCancelEdit={handleCancelEdit}
-                  onEditSend={handleEditSend}
-                  statusBarSlot={
-                    <ChatStatusBar embedded>
-                      <MultiWindowMenu />
-                      <NewSessionButton />
-                      <CompactHandoffButton />
-                    </ChatStatusBar>
+                {(() => {
+                  // 主面板席位接管（ai-chat-plugin-extraction-spec P1.2）：
+                  // mainSurface 席位命中已启用插件 → 渲染插件面板；否则渲染内置
+                  // Chat（灰度期）→ 空态引导卡（删码后）。禁用插件即回内置（P5 灰度回滚通道）。
+                  const claim = pluginRegistry.getMainSurfaceClaim();
+                  const enabled = claim ? isPluginUiEnabled(pluginStates, claim.pluginId) : false;
+                  if (claim && enabled) {
+                    return (
+                      <Suspense fallback={loadingFallback}>
+                        <PluginPanelHostLazy panelType={claim.panelType} onSendToChat={(msg) => { void sendMessage(msg) }} />
+                      </Suspense>
+                    );
                   }
-                />
+                  if (chatHostRemoved) {
+                    return (
+                      <Suspense fallback={loadingFallback}>
+                        <ChatMainSlot />
+                      </Suspense>
+                    );
+                  }
+                  return (
+                    <>
+                      {error && <ErrorBanner error={error} />}
+
+                      <MultiSessionGridLazy onEditMessage={handleEditMessage} />
+
+                      <ChatInput
+                        onSend={sendMessage}
+                        onInterrupt={interruptChat}
+                        disabled={!currentWorkspace && !activeSessionIsFree}
+                        isStreaming={isStreaming}
+                        editMode={editMode}
+                        onCancelEdit={handleCancelEdit}
+                        onEditSend={handleEditSend}
+                        statusBarSlot={
+                          <ChatStatusBar embedded>
+                            <MultiWindowMenu />
+                            <NewSessionButton />
+                            <CompactHandoffButton />
+                          </ChatStatusBar>
+                        }
+                      />
+                    </>
+                  );
+                })()}
               </RightPanel>
             )}
           </div>

@@ -16,6 +16,7 @@ import { pluginPanelRegistry } from './panelRegistry'
 import { chatCardRegistry } from './chatCardRegistry'
 import { uiTemplateRegistry } from './uiTemplateRegistry'
 import { loadModuleFromFile, resolvePluginEntryPath } from './pluginModuleLoader'
+import { pushPluginContext, popPluginContext } from './pluginContext'
 import { hydratePluginUi } from './uiContributions'
 import { invoke } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
@@ -29,14 +30,30 @@ import {
 
 const log = createLogger('PluginRegistry')
 
-function createPanelLoader(pluginInstallPath: string, entry: string): PluginPanelLoader {
+function createPanelLoader(pluginInstallPath: string, entry: string, pluginId: string): PluginPanelLoader {
   const fullPath = resolvePluginEntryPath(pluginInstallPath, entry)
-  return () => loadModuleFromFile(fullPath) as Promise<{ default: React.ComponentType<any> }>
+  return async () => {
+    // P1.3：面板模块同步 import 期间标记插件上下文——宿主桥（listen 过滤等）
+    // 据此按 manifest permissions 裁决（ai-chat-plugin-extraction-spec）。
+    pushPluginContext(pluginId)
+    try {
+      return (await loadModuleFromFile(fullPath)) as { default: React.ComponentType<any> }
+    } finally {
+      popPluginContext(pluginId)
+    }
+  }
 }
 
-function createChatCardLoader(pluginInstallPath: string, entry: string): PluginChatCardLoader {
+function createChatCardLoader(pluginInstallPath: string, entry: string, pluginId: string): PluginChatCardLoader {
   const fullPath = resolvePluginEntryPath(pluginInstallPath, entry)
-  return () => loadModuleFromFile(fullPath) as Promise<{ default: React.ComponentType<any> }>
+  return async () => {
+    pushPluginContext(pluginId)
+    try {
+      return (await loadModuleFromFile(fullPath)) as { default: React.ComponentType<any> }
+    } finally {
+      popPluginContext(pluginId)
+    }
+  }
 }
 
 class PluginRegistry {
@@ -117,7 +134,7 @@ class PluginRegistry {
       pluginPanelRegistry.register(
         view.panelType,
         manifest.id,
-        createPanelLoader(manifest.installPath, panel.entry)
+        createPanelLoader(manifest.installPath, panel.entry, manifest.id)
       )
     }
 
@@ -127,7 +144,7 @@ class PluginRegistry {
       pluginPanelRegistry.register(
         overlay.panelType,
         manifest.id,
-        createPanelLoader(manifest.installPath, panel.entry)
+        createPanelLoader(manifest.installPath, panel.entry, manifest.id)
       )
     }
 
@@ -183,7 +200,7 @@ class PluginRegistry {
         chatCardRegistry.register(
           manifest.id,
           card,
-          createChatCardLoader(manifest.installPath, card.entry)
+          createChatCardLoader(manifest.installPath, card.entry, manifest.id)
         )
       }
     }
@@ -191,6 +208,9 @@ class PluginRegistry {
 
   private registerEngines(manifest: PolarisPluginManifest): Promise<void> {
     const engines = manifest.contributes.engines
+    // hook 订阅接线（P1.5）：与引擎同生命周期（启用注册 / 禁用注销）。
+    // fire-and-forget：hook 注册失败不阻塞插件装载（后端 cap.hook 未装配时静默）。
+    this.registerHooks(manifest)
     if (!engines || engines.length === 0) return Promise.resolve()
 
     // 记录引擎→插件映射
@@ -296,6 +316,8 @@ class PluginRegistry {
 
   private unregisterEngines(manifest: PolarisPluginManifest): Promise<void> {
     const engines = manifest.contributes.engines
+    // hook 订阅注销（P1.5）：与引擎卸载同通道
+    this.unregisterHooks(manifest)
     if (!engines || engines.length === 0) return Promise.resolve()
 
     return Promise.all(engines.map(e =>
@@ -305,8 +327,58 @@ class PluginRegistry {
     })
   }
 
+  /**
+   * hook 订阅注册（P1.5，ai-chat-plugin-extraction-spec）。
+   *
+   * 把 manifest.contributes.hooks 逐条经 cap.hook.register 绑定回调 cap。
+   * 走 router_dispatch（宿主桥白名单内），后端 HookSystem 幂等（同 hook+cap
+   * 去重）。失败仅 warn 不阻塞——hook 是增强通道，不是插件功能的前提。
+   */
+  private registerHooks(manifest: PolarisPluginManifest): void {
+    const hooks = manifest.contributes.hooks ?? []
+    if (hooks.length === 0) return
+    for (const hook of hooks) {
+      invoke('router_dispatch', {
+        req: {
+          target: 'cap.hook',
+          payload: { action: 'register', hookId: hook.id, capId: hook.capId, pluginId: manifest.id },
+        },
+      })
+        .then((res) => {
+          const r = res as { ok?: boolean; error?: string | null }
+          if (r?.ok) {
+            log.info(`[PluginRegistry] hook 已注册: ${hook.id} -> ${hook.capId} (${manifest.id})`)
+          } else {
+            log.warn(`[PluginRegistry] hook 注册被拒: ${hook.id} (${manifest.id}): ${r?.error ?? 'unknown'}`)
+          }
+        })
+        .catch((err) => {
+          log.warn(`[PluginRegistry] hook 注册失败: ${hook.id} (${manifest.id}):`, err)
+        })
+    }
+  }
+
+  /** hook 订阅注销（插件禁用/卸载/替换时；fire-and-forget，失败静默） */
+  private unregisterHooks(manifest: PolarisPluginManifest): void {
+    const hooks = manifest.contributes.hooks ?? []
+    if (hooks.length === 0) return
+    for (const hook of hooks) {
+      invoke('router_dispatch', {
+        req: {
+          target: 'cap.hook',
+          payload: { action: 'unregister', hookId: hook.id, capId: hook.capId },
+        },
+      }).catch(() => {})
+    }
+  }
+
   listPlugins(): PolarisPluginManifest[] {
     return Array.from(this.manifests.values())
+  }
+
+  /** 按 id 取插件 manifest（host 桥按调用方查 permissions 用，P1.3） */
+  getPlugin(pluginId: string): PolarisPluginManifest | undefined {
+    return this.manifests.get(pluginId)
   }
 
   listViewContributions(area: PluginViewArea): PluginViewContribution[] {
@@ -406,6 +478,19 @@ class PluginRegistry {
           this.manifests.get(pid)?.contributes.views?.[0]?.order ?? 1000
         return orderOf(a.pluginId) - orderOf(b.pluginId)
       })[0]
+  }
+
+  /**
+   * 查询主面板席位（mainSurface）的接管声明（ai-chat-plugin-extraction-spec P1.2）。
+   *
+   * 返回首个（order 升序）声明了 `area: 'mainSurface'` 的插件视图贡献。
+   * 调用方（App.tsx 主内容区）命中且插件启用时渲染 PluginPanelHost，未命中
+   * （无声明 / 插件禁用 / 卸载）时渲染宿主空态/内置面板——天然回滚。
+   *
+   * 注意：启用状态复核（isPluginUiEnabled）由调用方做（与 getOverlayClaim 同语义）。
+   */
+  getMainSurfaceClaim(): PluginViewContribution & { pluginId: string } | undefined {
+    return this.listViewContributions('mainSurface')[0]
   }
 
   /**
