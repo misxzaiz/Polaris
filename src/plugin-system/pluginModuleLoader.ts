@@ -13,6 +13,28 @@ import { readFileBinaryText } from '@/services/tauri/fileService'
 import { rewriteReactImports } from './reactImportRewrite'
 
 let shimUrl: string | null = null
+let reactDomShimUrl: string | null = null
+
+async function ensureReactDomShim(): Promise<string> {
+  if (reactDomShimUrl) return reactDomShimUrl
+
+  // react-dom shim（ai-chat-plugin-extraction-spec P1.4）：宿主 bundle 已含
+  // react-dom，导出 createPortal/flushSync 等插件面板所需成员。插件 bundle
+  // 必须 external react-dom（不内嵌副本），由本 shim 提供宿主实例。
+  // 缺失的成员导出 undefined，不会在 import 期崩溃（对齐 react shim 容错）。
+  const shimCode = `
+    const RD = window.__POLARIS_HOST_REACT_DOM__;
+    if (!RD) throw new Error('Host ReactDOM not found on window.__POLARIS_HOST_REACT_DOM__');
+    export const createPortal = RD.createPortal;
+    export const flushSync = RD.flushSync;
+    export const createRoot = RD.createRoot;
+    export const hydrateRoot = RD.hydrateRoot;
+    export default RD;
+  `
+  const blob = new Blob([shimCode], { type: 'application/javascript' })
+  reactDomShimUrl = URL.createObjectURL(blob)
+  return reactDomShimUrl
+}
 
 async function ensureReactShim(): Promise<string> {
   if (shimUrl) return shimUrl
@@ -67,10 +89,11 @@ export async function loadModuleFromFile(filePath: string): Promise<Record<strin
   // 接口（download_file_binary，50MB 上限）读取，绕过文本限制。
   const code = await readFileBinaryText(filePath)
   const reactShimUrl = await ensureReactShim()
+  const reactDomShimUrl = await ensureReactDomShim()
 
   // 上下文感知重写：字符串/模板字面量里的代码模板（如 plugin-forge 脚手架）
   // 不能被改写——裸正则会把模板文本也改掉，注入的 blob URL 破坏 bundle 语法
-  const patchedCode = rewriteReactImports(code, reactShimUrl)
+  const patchedCode = rewriteReactImports(code, reactShimUrl, reactDomShimUrl)
 
   const blob = new Blob([patchedCode], { type: 'application/javascript' })
   const blobUrl = URL.createObjectURL(blob)

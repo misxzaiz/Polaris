@@ -158,6 +158,10 @@ export function rewriteImports(code: string, rules: ImportRewriteRule[]): string
 
 const REACT_FROM_RE = /^from\s*(['"])react(\/jsx-runtime)?\1/
 const REACT_REQUIRE_RE = /^require\(\s*(['"])react(\/jsx-runtime)?\1\s*\)/
+// react-dom / react-dom/client（P1.4：插件 portal 需求，ai-chat-plugin-extraction-spec）
+// 注意顺序：react-dom/client 必须先于 react-dom 匹配（否则前缀命中截断）。
+const REACT_DOM_FROM_RE = /^from\s*(['"])react-dom(\/client)?\1/
+const REACT_DOM_REQUIRE_RE = /^require\(\s*(['"])react-dom(\/client)?\1\s*\)/
 
 /** quote 引号：m[1] */
 function quoteOf(m: RegExpExecArray): string {
@@ -165,14 +169,22 @@ function quoteOf(m: RegExpExecArray): string {
 }
 
 /**
- * 重写代码上下文中的 react / react/jsx-runtime 引用为 shimUrl。
+ * 重写代码上下文中的 react / react/jsx-runtime 引用为 shimUrl；
+ * react-dom / react-dom/client 引用为 domShimUrl（P1.4）。
  * 字符串、模板字面量、注释、正则字面量内的同名文本原样保留。
  * （兼容签名：等价 rewriteImports 的 react 单规则形态）
  */
-export function rewriteReactImports(code: string, shimUrl: string): string {
-  return rewriteImports(code, [
+export function rewriteReactImports(code: string, shimUrl: string, domShimUrl?: string): string {
+  const rules: ImportRewriteRule[] = [
     { fromRe: REACT_FROM_RE, replace: (m) => `from ${quoteOf(m)}${shimUrl}${quoteOf(m)}` },
     { requireRe: REACT_REQUIRE_RE, replace: (m) => `require(${quoteOf(m)}${shimUrl}${quoteOf(m)})` },
-  ])
+  ]
+  if (domShimUrl) {
+    rules.push(
+      { fromRe: REACT_DOM_FROM_RE, replace: (m) => `from ${quoteOf(m)}${domShimUrl}${quoteOf(m)}` },
+      { requireRe: REACT_DOM_REQUIRE_RE, replace: (m) => `require(${quoteOf(m)}${domShimUrl}${quoteOf(m)})` },
+    )
+  }
+  return rewriteImports(code, rules)
 }
 

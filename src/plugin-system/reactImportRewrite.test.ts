@@ -29,6 +29,38 @@ describe('rewriteReactImports：真 import 被重写', () => {
   })
 })
 
+describe('rewriteReactImports：react-dom（P1.4，ai-chat-plugin-extraction-spec）', () => {
+  const DOM = 'blob:https://tauri.localhost/dom-shim-uuid'
+  it('react-dom / react-dom/client 重写为 dom shim', () => {
+    expect(rewriteReactImports(`import { createPortal } from "react-dom"`, SHIM, DOM))
+      .toBe(`import { createPortal } from "${DOM}"`)
+    expect(rewriteReactImports(`import { createRoot } from "react-dom/client"`, SHIM, DOM))
+      .toBe(`import { createRoot } from "${DOM}"`)
+  })
+  it('require 形式重写', () => {
+    expect(rewriteReactImports(`const r = require("react-dom/client")`, SHIM, DOM))
+      .toBe(`const r = require("${DOM}")`)
+  })
+  it('不传 domShimUrl 时 react-dom 原样保留（向后兼容）', () => {
+    expect(rewriteReactImports(`import { createPortal } from "react-dom"`, SHIM))
+      .toBe(`import { createPortal } from "react-dom"`)
+  })
+  it('react-dom 与 react 同文件各自归位', () => {
+    const code = 'import { useState } from "react"\nimport { createPortal } from "react-dom"'
+    expect(rewriteReactImports(code, SHIM, DOM))
+      .toBe(`import { useState } from "${SHIM}"\nimport { createPortal } from "${DOM}"`)
+  })
+  it('react-dom-server 等相近名不误伤', () => {
+    expect(rewriteReactImports(`import s from "react-dom-server"`, SHIM, DOM))
+      .toBe(`import s from "react-dom-server"`)
+  })
+  it('字符串字面量里的 react-dom 不改写', () => {
+    const code = `var tpl = "import x from 'react-dom'"; import y from "react-dom"`
+    expect(rewriteReactImports(code, SHIM, DOM))
+      .toBe(`var tpl = "import x from 'react-dom'"; import y from "${DOM}"`)
+  })
+})
+
 describe('rewriteReactImports：字符串/模板/注释内的同名文本原样保留', () => {
   it('单引号字符串里的 react import 不改写（plugin-forge 回归样例）', () => {
     const code = `var tpl = "import React, { useEffect } from 'react'\\nexport {}"`
