@@ -54,8 +54,10 @@ class PanelErrorBoundary extends Component<
     return { error }
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    this.props.onError(`${error.message}${info.componentStack ? ` @${info.componentStack.split('\n')[1]?.trim() ?? ''}` : ''}`)
+  componentDidCatch(error: Error, _info: ErrorInfo) {
+    // 冒烟诊断：临时附带栈帧，定位后移除
+    const frame = (error.stack || '').split('\n').slice(1, 3).join(' | ');
+    this.props.onError(`${error.message}${frame ? ` [@ ${frame}]` : ''}`)
   }
 
   render() {
@@ -96,7 +98,10 @@ export function PluginPanelHost({ panelType, onSendToChat, onClose }: PluginPane
         if (pluginId) notePluginPanelOpen(pluginId)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      // 冒烟诊断：附带栈
+      const st = e instanceof Error ? (e.stack || '') : String(e);
+      const frames = st.split('\n').slice(1, 4).join(' | ');
+      setError((e instanceof Error ? e.message : String(e)) + (frames ? ` [ST ${frames}]` : ''))
     } finally {
       setLoading(false)
     }

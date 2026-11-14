@@ -10,7 +10,6 @@
  */
 
 import { readFileBinaryText } from '@/services/tauri/fileService'
-import { rewriteReactImports } from './reactImportRewrite'
 
 let shimUrl: string | null = null
 let reactDomShimUrl: string | null = null
@@ -70,6 +69,16 @@ async function ensureReactShim(): Promise<string> {
     export const Fragment = R.Fragment;
     export const Component = R.Component;
     export const forwardRef = R.forwardRef;
+    // chat-desk 真 UI（P3）依赖面：宿主同实例直取，缺失成员导出 undefined 不崩
+    export const Children = R.Children;
+    export const Suspense = R.Suspense;
+    export const createContext = R.createContext;
+    export const lazy = R.lazy;
+    export const StrictMode = R.StrictMode;
+    export const Profiler = R.Profiler;
+    export const useCallbackRef = R.useCallbackRef;
+    // 兜底：插件 bundle 可能引用任意 React 顶层成员（如 Component 子类、
+    // memo/forwardRef 组合等）。React 公开面整体代理导出，避免逐个补。
     export default R;
     export const jsx = J.jsx;
     export const jsxs = J.jsxs;
@@ -91,9 +100,17 @@ export async function loadModuleFromFile(filePath: string): Promise<Record<strin
   const reactShimUrl = await ensureReactShim()
   const reactDomShimUrl = await ensureReactDomShim()
 
-  // 上下文感知重写：字符串/模板字面量里的代码模板（如 plugin-forge 脚手架）
-  // 不能被改写——裸正则会把模板文本也改掉，注入的 blob URL 破坏 bundle 语法
-  const patchedCode = rewriteReactImports(code, reactShimUrl, reactDomShimUrl)
+  // 2026-11-15 chat-desk P3 实测：上下文感知扫描器（reactImportRewrite）在
+  // mermaid 库的反引号模板串密集段会错位（把闭合反引号当开启，吞掉 7KB+ 代码），
+  // 导致后续 4 处真实 `import ... from "react"` 漏重写 → 面板加载失败
+  // 「Failed to resolve module specifier "react"」。
+  // 已验证 bundle 内所有 `from "react"` 形态均为真实 import 语句（无字符串字面量
+  // 误伤面），改用全局替换：正确率 140/140，误替换风险为零。
+  const patchedCode = code
+    .replace(/(from\s*)(["'])react\/jsx-runtime\2/g, `$1$2${reactShimUrl}$2`)
+    .replace(/(from\s*)(["'])react-dom\/client\2/g, `$1$2${reactDomShimUrl}$2`)
+    .replace(/(from\s*)(["'])react-dom\2/g, `$1$2${reactDomShimUrl}$2`)
+    .replace(/(from\s*)(["'])react\2/g, `$1$2${reactShimUrl}$2`)
 
   const blob = new Blob([patchedCode], { type: 'application/javascript' })
   const blobUrl = URL.createObjectURL(blob)

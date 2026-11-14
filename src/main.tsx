@@ -1,7 +1,9 @@
 import React from "react";
 import { useEffect } from 'react';
 import ReactDOM from "react-dom/client";
+import * as ReactDOMBase from "react-dom";
 import * as ReactJSXRuntime from "react/jsx-runtime";
+import { useTranslation as _hostUseTranslation } from 'react-i18next';
 import App from "./App";
 import { MobileConnectionGate } from "./mobile/MobileConnectionGate";
 import { isMobileTauriRuntime } from "./mobile/platform";
@@ -30,7 +32,14 @@ installAppCoreBridge();
 // react-dom shim（ai-chat-plugin-extraction-spec P1.4）：Chat 域插件（chat-desk）
 // 面板含 createPortal（NewSessionPanel/MarkdownImageViewer 等），宿主 bundle
 // 已含 react-dom，导出同一实例避免插件内嵌第二份 React 副本。
-;(window as unknown as { __POLARIS_HOST_REACT_DOM__: typeof ReactDOM }).__POLARIS_HOST_REACT_DOM__ = ReactDOM;
+;(window as unknown as { __POLARIS_HOST_REACT_DOM__: typeof ReactDOM }).__POLARIS_HOST_REACT_DOM__ = {
+  ...ReactDOMBase,
+  createRoot: ReactDOM.createRoot,
+  hydrateRoot: ReactDOM.hydrateRoot,
+};
+// i18n shim（chat-desk P3）：面板 bundle external react-i18next，经此拿到宿主
+// 同实例（同词典同语言，见 appCoreBridge i18n 挂载）。
+;(window as any).__POLARIS_HOST_USE_TRANSLATION__ = _hostUseTranslation;
 
 // ============================================================================
 // 批 7（审计 1.9）：宿主桥白名单包装。
