@@ -93,11 +93,19 @@ B1 合计 ~42k 行（B1-7 实际删码超预估）。外移后同步动作（每
 
 B2 合计 ~17.5k。
 
+### 4.2c B3 批次（对话域，2026-11-14 立项）
+
+| 编号 | 功能 | 状态 | 承接 | 预估 |
+|---|---|---|---|---|
+| B3-1 | AI 对话域（Chat UI + conversationStore + session-v2 + 对话服务 + 前端 ai-runtime/engines） | 🚧 立项（spec `ai-chat-plugin-extraction-spec.md` 待评审，P0 文档对账已完成） | chat-desk 插件 | ~40k |
+
+B3 合计 ~40k（历史最大单域）。
+
 ### 4.3 明确不拆清单（防无收益重构，对照 AGENTS.md §九「拆分须克制」）
 
 | 功能 | 行数 | 不拆理由 |
 |---|---|---|
-| Chat / ChatInput / 会话域（session-v2、conversationStore、dialogStorage、turn_persist） | ~40k | 宿主本体，「日志即真相」核心架构 |
+| ~~Chat / ChatInput / 会话域（session-v2、conversationStore、dialogStorage、turn_persist）~~ | ~40k | ~~宿主本体，「日志即真相」核心架构~~ **【2026-11-14 红线修订，用户定案出仓】** Chat UI + conversationStore + session-v2 + 对话服务 + 前端 ai-runtime/engines（~40k 行）出仓为 chat-desk 插件（core 不可卸载）；宿主保留总线运行时（cap.ai.chat 执行面 + 新增 cap.session 状态/查询面 + 引擎注册表 + 供应商管线 + dialog/session_state/turn_persist 存储引擎）。供应商/会话/引擎/流事件经总线 hook（v1 observe-only）扩展。spec：`ai-chat-plugin-extraction-spec.md`（P0 立项，实施未启动）。后端 `src-tauri/src/ai/` 与 `ai_chat_core.rs` 仍为本体不出仓 |
 | Git 域（GitPanel 15k + `git/` 8.1k + git_capability 1.6k） | ~25k | ~~远期观察项~~ **【2026-11-12 已完成：架构方案 C，宿主 Git 域归零】** 按用户「按 C 规划实施直到完成」裁定，宿主 Git 后端整体出仓：P0 `4f7f73d5`（状态层孤儿清理 + i18n 外迁）→ P1 `6d83cda7`（前端状态层外迁 + H7 UI 槽位 + `cap.pluginServiceManager.request` 通用转发）→ P2 `2018e286`（H3 编辑器 SCM 外迁 + 类型去 Git 化）→ P3 `e6ae1f32`（`services/git/` 22 文件 + `git_capability.rs` 1640 行 + `models/git.rs` + `crates/git-lanes/` 共 41 文件 / ~11.5k 行删除，`git` feature 与 `git2` 依赖移除）。插件仓 `polaris-git` 自带 Node 服务（77 action，零 UNSUPPORTED）+ stdio MCP，经 `contributes.services` / `contributes.mcpServers` 承接。宿主新增的三项能力均为通用能力（服务转发 / UI 槽位 / SCM provider），可被后续插件复用。详见 `plans/git-domain-plugin-extraction-requirement.md` §7.1。 |
 | FileExplorer / ~~Terminal~~ / Editor / Diff | ~9k | 开发环境核心面板，cap.fs / cap.bash 宿主能力的原生 UI。**【2026-11-14 Terminal 已完成插件化拆除】**：terminal-desk 插件 P0 止损/P1 视觉对齐（token 修复+check-styles 门禁+自绘 SVG 图标+SF Mono 字体栈）/画布右键菜单均已落地并入 main（插件仓 `60a4528`，dist 与 dev 数据根已装包逐字节一致）；P4 数据面经 9829 验证（create/write/get/close/list 全通、零孤儿 PTY）后执行 P5 摘装配 + P6 删实现（主仓 `8d9a6caf` −2.2k：components/Terminal 6 文件+terminalStore+types/terminal+@xterm 三依赖+后端 7 命令包装+ipc 9 arm；PTY 核心/cap.terminal/config.terminalScripts 只读兼容永久保留）。terminal.panel 席位保留，未启用插件时渲染 TerminalSlotEmpty 引导卡。 |
 | Settings / 主题体系 | ~11k | 宿主管理面 |
