@@ -63,7 +63,7 @@ import { invoke, listen, currentMode, emit } from '@/services/transport'
 import { getKernel } from '@/session-v2/kernel/registry'
 import { useKernelSessionState, subscribeKernelSessionState } from '@/session-v2/hooks/useKernelSessionState'
 import * as aiRuntime from '@/ai-runtime'
-import { pluginRegistry, chatCardRegistry, listEnabledPluginMcpServers } from '@/plugin-system'
+import { pluginRegistry, chatCardRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses } from '@/plugin-system'
 import { Button } from '@/components/Common/Button'
 import { JsonTreeView } from '@/components/Common/JsonTreeView'
 import { OverlayGuard } from '@/components/Common/OverlayGuard'
@@ -137,7 +137,7 @@ export function installAppCoreBridge(): void {
     },
     sessionV2: { getKernel, useKernelSessionState, subscribeKernelSessionState },
     aiRuntime,
-    pluginSystem: { pluginRegistry, chatCardRegistry, listEnabledPluginMcpServers },
+    pluginSystem: { pluginRegistry, chatCardRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses },
     components: {
       Button,
       JsonTreeView,
