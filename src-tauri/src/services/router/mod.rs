@@ -48,6 +48,7 @@ mod self_mutate_capability;
 mod mcp_capability;
 mod hook_capability;
 mod ui_render_capability;
+mod session_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use app_autolaunch_capability::AppAutolaunchCapability;
@@ -85,6 +86,7 @@ pub(crate) use registry_capability::check_override_permission;
 pub use mcp_capability::{McpCapability, MCP_CAP_ID};
 pub use hook_capability::HookCapability;
 pub use ui_render_capability::UiRenderCapability;
+pub use session_capability::SessionCapability;
 
 use crate::contracts::*;
 use std::collections::HashMap;
@@ -1073,7 +1075,7 @@ fn should_audit_dispatch_ok(capability: &str, detail: Option<&str>) -> bool {
     if capability != "cap.kv" {
         return true;
     }
-    !matches!(detail.as_deref(), Some(d) if d.starts_with("action=get") || d.starts_with("action=list"))
+    !matches!(detail, Some(d) if d.starts_with("action=get") || d.starts_with("action=list"))
 }
 
 /// 审计 append 失败告警（X4：原三处 `let _ =` 静默吞错，磁盘满/IO 故障时

@@ -626,6 +626,13 @@ pub fn run() {
                     .register_handle(Box::new(crate::services::router::HistoryCapability::with_state(
                         chat_state.clone(),
                     )));
+                // cap.session —— 会话读面收口（ai-chat-plugin-extraction-spec P1.1；
+                // 对话域插件化后 chat-desk / 宿主 chrome 的会话查询/导航通道）
+                let _ = state
+                    .router
+                    .register_handle(Box::new(crate::services::router::SessionCapability::with_state(
+                        chat_state.clone(),
+                    )));
                 // ── P2：cap.ui.render 注册（可交互渲染入口）──────────────
                 // 需 Arc<AppState>（复用 pending_plugin_cards / oneshot / 广播），
                 // 与 cap.ai.chat 同装配点（AppState 构造后）。前端零改动：
@@ -1282,6 +1289,12 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let _ = state
         .router
         .register_handle(Box::new(crate::services::router::HistoryCapability::with_state(
+            state.clone(),
+        )));
+    // cap.session —— 会话读面收口（独立 Web 模式；与桌面同装配纪律）
+    let _ = state
+        .router
+        .register_handle(Box::new(crate::services::router::SessionCapability::with_state(
             state.clone(),
         )));
     // P2：cap.ui.render（可交互渲染入口）—— 与 cap.ai.chat 同装配点
