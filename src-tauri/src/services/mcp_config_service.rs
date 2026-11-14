@@ -1221,6 +1221,7 @@ mod tests {
                 chat_cards: Vec::new(),
                 tool_providers: Vec::new(),
                 styles: Vec::new(),
+                hooks: Vec::new(),
                 capabilities: Vec::new(),
                 skills: Vec::new(),
                 config_schema: Vec::new(),

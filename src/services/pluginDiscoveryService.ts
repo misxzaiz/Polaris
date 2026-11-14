@@ -14,6 +14,7 @@ import type {
   PluginMcpServerContribution,
   PluginChatCardContribution,
   PluginEngineContribution,
+  PluginHookContribution,
   PluginOverlayContribution,
   PluginPanelContribution,
   PluginPermissionDeclaration,
@@ -271,9 +272,16 @@ function normalizeMcpServers(
 function normalizePermissions(value: unknown): PluginPermissionDeclaration {
   if (!isRecord(value)) return {}
 
-  return Object.fromEntries(
-    Object.entries(value).filter(([, permissionValue]) => typeof permissionValue === 'boolean')
-  ) as PluginPermissionDeclaration
+  const booleanEntries = Object.entries(value).filter(
+    ([, permissionValue]) => typeof permissionValue === 'boolean',
+  )
+  // chatEvents（ai-chat-plugin-extraction-spec P1.3）：字符串枚举，非法值丢弃
+  // （缺省 = lifecycle，宿主 listen 过滤器兜底）。
+  const chatEvents = value['chatEvents']
+  if (chatEvents === 'full' || chatEvents === 'lifecycle' || chatEvents === 'none') {
+    booleanEntries.push(['chatEvents', chatEvents])
+  }
+  return Object.fromEntries(booleanEntries) as PluginPermissionDeclaration
 }
 
 function normalizeOrigin(value: unknown): PluginOriginMetadata | undefined {
@@ -477,6 +485,37 @@ function parseConfigOptions(
   return result.length > 0 ? result : undefined
 }
 
+/**
+ * hook 订阅声明（P1.5，ai-chat-plugin-extraction-spec）：id + capId 必填。
+ * 后端 HookSystem 插桩点仅认 ai.session.start/end、ai.tool.before/after 等
+ * 已声明的 hook id；未知 hook id 在此不拦截（后端 register 幂等且派发按
+ * hook_id 精确匹配，订阅了不存在的 hook 只是无回调），但记录诊断。
+ */
+function normalizeHooks(value: unknown, errors: string[]): PluginHookContribution[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) {
+    errors.push('contributes.hooks must be an array')
+    return []
+  }
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`contributes.hooks[${index}] must be an object`)
+      return []
+    }
+    const id = asString(item.id)
+    const capId = asString(item.capId)
+    if (!id || !capId) {
+      errors.push(`contributes.hooks[${index}] is invalid (id and capId required) and was ignored`)
+      return []
+    }
+    if (!capId.startsWith('cap.')) {
+      errors.push(`contributes.hooks[${index}].capId "${capId}" is invalid (must start with "cap.") and was ignored`)
+      return []
+    }
+    return [{ id, capId }]
+  })
+}
+
 function normalizeEngines(
   value: unknown,
   _errors: string[]
@@ -632,6 +671,7 @@ export function validateDiscoveredPlugin(raw: unknown): {
         toolProviders: normalizeToolProviders(contributes.toolProviders, ownMcpServerIds, errors),
         styles: normalizeStyles(contributes.styles, errors),
         uiTemplates: normalizeUiTemplates(contributes.uiTemplates, errors),
+        hooks: normalizeHooks(contributes.hooks, errors),
       },
       permissions: normalizePermissions(raw.permissions),
       origin: normalizeOrigin(raw.origin),
