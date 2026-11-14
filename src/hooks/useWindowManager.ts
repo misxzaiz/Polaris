@@ -17,7 +17,7 @@ import { useConfigStore } from '@/stores';
 import { useViewStore } from '@/stores/viewStore';
 import { useOverlayStore } from '@/stores/overlayStore';
 import { useFocusModeStore } from '@/stores/focusModeStore';
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
+import { getSessionDirectorySnapshot, createSession as createSessionAction, switchSession as switchSessionAction } from '@/stores/sessionDirectoryStore';
 import { eventBus } from '@/services/eventBus';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useWindowSize } from './useWindowSize';
@@ -120,7 +120,8 @@ export function useWindowManager({
         }
 
         // Ctrl/Cmd + '+'（不含 Shift）：快速新建会话并切换
-        const manager = sessionStoreManager.getState();
+        const dir = getSessionDirectorySnapshot();
+        const manager = { ...dir, sessionMetadata: dir.metadataMap, createSession: createSessionAction, switchSession: switchSessionAction };
         // 新会话跟随当前活跃会话的工作区：有工作区则建 project 会话，否则建 free 会话
         const activeId = manager.activeSessionId;
         const activeWorkspaceId = activeId
