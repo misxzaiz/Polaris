@@ -16,7 +16,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { useSessionConfig } from '@/stores/sessionConfigStore'
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+import { getSessionDirectorySnapshot as sessionStoreManagerSnapshot } from '@/stores/sessionDirectoryStore'
 import { useToastStore } from '@/stores'
 import type {
   Config,
@@ -1067,7 +1067,13 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
     }
     // P1: 清扫所有会话 metadata 中指向已删除 Profile 的悬空引用，
     // 避免该会话因悬空 id 遮蔽全局默认而意外回退到官方 API。
-    const mgr = sessionStoreManager.getState()
+    const mgr = {
+      sessionMetadata: sessionStoreManagerSnapshot().metadataMap,
+      updateSessionModelProfile: (sid: string, v: string | null) => {
+        const sm: any = (window as any).__POLARIS_APP_CORE__.stores.sessionStoreManager.getState()
+        if (typeof sm.updateSessionModelProfile === 'function') sm.updateSessionModelProfile(sid, v)
+      },
+    }
     mgr.sessionMetadata.forEach((meta, sid) => {
       if (meta.modelProfileId === id) {
         mgr.updateSessionModelProfile(sid, null)
@@ -1082,8 +1088,8 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
     activateProfile(nextActiveId)
     // P1: 设置页激活 = 设全局默认。状态栏镜像应显示当前会话的生效值：
     // 会话有覆盖则保持覆盖，无覆盖才跟随新全局默认（避免"显示全局却发覆盖值"）。
-    const activeId = sessionStoreManager.getState().activeSessionId
-    const activeMeta = activeId ? sessionStoreManager.getState().sessionMetadata.get(activeId) : undefined
+    const activeId = sessionStoreManagerSnapshot().activeSessionId
+    const activeMeta = activeId ? sessionStoreManagerSnapshot().metadataMap.get(activeId) : undefined
     // 会话明确选官方（哨兵）→ 镜像置空（保持「官方 API」显示，不被新全局默认覆盖）；
     // 有具体覆盖 → 原样；未设置 → 跟随新全局默认 nextActiveId。
     const sessionOverride = activeMeta?.modelProfileId

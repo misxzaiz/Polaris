@@ -16,6 +16,8 @@ import type { SessionMetadata } from '@/stores/conversationStore/types'
 export interface SessionDirectoryState {
   /** 会话元数据列表（id/title/engineId/workspaceId/createdAt…） */
   sessions: SessionMetadata[]
+  /** 元数据 Map（id → metadata，兼容宿主既有读取习惯） */
+  metadataMap: Map<string, SessionMetadata>
   /** 活跃会话 id（宿主导航态） */
   activeSessionId: string | null
   /** 流式摘要：sessionId → isStreaming */
@@ -24,6 +26,7 @@ export interface SessionDirectoryState {
 
 let state: SessionDirectoryState = {
   sessions: [],
+  metadataMap: new Map(),
   activeSessionId: null,
   streamingMap: {},
 }
@@ -54,7 +57,12 @@ export function ensureProjected(): void {
       const st = s.stores.get(m.id)
       streamingMap[m.id] = st ? st.getState().isStreaming : false
     }
-    setState({ sessions, activeSessionId: s.activeSessionId, streamingMap })
+    setState({
+      sessions,
+      metadataMap: s.sessionMetadata ?? new Map(),
+      activeSessionId: s.activeSessionId,
+      streamingMap,
+    })
   }
   unsubscribers.push(sessionStoreManager.subscribe(project))
   project()
