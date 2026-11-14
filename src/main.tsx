@@ -18,6 +18,11 @@ import { currentPluginContext } from '@/plugin-system/pluginContext';
 import { pluginRegistry, chatCardRegistry } from '@/plugin-system';
 import { eventBus } from '@/services/eventBus';
 import { initPluginToolUsageObserver } from '@/services/pluginToolUsageObserver';
+import { installAppCoreBridge } from '@/plugin-system/appCoreBridge';
+
+// chat-desk（P3 重构）：面板搬入真实 Chat UI，依赖的宿主 stores/services/组件
+// 经本桥共享同一实例（同窗口同源，core 插件专用；见 appCoreBridge.ts）。
+installAppCoreBridge();
 
 // 暴露宿主 React 给外部插件面板使用
 ;(window as any).__POLARIS_HOST_REACT__ = React;
