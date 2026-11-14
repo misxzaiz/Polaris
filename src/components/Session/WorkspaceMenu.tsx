@@ -17,7 +17,7 @@ import { createLogger } from '@/utils/logger'
 import { cn } from '@/utils/cn'
 import { Check, Plus, X, Link, Lock } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { useSessionMetadataList, useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager'
+import { useSessionDirectorySessions as useSessionMetadataList, updateSessionWorkspace as _updWs, addContextWorkspace as _addCw, removeContextWorkspace as _rmCw } from '@/stores/sessionDirectoryStore'
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
 import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput'
 
@@ -38,7 +38,7 @@ export function WorkspaceMenu({ sessionId, anchorEl, onClose }: WorkspaceMenuPro
     ), [workspacesRaw]
   )
   const sessions = useSessionMetadataList()
-  const { updateSessionWorkspace, addContextWorkspace, removeContextWorkspace } = useSessionManagerActions()
+  const updateSessionWorkspace = _updWs; const addContextWorkspace = _addCw; const removeContextWorkspace = _rmCw
 
   // 新增工作区弹窗状态
   const [showCreateModal, setShowCreateModal] = useState(false)

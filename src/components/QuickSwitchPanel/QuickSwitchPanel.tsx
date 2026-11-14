@@ -14,12 +14,8 @@ import { NewSessionPanel } from '@/components/Chat/session/NewSessionPanel'
 import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import type { QuickSwitchPanelProps, QuickSessionInfo, QuickWorkspaceInfo } from './types'
 import type { SessionStatus } from '@/types/session'
-import {
-  useSessionMetadataList,
-  useActiveSessionId,
-  useSessionManagerActions,
-  useActiveSessionMessages,
-} from '@/stores/conversationStore'
+import { useSessionDirectorySessions as useSessionMetadataList, useSessionDirectoryActiveId as useActiveSessionId } from '@/stores/sessionDirectoryStore'
+import { useSessionManagerActions, useActiveSessionMessages } from '@/stores/conversationStore'
 import { useWorkspaceStore, useViewStore, useToastStore } from '@/stores'
 import { exportToMarkdown, generateFileName } from '@/services/chatExport'
 import { getHandoffEligibility, handoffSessionToNewSession } from '@/services/sessionHandoff'

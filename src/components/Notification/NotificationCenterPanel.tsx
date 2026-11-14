@@ -11,7 +11,7 @@ import { useEffect, useRef, type ElementType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle, XCircle, AlertTriangle, Info, X, Trash2, CheckCheck, Inbox } from 'lucide-react'
 import { useToastStore, type ToastType, type NotificationRecord } from '@/stores/toastStore'
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+import { switchSession as switchSessionAction } from '@/stores/sessionDirectoryStore'
 import { cn } from '@/utils/cn'
 
 const iconMap: Record<ToastType, ElementType> = {
@@ -61,7 +61,7 @@ export function NotificationCenterPanel({ onClose }: NotificationCenterPanelProp
 
   const handleSwitch = (n: NotificationRecord) => {
     if (n.sessionId) {
-      sessionStoreManager.getState().switchSession(n.sessionId)
+      switchSessionAction(n.sessionId)
     }
     onClose?.()
   }

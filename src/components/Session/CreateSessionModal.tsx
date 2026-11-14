@@ -13,7 +13,7 @@ import { Bot, Check, Zap, ChevronDown } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useConfigStore } from '@/stores/configStore'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
-import { useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager'
+import { createSession as createSessionAction } from '@/stores/sessionDirectoryStore'
 import { Button } from '@/components/Common'
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
 import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput'
@@ -45,7 +45,7 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
   // Store 数据
   const workspacesRaw = useWorkspaceStore((state) => state.workspaces)
   const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspaceId)
-  const { createSession } = useSessionManagerActions()
+  const createSession = createSessionAction
   const { config } = useConfigStore()
   const defaultEngineId = normalizeEngineId(config?.defaultEngine)
 

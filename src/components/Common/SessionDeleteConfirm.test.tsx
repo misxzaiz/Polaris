@@ -29,15 +29,12 @@ const mocks = vi.hoisted(() => ({
   metadataStatus: 'idle' as string,
 }))
 
-vi.mock('@/stores/conversationStore/sessionStoreManager', () => ({
-  useSessionManagerActions: () => ({ deleteSession: mocks.deleteSession }),
-  useSessionMetadataList: () => [
+vi.mock('@/stores/sessionDirectoryStore', () => ({
+  useSessionDirectorySessions: () => [
     { id: 's1', title: '测试会话', status: mocks.metadataStatus },
   ],
-}))
-
-vi.mock('@/stores/conversationStore/useActiveSession', () => ({
-  useSessionStreaming: () => mocks.isStreaming,
+  deleteSession: (...a) => mocks.deleteSession(...a),
+  useSessionDirectoryStreaming: () => mocks.isStreaming,
 }))
 
 const onCancel = vi.fn()

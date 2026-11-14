@@ -14,11 +14,8 @@ import { cn } from '@/utils/cn'
 import { Plus } from 'lucide-react'
 import { SessionTab } from './SessionTab'
 import { CreateSessionModal } from './CreateSessionModal'
-import {
-  useSessionMetadataList,
-  useActiveSessionId,
-  useSessionManagerActions,
-} from '@/stores/conversationStore/sessionStoreManager'
+import { useSessionDirectorySessions as useSessionMetadataList, useSessionDirectoryActiveId as useActiveSessionId } from '@/stores/sessionDirectoryStore'
+import { switchSession as switchSessionAction } from '@/stores/sessionDirectoryStore'
 import { useViewStore } from '@/stores'
 
 /** 暴露给父组件的方法 */
@@ -36,7 +33,7 @@ export const SessionTabs = memo(function SessionTabs({ onSessionSelect }: Sessio
   // 数据源：使用 multiSessionIds 而不是所有会话
   const multiSessionIds = useViewStore(state => state.multiSessionIds)
   const activeSessionId = useActiveSessionId()
-  const { switchSession } = useSessionManagerActions()
+  const switchSession = switchSessionAction
 
   // 滚动容器 ref
   const containerRef = useRef<HTMLDivElement>(null)

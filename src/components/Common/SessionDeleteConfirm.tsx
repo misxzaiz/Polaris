@@ -19,11 +19,8 @@
 
 import { useTranslation } from 'react-i18next';
 import { ConfirmDialog } from './ConfirmDialog';
-import {
-  useSessionManagerActions,
-  useSessionMetadataList,
-} from '@/stores/conversationStore/sessionStoreManager';
-import { useSessionStreaming } from '@/stores/conversationStore/useActiveSession';
+import { useSessionDirectorySessions as useSessionMetadataList, deleteSession as deleteSessionAction } from '@/stores/sessionDirectoryStore';
+import { useSessionDirectoryStreaming as useSessionStreaming } from '@/stores/sessionDirectoryStore';
 import type { SessionMetadata } from '@/stores/conversationStore/types';
 
 /** 待删除会话目标（title 缺省时回落「未命名会话」） */
@@ -40,7 +37,7 @@ interface SessionDeleteConfirmProps {
 
 export function SessionDeleteConfirm({ target, onCancel }: SessionDeleteConfirmProps) {
   const { t } = useTranslation('chat');
-  const { deleteSession } = useSessionManagerActions();
+  const deleteSession = deleteSessionAction;
 
   // 弹窗打开期间订阅目标会话的流式状态（null → false，无额外订阅开销）
   const targetId = target?.sessionId ?? null;
