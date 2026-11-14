@@ -77,6 +77,7 @@ import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
 import * as Icons from '@/components/Common/Icons'
 import { convertFileSrc } from '@tauri-apps/api/core'
+import i18n from '@/i18n'
 
 /** 惰性挂载（main.tsx import 后立即执行） */
 export function installAppCoreBridge(): void {
@@ -137,6 +138,7 @@ export function installAppCoreBridge(): void {
     },
     sessionV2: { getKernel, useKernelSessionState, subscribeKernelSessionState },
     aiRuntime,
+    i18n,
     pluginSystem: { pluginRegistry, chatCardRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses },
     components: {
       Button,
