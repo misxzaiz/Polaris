@@ -51,6 +51,15 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
   'router_dispatch', 'router_dispatch_stream',
   // 基础
   'health_check', 'get_cli_info',
+  // chat-desk（ai-chat-plugin-extraction-spec P3.b）：会话配置选择器数据源。
+  // 全部为只读元数据/清单查询；写路径（profile 保存等）仍走 cap.config，不在白名单。
+  'get_engine_metadata_list', 'cli_get_agents', 'cli_get_version',
+  'cli_get_auth_status', 'agent_corpus_rosters', 'custom_agent_list',
+  'simple_ai_list_agents',
+  // chat-desk 附件落盘/引用物化（与宿主 ChatInput 同通道；写面受路径约束在命令层）
+  'create_file', 'read_directory', 'get_file_content',
+  // chat-desk 全局权限规则写入（PermissionRequestRenderer scope=global）
+  'add_claude_permission_rules',
 ])
 
 ;(window as any).__POLARIS_HOST_INVOKE__ = (cmd: string, args?: Record<string, unknown>) => {
