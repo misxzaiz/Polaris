@@ -73,12 +73,30 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
       // - lifecycle（缺省，现状行为）：mc- 前缀命名空间（MultiChat）+
       //   session_start/session_end 低敏元数据（history-desk 自动刷新）；
       // - none：不透传。
-      // 插件上下文由面板 loader 同步 import 期间标记（pluginContext 栈）；
-      // 无上下文（非插件脚本）按 lifecycle 兜底——正文永不泄露给未知调用方。
-      const pluginId = currentPluginContext();
-      const chatEvents = pluginId
-        ? (pluginRegistry.getPlugin(pluginId)?.permissions?.chatEvents ?? 'lifecycle')
-        : 'lifecycle';
+      // 插件归属判定两级：
+      // 1) currentPluginContext()——面板 loader 同步 import 期间（订阅注册发生在
+      //    模块顶层/初始化时）；
+      // 2) 回调分发期读不到栈（异步边界）→ 用 mc- contextId 前缀反查已注册插件
+      //    （chat-desk 约定 mc-cd-<sid>，multichat 约定 mc-<id>；前缀匹配 manifest
+      //    permissions.chatEvents，匹配不到按 lifecycle 兜底——正文永不泄露给
+      //    未授权调用方）。
+      const resolveChatEvents = (contextId?: string): 'full' | 'lifecycle' | 'none' => {
+        const pluginId = currentPluginContext();
+        if (pluginId) {
+          return pluginRegistry.getPlugin(pluginId)?.permissions?.chatEvents ?? 'lifecycle';
+        }
+        if (typeof contextId === 'string' && contextId.startsWith('mc-')) {
+          for (const plugin of pluginRegistry.listPlugins()) {
+            const level = plugin.permissions?.chatEvents ?? 'lifecycle';
+            if (level !== 'full') continue;
+            // chat-desk 约定：mc-cd- 前缀（cd = chat-desk 子命名空间）
+            const ns = plugin.id === 'chat-desk' ? 'mc-cd-' : `mc-${plugin.id}-`;
+            if (contextId.startsWith(ns)) return 'full';
+          }
+        }
+        return 'lifecycle';
+      };
+      const chatEvents = resolveChatEvents(envelope?.contextId);
       if (chatEvents === 'none') return;
       if (chatEvents === 'full') {
         handler(envelope);
