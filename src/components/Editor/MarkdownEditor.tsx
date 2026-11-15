@@ -7,7 +7,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { CodeMirrorEditor } from './Editor';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
-import { MermaidDiagram } from '../Chat/common/MermaidDiagram';
+import { MermaidDiagram } from '@/components/Common/MermaidDiagram';
 import { splitMarkdownWithMermaid, type MarkdownPart } from '@/utils/markdown';
 import { usePerformanceFlag } from '@/utils/performanceFeatures';
 import { useViewStore } from '@/stores';

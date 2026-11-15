@@ -25,7 +25,23 @@
 import { createStore } from 'zustand'
 import { invoke, listen } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+// P6：会话状态单写者随对话域迁入 chat-desk 插件；宿主经反向桥动态取。
+type ManagerLike = {
+  getState: () => {
+    sessionMetadata: Map<string, { engineId?: string; status?: string; title?: string }>
+    stores: Map<string, { getState: () => { isStreaming: boolean; conversationId?: string } & Record<string, (...a: unknown[]) => unknown> }>
+    createSessionFromHistory: (...a: unknown[]) => string
+    switchSession: (...a: unknown[]) => void
+    setState: (p: unknown) => void
+  }
+  setState: (p: unknown) => void
+}
+
+function sessionManager(): ManagerLike | undefined {
+  return (window as unknown as {
+    __POLARIS_APP_CORE__?: { stores?: { sessionStoreManager?: ManagerLike } }
+  }).__POLARIS_APP_CORE__?.stores?.sessionStoreManager
+}
 
 const log = createLogger('RemoteSessionFollower')
 
@@ -273,7 +289,7 @@ function applyDiscovered(state: Map<string, RemoteSessionState>): void {
 
 function isLocalConversation(conversationId: string): boolean {
   try {
-    const stores = sessionStoreManager.getState().stores
+    const stores = sessionManager()!.getState().stores
     for (const s of stores.values()) {
       if (s.getState().conversationId === conversationId) return true
     }
@@ -527,7 +543,6 @@ export async function joinRemoteSession(conversationId: string): Promise<string 
 
   try {
     const { invoke } = await import('@/services/transport')
-    const { sessionStoreManager } = await import('@/stores/conversationStore/sessionStoreManager')
     const { useViewStore } = await import('@/stores/viewStore')
 
     // ① 元数据：投影优先（title/engineId），降级首条用户消息截断标题
@@ -567,7 +582,7 @@ export async function joinRemoteSession(conversationId: string): Promise<string 
     }
 
     // ③ 建本端会话格（createSessionFromHistory 把 conversationId 挂上 store）
-    const manager = sessionStoreManager.getState()
+    const manager = sessionManager()!.getState()
     const sessionId = manager.createSessionFromHistory(messages as never, conversationId, {
       title,
       engineId,
@@ -580,7 +595,7 @@ export async function joinRemoteSession(conversationId: string): Promise<string 
     // stores Map——上面 manager 快照里的旧 Map 没有新会话，get 返回 undefined
     // 会把整块校正静默跳过（2026-10-24 插桩实证：running 中加入后 isStreaming
     // 停留 false → 无中断按钮 + token 走迟到追加分支 → 页面卡死 P0）。
-    const store2 = sessionStoreManager.getState().stores.get(sessionId)
+    const store2 = sessionManager()!.getState().stores.get(sessionId)
     if (store2) {
       try {
         const running = await invoke<{ running: boolean }>('is_chat_session_running', {
@@ -595,12 +610,12 @@ export async function joinRemoteSession(conversationId: string): Promise<string 
           // status 推导不会执行）——否则 Cell 状态点停留 idle 与实际流式不符。
           // 用户补充需求：加入后必须可中断/继续——isStreaming + status 是
           // 停止按钮与状态显示的数据源。
-          const mgr = sessionStoreManager.getState()
+          const mgr = sessionManager()!.getState()
           const meta = mgr.sessionMetadata.get(sessionId)
           if (meta) {
             const newMetadata = new Map(mgr.sessionMetadata)
             newMetadata.set(sessionId, { ...meta, status: 'running' })
-            sessionStoreManager.setState({ sessionMetadata: newMetadata })
+            sessionManager()!.setState({ sessionMetadata: newMetadata })
           }
         }
       } catch (e) {

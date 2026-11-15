@@ -9,7 +9,15 @@
  * - chat-desk 插件（经 __POLARIS_HOST_INVOKE__ router_dispatch 同款协议）。
  */
 import { invoke } from '@/services/transport'
-import type { AiDispatchResponse } from './aiChatDispatch'
+// AiDispatchResponse（对齐 src-tauri ai_chat_dispatch 返回；原 aiChatDispatch.ts
+// 随对话域迁入插件，宿主 chrome 只需此只读面的类型）
+interface AiDispatchResponse {
+  msgId: string
+  ok: boolean
+  result: unknown
+  error: string | null
+  trace: string
+}
 
 const TARGET = 'cap.session'
 

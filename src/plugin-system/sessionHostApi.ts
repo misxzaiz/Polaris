@@ -12,8 +12,14 @@
  *   证实——本 API 不做二次校验（恢复链路自身对空消息已有失败兜底）。
  */
 
-import { forkSession, restoreFromHistory } from '@/services/sessionRestore'
 import { createLogger } from '@/utils/logger'
+
+// P6：sessionRestore 随对话域迁入 chat-desk 插件；经反向桥服务取（插件 bootstrap 回挂）。
+function bridgeRestore(): { restoreFromHistory: (...a: unknown[]) => Promise<string | null>; forkSession: (...a: unknown[]) => Promise<string | null> } | undefined {
+  return (window as unknown as {
+    __POLARIS_APP_CORE__?: { services?: { sessionRestore?: { restoreFromHistory: (...a: unknown[]) => Promise<string | null>; forkSession: (...a: unknown[]) => Promise<string | null> } } }
+  }).__POLARIS_APP_CORE__?.services?.sessionRestore
+}
 
 const log = createLogger('PluginSessionHostApi')
 
@@ -47,7 +53,7 @@ export function createHostSessionApi(pluginId = '<host>'): PluginSessionHostApi 
     async restore(conversationId, opts) {
       if (!conversationId) return null
       log.info('插件恢复会话', { pluginId, conversationId })
-      return restoreFromHistory(
+      return bridgeRestore()!.restoreFromHistory(
         conversationId,
         opts?.engineId,
         opts?.projectPath,
@@ -58,7 +64,7 @@ export function createHostSessionApi(pluginId = '<host>'): PluginSessionHostApi 
     async fork(conversationId, opts) {
       if (!conversationId) return null
       log.info('插件创建分支', { pluginId, conversationId, branchName: opts?.branchName })
-      return forkSession(
+      return bridgeRestore()!.forkSession(
         conversationId,
         opts?.engineId,
         opts?.projectPath,

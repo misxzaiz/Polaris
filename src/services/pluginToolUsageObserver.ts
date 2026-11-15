@@ -17,9 +17,9 @@
  */
 
 import { invoke } from '@/services/transport'
-import { getEventBus } from '@/ai-runtime'
+import { getEventBus } from '@/services/aiEventBus'
 import { createLogger } from '@/utils/logger'
-import type { ToolCallEndEvent } from '@/ai-runtime'
+import type { ToolCallEndEvent } from '@/types/aiEvent'
 
 const log = createLogger('PluginToolUsageObserver')
 

@@ -30,7 +30,6 @@ import { useOverlayStore } from '@/stores/overlayStore'
 import { useSnippetStore } from '@/stores/snippetStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
-import { useCompactHandoffStore } from '@/stores/compactHandoffStore'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { dialogStorageService, maybeAutoMigrateOpfs } from '@/services/dialogStorage'
 import * as chatService from '@/services/tauri/chatService'
@@ -86,7 +85,6 @@ export function installAppCoreBridge(): void {
       useSnippetStore,
       useSkillStore,
       useFileEditorStore,
-      useCompactHandoffStore,
       useDispatchStore,
     },
     services: {

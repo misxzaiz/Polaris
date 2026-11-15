@@ -61,11 +61,14 @@ function handleConnectionStatusChange(status: ConnectionStatus): void {
  * 动态 import 避免 transport ↔ store 的模块级循环依赖。
  */
 function handleResumeGap(): void {
-  void import('../webReconnectResync')
-    .then((m) => m.resyncAfterResumeGap())
-    .catch((err) => {
-      log.error('Resume-gap 兜底恢复失败', err instanceof Error ? err : new Error(String(err)));
-    });
+  // P6：resyncAfterResumeGap 随对话域迁入 chat-desk 插件，经反向桥服务调用
+  const svc = (window as unknown as {
+    __POLARIS_APP_CORE__?: { services?: { webReconnectResync?: { resyncAfterResumeGap?: () => Promise<void> } } }
+  }).__POLARIS_APP_CORE__?.services?.webReconnectResync
+  if (!svc?.resyncAfterResumeGap) return
+  svc.resyncAfterResumeGap().catch((err: unknown) => {
+    log.error('Resume-gap 兜底恢复失败', err instanceof Error ? err : new Error(String(err)));
+  });
 }
 
 /**
@@ -75,13 +78,7 @@ function handleResumeGap(): void {
  * （审计 1.7 缺口2 的近似修复；完整的投影发现机制在跨端批次落地。）
  */
 function handleFreshConnect(): void {
-  setTimeout(() => {
-    void import('../webReconnectResync')
-      .then((m) => m.resyncAfterResumeGap())
-      .catch((err) => {
-        log.error('Fresh-connect 兜底恢复失败', err instanceof Error ? err : new Error(String(err)));
-      });
-  }, 3000);
+  setTimeout(() => handleResumeGap(), 3000);
 }
 
 /** 当前传输模式 */

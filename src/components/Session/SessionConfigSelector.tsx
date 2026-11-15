@@ -27,7 +27,15 @@ import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { getEngineEffortOptions, getEnginePermissionOptions } from '@/utils/engineCapabilities'
 import { isProfileForEngine, OFFICIAL_API_PROFILE, profileModelOptions, type WireApi } from '@/types/modelProfile'
-import { useActiveSessionId, useSessionMetadataList, sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+import { useSessionDirectoryActiveId as useActiveSessionId, useSessionDirectorySessions as useSessionMetadataList } from '@/stores/sessionDirectoryStore'
+
+// P6：会话状态单写者随对话域迁入 chat-desk 插件；宿主经反向桥动态取。
+function sessionStoreManager(): { getState: () => Record<string, (...a: unknown[]) => unknown> & { activeSessionId: string | null } } | undefined {
+  return (window as unknown as {
+    __POLARIS_APP_CORE__?: { stores?: { sessionStoreManager?: { getState: () => Record<string, (...a: unknown[]) => unknown> & { activeSessionId: string | null } } } }
+  }).__POLARIS_APP_CORE__?.stores?.sessionStoreManager
+}
+
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { getEngineSelectors } from '@/utils/engineCapabilities'
 
@@ -301,24 +309,24 @@ export function SessionConfigSelector({
     })
     // P1: Profile / Model / Agent 是会话级覆盖 — 写入当前会话的 metadata，实现窗口间隔离。
     // 新建会话面板（writeThroughToSession=false）不写回当前会话，仅持有面板态，创建时统一透传。
-    const activeId = writeThroughToSession ? sessionStoreManager.getState().activeSessionId : null
+    const activeId = writeThroughToSession ? sessionStoreManager()?.getState().activeSessionId ?? null : null
     if (activeId) {
       if (type === 'profile') {
         // 二态供应商模式写入会话级覆盖：
         // - 官方 → 哨兵 + profileMode=official
         // - 指定 Profile → id + profileMode=profile
         if (value === '') {
-          sessionStoreManager.getState().updateSessionModelProfile(activeId, OFFICIAL_API_PROFILE)
-          sessionStoreManager.getState().updateSessionProfileMode(activeId, 'official')
+          sessionStoreManager()?.getState().updateSessionModelProfile?.(activeId, OFFICIAL_API_PROFILE)
+          sessionStoreManager()?.getState().updateSessionProfileMode?.(activeId, 'official')
         } else {
-          sessionStoreManager.getState().updateSessionModelProfile(activeId, value)
-          sessionStoreManager.getState().updateSessionProfileMode(activeId, 'profile')
+          sessionStoreManager()?.getState().updateSessionModelProfile?.(activeId, value)
+          sessionStoreManager()?.getState().updateSessionProfileMode?.(activeId, 'profile')
         }
       } else if (type === 'model') {
-        sessionStoreManager.getState().updateSessionModel(activeId, value)
+        sessionStoreManager()?.getState().updateSessionModel?.(activeId, value)
       } else if (type === 'agent') {
         // 空值 = 清除专家；非空 = 写入会话级专家覆盖。
-        sessionStoreManager.getState().updateSessionAgent(activeId, value || null)
+        sessionStoreManager()?.getState().updateSessionAgent?.(activeId, value || null)
       }
     }
     setOpenDropdown(null)

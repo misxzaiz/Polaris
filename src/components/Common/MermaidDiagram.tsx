@@ -1,20 +1,23 @@
 /**
- * 流式环境下的 Mermaid 延迟渲染组件
+ * Mermaid 图表渲染组件
  *
- * 核心特性：
- * - 流式阶段不自动渲染图表，显示"点击渲染"按钮
- * - 避免流式阶段 mermaid.js 库加载和解码开销
- * - 用户主动点击后才触发渲染
- * - 渲染后与完整版 MermaidDiagram 功能一致
+ * 功能：
+ * - 懒加载 mermaid 库，减少首屏体积
+ * - IntersectionObserver：只在可见时渲染图表
+ * - 支持暗色主题（匹配项目配色）
+ * - 错误处理和友好提示
+ * - 加载状态显示
+ * - 图表缩放功能（鼠标滚轮 + 按钮）
+ * - 源码/图表切换
+ * - 复制源码功能
  */
 
-import { memo, useState, useCallback, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { sanitizeMermaidSvg } from '@/utils/sanitizeMermaidSvg';
 import { getMermaidConfig } from '@/utils/mermaid-config';
 import { useThemeStore } from '@/stores/themeStore';
 import { modKey } from '@/utils/path';
-import { usePerformanceFlag } from '@/utils/performanceFeatures';
 import { createLogger } from '@/utils/logger';
 import {
   type ViewMode,
@@ -23,48 +26,66 @@ import {
   getDiagramState,
   saveDiagramState,
   removeDiagramState,
-} from '../messages/diagramState';
+} from './diagramState';
 
-const log = createLogger('DeferredMermaidDiagram');
+const log = createLogger('MermaidDiagram');
 
-interface DeferredMermaidDiagramProps {
+interface MermaidDiagramProps {
   /** Mermaid 图表代码 */
   code: string;
-  /** 唯一标识符 */
+  /** 唯一标识符（用于生成图表 ID） */
   id: string;
-  /** 是否处于流式状态 */
-  isStreaming?: boolean;
+  /** 是否启用自动渲染（performance.mermaidDiagrams 开关）。
+   *  默认 true（向后兼容）。false 时不自动加载 mermaid.js，
+   *  显示"点击渲染"占位，用户点击后触发渲染。 */
+  enabled?: boolean;
 }
 
 /**
- * 渲染状态
+ * 可见性检测阈值配置
+ */
+const INTERSECTION_OPTIONS: IntersectionObserverInit = {
+  root: null,
+  rootMargin: '100px', // 提前 100px 开始加载
+  threshold: 0.1,      // 10% 可见时触发
+};
+
+/** 图表容器最大高度样式 */
+const CHART_MAX_HEIGHT_STYLE: React.CSSProperties = { maxHeight: '600px' };
+
+/**
+ * Mermaid 渲染状态
  */
 type RenderState = 'idle' | 'loading' | 'success' | 'error';
 
 /**
- * 延迟渲染 Mermaid 图表组件
+ * MermaidDiagram 组件
  *
- * 流式阶段显示占位符 + 渲染按钮，用户点击后才渲染
- * 流式结束后可自动渲染（可选）
+ * @example
+ * ```tsx
+ * <MermaidDiagram
+ *   code="graph TD\n  A --> B"
+ *   id="mermaid-1"
+ * />
+ * ```
  */
-export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
-  code,
-  id,
-  isStreaming = false,
-}: DeferredMermaidDiagramProps) {
+export const MermaidDiagram = memo(function MermaidDiagram({ code, id, enabled = true }: MermaidDiagramProps) {
   const { t } = useTranslation('chat');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [renderState, setRenderState] = useState<RenderState>('idle');
   const [svg, setSvg] = useState<string>('');
-  const [diagramState, setDiagramState] = useState<DiagramState>(() => getDiagramState(id));
-  const [copySuccess, setCopySuccess] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const hasRequestedRender = useRef(false);
-  const renderedCodeRef = useRef<string>('');
+  const [isVisible, setIsVisible] = useState(false); // 是否在视口中可见
+  const hasRenderedRef = useRef(false); // 是否已渲染过（避免重复渲染）
 
   // 组件卸载时清理全局状态，防止内存泄漏
   useEffect(() => {
     return () => removeDiagramState(id);
   }, [id]);
+
+  // 图表交互状态
+  const [diagramState, setDiagramState] = useState<DiagramState>(() => getDiagramState(id));
+  const [copySuccess, setCopySuccess] = useState(false);
 
   // 更新状态并持久化
   const updateState = useCallback((updates: Partial<DiagramState>) => {
@@ -75,79 +96,117 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
     });
   }, [id]);
 
-  // 渲染 Mermaid 图表
-  const renderDiagram = useCallback(async () => {
-    // 允许代码变更后重新渲染
-    if (hasRequestedRender.current && renderedCodeRef.current === code) return;
-    hasRequestedRender.current = true;
+  // ===== 可见性检测 =====
+  // enabled=false（performance.mermaidDiagrams 关闭）时不启动自动渲染，
+  // 显示"点击渲染"占位，由用户手动触发（避免加载 mermaid.js ~1.5MB）。
+  useEffect(() => {
+    if (!enabled) return;
+    const container = containerRef.current;
+    if (!container || hasRenderedRef.current) return;
 
-    if (!code || !code.trim()) {
-      setRenderState('idle');
-      return;
-    }
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting && !hasRenderedRef.current) {
+          setIsVisible(true);
+          hasRenderedRef.current = true;
+          observer.disconnect();
+        }
+      });
+    }, INTERSECTION_OPTIONS);
 
-    setRenderState('loading');
+    observer.observe(container);
 
-    try {
-      // 动态导入 mermaid（懒加载）
-      const mermaidModule = await import('mermaid');
-      const mermaidInstance = mermaidModule.default;
+    return () => {
+      observer.disconnect();
+    };
+  }, [enabled]);
 
-      // 检查是否已初始化（mermaid 10.x 不支持 isInitialized 检查，直接调用 initialize）
-      try {
-        const theme = useThemeStore.getState().activeThemeId;
-        const config = getMermaidConfig(theme);
-        mermaidInstance.initialize(config);
-      } catch {
-        // 可能已初始化，忽略错误
+  // ===== Mermaid 渲染逻辑（只在可见时执行）=====
+  useEffect(() => {
+    // 只在可见时才渲染
+    if (!isVisible) return;
+
+    let mounted = true;
+    let mermaidInstance: any = null;
+
+    const renderDiagram = async () => {
+      // 空代码不渲染
+      if (!code || !code.trim()) {
+        return;
       }
 
-      // 生成唯一 ID
-      const uniqueId = `mermaid-${id}`;
+      setRenderState('loading');
 
-      // 渲染图表
-      const { svg } = await mermaidInstance.render(uniqueId, code);
-      renderedCodeRef.current = code;
-      setSvg(svg);
-      setRenderState('success');
-    } catch (err) {
-      log.error('Mermaid render error', err instanceof Error ? err : new Error(String(err)));
-      setRenderState('error');
-      setSvg('');
-    }
-  }, [code, id]);
+      try {
+        // 动态导入 mermaid（懒加载）
+        const mermaidModule = await import('mermaid');
+        mermaidInstance = mermaidModule.default;
 
-  // 流式结束后自动渲染（非流式场景）
-  // 性能开关：mermaidDiagrams=false 时不自动渲染，用户手动点击
-  const mermaidEnabled = usePerformanceFlag('mermaidDiagrams');
+        // 检查是否已初始化
+        if (!mermaidInstance.isInitialized?.()) {
+          const theme = useThemeStore.getState().activeThemeId;
+          const config = getMermaidConfig(theme);
+          mermaidInstance.initialize(config);
+        }
 
-  useEffect(() => {
-    if (!isStreaming && renderState === 'idle' && code?.trim() && mermaidEnabled) {
-      const timer = setTimeout(() => {
-        renderDiagram();
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [isStreaming, renderState, code, mermaidEnabled, renderDiagram]);
+        // 生成唯一 ID（避免多个图表冲突）
+        const uniqueId = `mermaid-${id}`;
 
-  // 事件处理
+        // 渲染图表
+        const { svg } = await mermaidInstance.render(uniqueId, code);
+
+        if (mounted) {
+          setSvg(svg);
+          setRenderState('success');
+        }
+      } catch (err) {
+        if (mounted) {
+          log.error('Mermaid render error', err instanceof Error ? err : new Error(String(err)));
+          setRenderState('error');
+          setSvg('');
+        }
+      }
+    };
+
+    renderDiagram();
+
+    return () => {
+      mounted = false;
+    };
+  }, [isVisible, code, id]);
+
+  // ===== 事件处理函数 =====
+
+  // 手动触发渲染（enabled=false 时用户点击"渲染图表"按钮调用）。
+  // 复用 isVisible → effect renderDiagram 路径，无需重复实现渲染逻辑。
+  const handleRequestRender = useCallback(() => {
+    if (hasRenderedRef.current) return;
+    hasRenderedRef.current = true;
+    setIsVisible(true);
+  }, []);
+
+  // 放大
   const handleZoomIn = useCallback(() => {
     updateState({
-      scale: Math.min(diagramState.scale + SCALE_CONFIG.step, SCALE_CONFIG.max),
+      scale: Math.min(diagramState.scale + SCALE_CONFIG.step, SCALE_CONFIG.max)
     });
   }, [diagramState.scale, updateState]);
 
+  // 缩小
   const handleZoomOut = useCallback(() => {
     updateState({
-      scale: Math.max(diagramState.scale - SCALE_CONFIG.step, SCALE_CONFIG.min),
+      scale: Math.max(diagramState.scale - SCALE_CONFIG.step, SCALE_CONFIG.min)
     });
   }, [diagramState.scale, updateState]);
 
+  // 重置
   const handleReset = useCallback(() => {
     updateState({ scale: SCALE_CONFIG.default });
   }, [updateState]);
 
+  // 鼠标滚轮缩放
   const handleWheel = useCallback((e: React.WheelEvent) => {
+    // 只在图表模式且按住 Ctrl/Cmd 时缩放
     if (diagramState.viewMode !== 'chart') return;
     if (!e.ctrlKey && !e.metaKey) return;
 
@@ -157,20 +216,23 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
       scale: Math.max(
         SCALE_CONFIG.min,
         Math.min(diagramState.scale + delta, SCALE_CONFIG.max)
-      ),
+      )
     });
   }, [diagramState.viewMode, diagramState.scale, updateState]);
 
+  // 切换视图模式
   const handleToggleView = useCallback((mode: ViewMode) => {
     updateState({ viewMode: mode });
   }, [updateState]);
 
+  // 复制源码
   const handleCopySource = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(code);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
     } catch {
+      // 降级方案
       const textArea = document.createElement('textarea');
       textArea.value = code;
       document.body.appendChild(textArea);
@@ -182,11 +244,14 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
     }
   }, [code]);
 
-  // 错误状态
+  // ===== 渲染状态 =====
+
+  // 1. 错误状态
   if (renderState === 'error') {
     return (
       <div className="my-4 p-4 bg-danger-faint border border-danger/30 rounded-lg overflow-auto">
         <div className="flex items-start gap-2">
+          {/* 错误图标 */}
           <svg
             className="w-5 h-5 text-danger shrink-0 mt-0.5"
             fill="none"
@@ -200,6 +265,7 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
               d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
+
           <div className="flex-1 min-w-0">
             <p className="text-sm text-danger font-medium">{t('mermaid.renderFailed')}</p>
             <details className="mt-2">
@@ -216,11 +282,12 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
     );
   }
 
-  // 加载状态
+  // 2. 加载状态
   if (renderState === 'loading') {
     return (
       <div className="my-4 p-6 bg-background-surface border border-border-subtle rounded-lg">
         <div className="flex items-center gap-3">
+          {/* 加载动画 */}
           <div className="flex gap-1">
             <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
             <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -232,7 +299,7 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
     );
   }
 
-  // 成功状态（已渲染）
+  // 3. 成功状态
   if (renderState === 'success' && svg) {
     return (
       <div
@@ -266,11 +333,13 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
             </button>
           </div>
 
+          {/* 分隔线 */}
           <div className="w-px h-4 bg-border-subtle" />
 
           {/* 图表模式：缩放控制 */}
           {diagramState.viewMode === 'chart' && (
             <>
+              {/* 缩小按钮 */}
               <button
                 className="p-1.5 rounded-md hover:bg-background-hover text-text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleZoomOut}
@@ -281,9 +350,13 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
                 </svg>
               </button>
+
+              {/* 缩放比例显示 */}
               <span className="text-xs text-text-tertiary min-w-[3rem] text-center">
                 {Math.round(diagramState.scale * 100)}%
               </span>
+
+              {/* 放大按钮 */}
               <button
                 className="p-1.5 rounded-md hover:bg-background-hover text-text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleZoomIn}
@@ -294,7 +367,11 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
               </button>
+
+              {/* 分隔线 */}
               <div className="w-px h-4 bg-border-subtle" />
+
+              {/* 重置按钮 */}
               <button
                 className="px-2 py-1 text-xs rounded-md hover:bg-background-hover text-text-tertiary transition-colors"
                 onClick={handleReset}
@@ -335,6 +412,7 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
             </button>
           )}
 
+          {/* 提示文本 */}
           <div className="ml-auto text-xs text-text-muted">
             {diagramState.viewMode === 'chart' && t('mermaid.wheelZoom', { modKey })}
           </div>
@@ -343,16 +421,19 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
         {/* 内容区域 */}
         <div className="p-4">
           {diagramState.viewMode === 'chart' ? (
+            /* 图表视图 */
             <div
+              ref={contentRef}
               className="overflow-auto"
-              style={{ maxHeight: '600px' }}
+              style={CHART_MAX_HEIGHT_STYLE}
             >
               <div
                 style={{
                   transform: `scale(${diagramState.scale})`,
-                  transformOrigin: 'top left',
+                  transformOrigin: 'top left',  // 修改：从左上角开始缩放，避免左边被遮挡
                   transition: 'transform 0.2s ease-out',
                   willChange: 'transform',
+                  // 补充：设置最小宽度确保容器能随缩放扩展
                   minWidth: `${diagramState.scale * 100}%`,
                 }}
               >
@@ -360,6 +441,7 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
               </div>
             </div>
           ) : (
+            /* 源码视图 */
             <div className="bg-background-base rounded-lg p-4 overflow-auto max-h-[600px]">
               <pre className="text-sm">
                 <code className="text-text-secondary font-mono whitespace-pre-wrap">{code}</code>
@@ -371,48 +453,67 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
     );
   }
 
-  // 空状态/未渲染（显示渲染按钮）
+  // 4. 空状态/未可见状态
+  //    enabled=false：显示"点击渲染"占位（与 DeferredMermaidDiagram 一致），
+  //    不自动加载 mermaid.js；用户点击后触发渲染。
+  //    enabled=true 但未可见：纯占位（IntersectionObserver 将触发）。
+  if (!enabled) {
+    return (
+      <div
+        ref={containerRef}
+        className="my-4 bg-background-surface border border-border-subtle rounded-lg overflow-hidden"
+      >
+        <div className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-text-tertiary">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-sm">{t('mermaid.diagram', '图表')}</span>
+            </div>
+            <button
+              onClick={handleRequestRender}
+              className="px-3 py-1.5 text-xs bg-primary/10 hover:bg-primary/20 text-primary rounded-md transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {t('mermaid.clickToRender', '渲染图表')}
+            </button>
+          </div>
+          <details className="mt-3">
+            <summary className="text-xs text-text-quaternary cursor-pointer hover:text-text-tertiary transition-colors">
+              {t('mermaid.viewSourceCode', '查看源代码')}
+            </summary>
+            <pre className="mt-2 text-xs text-text-secondary bg-background-base p-2 rounded border border-border-subtle overflow-auto max-h-[200px]">
+              <code className="font-mono whitespace-pre-wrap">{code}</code>
+            </pre>
+          </details>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
-      className="my-4 bg-background-surface border border-border-subtle rounded-lg overflow-hidden"
+      className="my-4 p-6 bg-background-surface border border-border-subtle rounded-lg"
     >
-      {/* 占位符内容 */}
-      <div className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-text-tertiary">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span className="text-sm">{t('mermaid.diagram')}</span>
-          </div>
-          <button
-            onClick={renderDiagram}
-            className="px-3 py-1.5 text-xs bg-primary/10 hover:bg-primary/20 text-primary rounded-md transition-colors flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {t('mermaid.clickToRender')}
-          </button>
-        </div>
-        {/* 源码预览（折叠状态） */}
-        <details className="mt-3">
-          <summary className="text-xs text-text-quaternary cursor-pointer hover:text-text-tertiary transition-colors">
-            {t('mermaid.viewSourceCode')}
-          </summary>
-          <pre className="mt-2 text-xs text-text-secondary bg-background-base p-2 rounded border border-border-subtle overflow-auto max-h-[200px]">
-            <code className="font-mono whitespace-pre-wrap">{code}</code>
-          </pre>
-        </details>
+      <div className="flex items-center justify-center gap-3">
+        <svg className="w-5 h-5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        <span className="text-sm text-text-tertiary">{t('mermaid.deferredRender')}</span>
       </div>
     </div>
   );
 }, (prevProps, nextProps) => {
+  // 自定义比较：在 code / id / enabled 变化时重新渲染
+  // （enabled 加入比较维度，确保 performance.mermaidDiagrams 开关切换时组件重渲染）
   return (
     prevProps.code === nextProps.code &&
     prevProps.id === nextProps.id &&
-    prevProps.isStreaming === nextProps.isStreaming
+    prevProps.enabled === nextProps.enabled
   );
 });

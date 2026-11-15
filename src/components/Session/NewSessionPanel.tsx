@@ -6,9 +6,9 @@ import { Folder, Check, Bot, Search, Zap, Link, Plus } from 'lucide-react';
 import { useWorkspaceStore, useConfigStore } from '@/stores';
 import { useOverlayStore } from '@/stores/overlayStore';
 import {
-  useSessionMetadataList,
+  useSessionDirectorySessions as useSessionMetadataList,
   useSessionManagerActions,
-} from '@/stores/conversationStore/sessionStoreManager';
+} from '@/stores/sessionDirectoryStore';
 import { useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput';
 import type { EngineId } from '@/types';
 import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay';

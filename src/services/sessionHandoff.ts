@@ -19,12 +19,32 @@
 
 import i18n from 'i18next'
 import { createLogger } from '@/utils/logger'
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+// P6：会话状态单写者随对话域迁入 chat-desk 插件；宿主经反向桥动态取。
+type ManagerLike = {
+  getState: () => {
+    sessionMetadata: Map<string, { engineId?: string; title?: string; workspaceId?: string | null }>
+    stores: Map<string, { getState: () => Record<string, unknown> & {
+      conversationId?: string
+      messages?: unknown[]
+      archivedMessages?: unknown[]
+      getPersistableMessages?: () => unknown[]
+      updateInputDraft?: (...a: unknown[]) => void
+    } }>
+    createSession: (...a: unknown[]) => string
+    switchSession: (...a: unknown[]) => void
+  }
+}
+
+function sessionManager(): ManagerLike | undefined {
+  return (window as unknown as {
+    __POLARIS_APP_CORE__?: { stores?: { sessionStoreManager?: ManagerLike } }
+  }).__POLARIS_APP_CORE__?.stores?.sessionStoreManager
+}
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { aiHistoryDispatch } from './aiHistoryDispatch'
 import { convertClaudeHistoryToChatMessages, type ClaudeCodeMessage } from './claudeHistoryConvert'
 import { dialogStorageService } from './dialogStorage/service'
-import { normalizeRecoveredMessages } from '@/stores/conversationStore/dedupMessages'
+import { normalizeRecoveredMessages } from '@/utils/dedupMessages'
 import type { ChatMessage, EngineId } from '@/types'
 import {
   packToFile,
@@ -50,13 +70,13 @@ export interface HandoffEligibility {
  * 不再限制引擎 —— 任意引擎的会话都可续接（跨引擎时走内容快照路径）。
  */
 export function getHandoffEligibility(sessionId: string): HandoffEligibility {
-  const manager = sessionStoreManager.getState()
+  const manager = sessionManager()!.getState()
   const meta = manager.sessionMetadata.get(sessionId)
   const store = manager.stores.get(sessionId)?.getState()
 
   if (!meta || !store) return { enabled: false, reasonKey: 'handoff.reasonNoSession' }
   if (!meta.workspaceId) return { enabled: false, reasonKey: 'handoff.reasonNoWorkspace' }
-  if (!store.conversationId && store.messages.length === 0) {
+  if (!store.conversationId && (store.messages ?? []).length === 0) {
     return { enabled: false, reasonKey: 'handoff.reasonEmpty' }
   }
 
@@ -80,7 +100,7 @@ export async function handoffSessionToNewSession(
   sessionId: string,
   targetEngineId?: EngineId,
 ): Promise<HandoffResult> {
-  const manager = sessionStoreManager.getState()
+  const manager = sessionManager()!.getState()
   const meta = manager.sessionMetadata.get(sessionId)
   const store = manager.stores.get(sessionId)?.getState()
 
@@ -103,7 +123,7 @@ export async function handoffSessionToNewSession(
   try {
     // 1. 取完整原文（按引擎分流：原生历史 / self JSONL / 内存兜底）
     // 内存兜底用持久化态（已恢复压缩消息），避免把离屏压缩结果作为续接原文。
-    const fallbackMessages = [...store.getPersistableMessages(), ...(store.archivedMessages ?? [])]
+    const fallbackMessages = [...((store.getPersistableMessages?.() ?? []) as ChatMessage[]), ...((store.archivedMessages ?? []) as ChatMessage[])]
     const chatMessages = await loadConversationMessages(sourceEngineId, conversationId, fallbackMessages)
     if (chatMessages.length === 0) {
       return { ok: false, error: i18n.t('chat:handoff.emptyContent') }
@@ -112,11 +132,11 @@ export async function handoffSessionToNewSession(
     // 2. 按模式创建新会话
     return await createHandoffSession({
       messages: chatMessages,
-      sourceTitle: meta.title,
+      sourceTitle: meta.title ?? '',
       sourceEngineId,
       sourceConversationId: conversationId,
       targetEngineId: targetEngine,
-      workspaceId: meta.workspaceId,
+      workspaceId: meta.workspaceId!,
       workspacePath: workspace.path,
     })
   } catch (e) {
@@ -237,7 +257,7 @@ async function createHandoffSession(params: CreateHandoffParams): Promise<Handof
   if (mode === 'fork' && !sourceConversationId) mode = 'summary'
   if (mode === 'message-history') mode = 'summary'
 
-  const manager = sessionStoreManager.getState()
+  const manager = sessionManager()!.getState()
   const newTitle = i18n.t('chat:handoff.newSessionTitle', { title: sourceTitle })
 
   // fork 模式：引擎原生续接，不落盘、不预填引导语
@@ -268,7 +288,7 @@ async function createHandoffSession(params: CreateHandoffParams): Promise<Handof
   const newStore = manager.stores.get(newSessionId)?.getState()
   if (newStore) {
     const guide = i18n.t('chat:handoff.guidePrompt', { ref: `@${fileRef.relPath}` })
-    newStore.updateInputDraft({ text: guide, attachments: [] })
+    newStore.updateInputDraft?.({ text: guide, attachments: [] })
   }
 
   log.info('续接新会话已创建', { mode, newSessionId, targetEngineId })

@@ -68,7 +68,7 @@ function setState(patch: Partial<SessionDirectoryState>) {
 }
 
 // ── 投影：订阅插件域权威 store，裁剪出 chrome 所需切片 ──
-let unsubscribers: Array<() => void> = []
+const unsubscribers: Array<() => void> = []
 let projected = false
 let retryTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -173,4 +173,49 @@ export function createSession(...args: unknown[]): string {
 export function createSessionFromHistory(...args: unknown[]): string {
   const fn = manager()?.getState().createSessionFromHistory
   return typeof fn === 'function' ? (fn(...args) as string) : ''
+}
+
+// ── chrome 会话 hooks（P6：替代 conversationStore 的 useSessionMetadataList 等）──
+export function useActiveSessionId(): string | null {
+  ensureProjected()
+  return useSyncExternalStore(
+    (cb) => {
+      ensureProjected()
+      const mgr = manager()
+      if (!mgr) return () => undefined
+      return mgr.subscribe(cb)
+    },
+    () => manager()?.getState().activeSessionId ?? null,
+    () => null,
+  )
+}
+
+export function useSessionManagerActions(): {
+  switchSession: (id: string) => void
+  deleteSession: (id: string) => void
+  createSession: (...a: unknown[]) => string
+  createSessionFromHistory: (...a: unknown[]) => string
+  renameSession: (id: string, title: string) => void
+  updateSessionModelProfile?: (...a: unknown[]) => unknown
+  updateSessionProfileMode?: (...a: unknown[]) => unknown
+} {
+  ensureProjected()
+  const getState = () => manager()?.getState()
+  return {
+    switchSession: (id: string) => getState()?.switchSession(id),
+    deleteSession: (id: string) => getState()?.deleteSession(id),
+    createSession: (...a: unknown[]) => {
+      const fn = getState()?.createSession
+      return typeof fn === 'function' ? (fn(...a) as string) : ''
+    },
+    createSessionFromHistory: (...a: unknown[]) => {
+      const fn = getState()?.createSessionFromHistory
+      return typeof fn === 'function' ? (fn(...a) as string) : ''
+    },
+    renameSession: (id: string, title: string) => getState()?.updateSessionTitle(id, title),
+    updateSessionModelProfile: (...a: unknown[]) =>
+      (getState() as unknown as Record<string, (...x: unknown[]) => unknown>).updateSessionModelProfile?.(...a),
+    updateSessionProfileMode: (...a: unknown[]) =>
+      (getState() as unknown as Record<string, (...x: unknown[]) => unknown>).updateSessionProfileMode?.(...a),
+  }
 }

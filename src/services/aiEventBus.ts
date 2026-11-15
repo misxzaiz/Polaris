@@ -15,7 +15,7 @@
  * - 事件历史记录
  */
 
-import type { AIEvent } from './event'
+import type { AIEvent } from '@/types/aiEvent'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('EventBus')
