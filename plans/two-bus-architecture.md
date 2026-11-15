@@ -82,11 +82,12 @@ cap.context  cap.self.inspect  cap.help  cap.registry
 | **入口限制** | 无限制，可触达全部 cap.* |
 | **设计目的** | 完整能力访问、跨进程通信 |
 
-**全量能力清单（28 个，主进程 RouterBus 注册表实测；2026-11-02 增 cap.app.update）：**
+**全量能力清单（29 个，主进程 RouterBus 注册表实测；2026-11-02 增 cap.app.update；2026-11-15 增 cap.session）：**
 ```typescript
 const ALL_CAPABILITIES = [
   // AI 会话
   'cap.ai.chat',       // 流式会话（start/continue/interrupt）
+  'cap.session',       // 会话状态/消息查询/导航面（chat-desk P1；dialog/message/state/session 四簇）
   'cap.history',       // 会话历史查询
 
   // 系统管理
@@ -119,7 +120,7 @@ const ALL_CAPABILITIES = [
   'cap.registry',      // 动态能力注册
   'cap.self.inspect',  // 自身透视
   'cap.stream.echo',   // 流式骨架 demo
-  'cap.todo',          // 待办事项（与 bus 共享实现）
+  // cap.todo 已随内置 todo 插件移除（2026-11）
   'cap.voice',         // 语音合成
   'cap.help',          // 能力索引/详情（与 bus 同名不同实例）
 ] as const
