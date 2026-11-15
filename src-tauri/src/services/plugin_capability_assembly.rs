@@ -71,7 +71,31 @@ pub fn sync_plugin_capabilities(
                     tracing::info!(plugin = %plugin.id, cap = %contrib.id, "插件禁用：动态 cap 已卸载");
                 }
             }
+            // P6-hook：撤销插件 hook 订阅（contributes.hooks → cap.hook）
+            if let Some(hs) = crate::services::hook_registry::get_hook_system() {
+                for hook in &plugin.contributes.hooks {
+                    let removed = hs
+                        .registry
+                        .unregister(&hook.id, &hook.cap_id);
+                    if removed {
+                        tracing::info!(plugin = %plugin.id, hook = %hook.id, cap = %hook.cap_id, "插件禁用：hook 订阅已注销");
+                    }
+                }
+            }
             continue;
+        }
+        // P6-hook：绑定插件 hook 订阅（contributes.hooks → cap.hook.register 语义）
+        if let Some(hs) = crate::services::hook_registry::get_hook_system() {
+            for hook in &plugin.contributes.hooks {
+                hs.registry.register(
+                    &hook.id,
+                    crate::services::hook_registry::HookHandle {
+                        cap_id: hook.cap_id.clone(),
+                        plugin_id: plugin.id.clone(),
+                    },
+                );
+                tracing::info!(plugin = %plugin.id, hook = %hook.id, cap = %hook.cap_id, "插件启用：hook 订阅已绑定");
+            }
         }
         for contrib in &plugin.contributes.capabilities {
             let outcome = register_one(router, plugin.id.as_str(), contrib);
