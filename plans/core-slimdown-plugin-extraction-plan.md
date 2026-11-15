@@ -97,7 +97,7 @@ B2 合计 ~17.5k。
 
 | 编号 | 功能 | 状态 | 承接 | 预估 |
 |---|---|---|---|---|
-| B3-1 | AI 对话域（Chat UI + conversationStore + session-v2 + 对话服务 + 前端 ai-runtime/engines） | 🚧 立项（spec `ai-chat-plugin-extraction-spec.md` 待评审，P0 文档对账已完成） | chat-desk 插件 | ~40k |
+| B3-1 | AI 对话域（Chat UI + conversationStore + session-v2 + 对话服务 + 前端 ai-runtime/engines） | ✅ 已完成（2026-11-15 P6 删码：主仓净删 ~50.2k 行；chat-desk v0.1.0 商城可见；spec `ai-chat-plugin-extraction-spec.md` + `chatdesk-p6-host-removal-spec.md`） | chat-desk 插件 | ~40k → 50.2k（含测试/死代码） |
 
 B3 合计 ~40k（历史最大单域）。
 
