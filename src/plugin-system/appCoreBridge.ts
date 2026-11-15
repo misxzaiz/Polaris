@@ -43,6 +43,9 @@ import * as conversationPackager from '@/services/conversationPackager'
 import * as newSessionPrefsService from '@/services/newSessionPrefsService'
 import * as fileSearch from '@/services/fileSearch'
 import * as claudeSettingsService from '@/services/claudeSettingsService'
+import * as workspaceReference from '@/services/workspaceReference'
+import * as detector from '@/services/transport/detector'
+import * as aiHistoryDispatch from '@/services/aiHistoryDispatch'
 import { eventBus } from '@/services/eventBus'
 import * as imageSaveService from '@/services/imageSaveService'
 import * as linkExternal from '@/services/linkExternal'
@@ -101,6 +104,9 @@ export function installAppCoreBridge(): void {
       newSessionPrefsService,
       fileSearch,
       claudeSettingsService,
+      workspaceReference,
+      detector,
+      aiHistoryDispatch,
       eventBus,
       imageSaveService,
       linkExternal,
