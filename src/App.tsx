@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Layout, ConnectingOverlay, ErrorBoundary, ToastContainer, PermissionPromptHost } from './components/Common';
 import { FileExplorer } from './components/FileExplorer';
@@ -9,20 +9,6 @@ const log = createLogger('App');
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelTabStrip, CenterStage, RightPanel } from './components/Layout';
 import { PluginPanelHost } from './components/Plugins/PluginPanelHost';
-// FE-A: 此前经 './components/Chat' barrel 静态导入 7 组件，barrel re-export 的渲染子树
-// （renderChatMessage/SessionMessagesView/MessageSearchPanel → chatBlocks/chatBubbles/tool-calls
-// 约 1 万行）因「懒 chunk 反向 import main」被拽进入口 chunk（main 内出现 ToolCallBlock/
-// noHighlightRe 等仅懒侧使用的标识）。改深度路径直引断开传导，见 plans/fea-chat-barrel-spec.md。
-import { ChatInput } from './components/Chat/input/ChatInput';
-import type { EditMode } from './components/Chat/input/ChatInput';
-import { ChatStatusBar } from './components/Chat/common/ChatStatusBar';
-import { ErrorBanner } from './components/Chat/common/ErrorBanner';
-import { CompactHandoffButton } from './components/Chat/compact-handoff/CompactHandoffButton';
-import { CompactHandoffProgress } from './components/Chat/compact-handoff/CompactHandoffProgress';
-import { MultiWindowMenu } from './components/Chat/session/MultiWindowMenu';
-import { NewSessionButton } from './components/Session/NewSessionButton';
-// 条件渲染的重组件统一懒加载，避免首帧解析 400+ 模块的 Chat barrel 传递依赖
-const MultiSessionGridLazy = lazy(() => import('./components/Chat/session/MultiSessionGrid').then(m => ({ default: m.MultiSessionGrid })));
 // FE-2: NarrowTabOverlay 原经 Editor barrel 静态 import，会把 EditorPanel/Editor.tsx
 // 传导的 @codemirror 全家（manualChunks 钉入单一 codemirror chunk，~1MB）拽回首载。
 // 它仅 isCompact && narrowTabId 时渲染，改 React.lazy 移出首载；overlay 场景
@@ -62,8 +48,6 @@ import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './
 import { useNarrowTabStore } from './stores/narrowTabStore';
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
-import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
-import { useSessionMetadataList, useActiveSessionId } from './stores/conversationStore/sessionStoreManager';
 import { useOverlayStore } from './stores/overlayStore';
 import { eventBus } from './services/eventBus';
 import './index.css';
@@ -80,39 +64,11 @@ function App() {
   const { t } = useTranslation('common');
   const { isConnecting, connectionState } = useConfigStore();
 
-  // Chat 状态
-  const isStreaming = useActiveSessionStreaming();
-  const error = useActiveSessionError();
-  const { sendMessage, interrupt: interruptChat, editAndResend } = useActiveSessionActions();
-  const activeSessionId = useActiveSessionId();
-  // 活跃会话是否为"自由会话"（无工作区）。free 会话即使无全局工作区也应可发送。
-  const sessionMetadataList = useSessionMetadataList();
-  const activeSessionIsFree = useMemo(
-    () => sessionMetadataList.some((s) => s.id === activeSessionId && s.type === 'free'),
-    [sessionMetadataList, activeSessionId]
-  );
-
-  // 全局发送桥：外部插件面板（news-curator 等）sendToChat 的降级通道。
-  // 首选路径是 LeftPanelContent → PluginPanelHost 的 onSendToChat props；
-  // 此桥覆盖 props 未传递/旧面板场景，保证「生成日报/语音」等按钮可用。
+  // 全局发送桥（P6）：内置 Chat 已删除，sendToChat 通道由 chat-desk 面板经
+  // __POLARIS_APP_CORE__ 反向桥承接；此处保留空实现兜底（无插件时静默降级）。
   useEffect(() => {
-    ;(window as any).__POLARIS_SEND_TO_CHAT__ = (msg: string) => {
-      void sendMessage(msg);
-    };
-  }, [sendMessage]);
-
-  // 编辑模式状态
-  const [editMode, setEditMode] = useState<EditMode | null>(null);
-  const handleEditMessage = useCallback((messageId: string, content: string) => {
-    setEditMode({ messageId, content });
+    ;(window as any).__POLARIS_SEND_TO_CHAT__ = () => {};
   }, []);
-  const handleCancelEdit = useCallback(() => {
-    setEditMode(null);
-  }, []);
-  const handleEditSend = useCallback((messageId: string, newContent: string, _workspaceDir?: string) => {
-    editAndResend(messageId, newContent);
-    setEditMode(null);
-  }, [editAndResend]);
 
   // UI 状态
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
@@ -238,10 +194,6 @@ function App() {
   }, [workspaces, currentWorkspace]);
 
   // === 面板显示状态 ===
-  // 主面板内置 Chat 是否已拆除（ai-chat-plugin-extraction-spec P6）：构建期开关，
-  // P2-P5 灰度期保持 false（接管失败回内置）；P6 删码 commit 翻 true 并随删码
-  // 同步移除本开关（届时 ChatMainSlot 成为唯一兜底）。
-  const chatHostRemoved = import.meta.env.VITE_CHAT_HOST_REMOVED === '1';
   const activeLeftPanelContribution = pluginRegistry
     .listViewContributions('activityBar')
     .find(view => view.panelType === leftPanelType);
@@ -331,8 +283,8 @@ function App() {
       terminalContent={<TerminalSlotEmpty />}
       developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
       aiConsoleContent={<SlotEmpty icon="📊" title="AI 执行台" description="集成机器人监控已迁移至 im-bridge 插件；安装启用后在此查看执行状态。" />}
-      demoPluginContent={<Suspense fallback={loadingFallback}><DemoPluginPanel onSendToChat={sendMessage} /></Suspense>}
-      onSendToChat={(msg: string) => { void sendMessage(msg) }}
+      demoPluginContent={<Suspense fallback={loadingFallback}><DemoPluginPanel /></Suspense>}
+      onSendToChat={(msg: string) => { void (window as any).__POLARIS_SEND_TO_CHAT__?.(msg) }}
     />
   );
 
@@ -403,40 +355,15 @@ function App() {
                   if (claim && enabled) {
                     return (
                       <Suspense fallback={loadingFallback}>
-                        <PluginPanelHostLazy panelType={claim.panelType} onSendToChat={(msg) => { void sendMessage(msg) }} />
+                        <PluginPanelHostLazy panelType={claim.panelType} onSendToChat={(msg) => { void (window as any).__POLARIS_SEND_TO_CHAT__?.(msg) }} />
                       </Suspense>
                     );
                   }
-                  if (chatHostRemoved) {
-                    return (
-                      <Suspense fallback={loadingFallback}>
-                        <ChatMainSlot />
-                      </Suspense>
-                    );
-                  }
+                  // P6：内置 Chat 实现已删除——未命中插件席位时渲染空态引导卡
                   return (
-                    <>
-                      {error && <ErrorBanner error={error} />}
-
-                      <MultiSessionGridLazy onEditMessage={handleEditMessage} />
-
-                      <ChatInput
-                        onSend={sendMessage}
-                        onInterrupt={interruptChat}
-                        disabled={!currentWorkspace && !activeSessionIsFree}
-                        isStreaming={isStreaming}
-                        editMode={editMode}
-                        onCancelEdit={handleCancelEdit}
-                        onEditSend={handleEditSend}
-                        statusBarSlot={
-                          <ChatStatusBar embedded>
-                            <MultiWindowMenu />
-                            <NewSessionButton />
-                            <CompactHandoffButton />
-                          </ChatStatusBar>
-                        }
-                      />
-                    </>
+                    <Suspense fallback={loadingFallback}>
+                      <ChatMainSlot />
+                    </Suspense>
                   );
                 })()}
               </RightPanel>
@@ -462,9 +389,6 @@ function App() {
             </div>
           )}
         </div>
-
-        {/* 压缩交接后台进度胶囊（右下角，不阻塞界面） */}
-        <CompactHandoffProgress />
 
         {showCreateWorkspace && (
           <Suspense fallback={<div className="flex items-center justify-center text-text-muted">{t('status.loading')}</div>}>

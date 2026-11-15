@@ -10,7 +10,6 @@ import { isMobileTauriRuntime } from "./mobile/platform";
 import { registerExternalLinkGlobalHandler } from './services/linkExternal';
 import "./i18n";
 import { bootstrapTheme } from '@/services/themeEngine';
-import { remoteSessionFollower } from '@/services/remoteSessionFollower';
 import { invoke, listen } from '@/services/transport';
 import { createHostWorkspaceApi } from '@/plugin-system/hostWorkspaceApi';
 import { createHostThemeApi } from '@/plugin-system/themeHostApi';
@@ -197,11 +196,8 @@ if (import.meta.env.PROD && typeof navigator !== 'undefined' && 'serviceWorker' 
   })
 }
 
-// 跨端只读会话跟随（批 3/v2）：lifecycle 轮询发现 + chat-event 实时订阅。
-// 静态 import + 顶层启动——此前动态 import 排在 useAppInit 长链尾部（连坐跳过）
-// 和 main 动态 import（早期时序不稳）两种形态都实测未执行；静态模块图无失败面。
-// start 内部幂等；invoke 懒初始化 transport，此处无需等待连接建立。
-remoteSessionFollower.start();
+// P6：跨端只读会话跟随（remoteSessionFollower）随对话域迁入 chat-desk 插件
+//（插件 bootstrap.ts 启动）；宿主不再启动。
 
 const root = document.getElementById("root") as HTMLElement;
 

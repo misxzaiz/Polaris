@@ -9,51 +9,20 @@
  * - 工作区切换时清理聊天错误
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { listen } from '@/services/transport';
 import { useTabStore } from '@/stores/tabStore';
-import { eventBus } from '@/services/eventBus';
 import { useViewStore } from '@/stores/viewStore';
 import { useNarrowTabStore } from '@/stores/narrowTabStore';
 import { initEditorFileChangeListener } from '@/stores/fileEditorStore';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { sessionStoreManager } from '@/stores/conversationStore';
-import { getEventRouter } from '@/services/eventRouter';
-import { initDispatchTaskListener } from '@/services/dispatchTaskService';
 import { initPluginLifecycleSubscriber } from '@/stores/pluginLifecycleSubscriber';
-import { isAIEvent } from '@/ai-runtime';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('AppEvents');
 
 export function useAppEvents() {
-  const eventListenerCleanupRef = useRef<(() => void) | null>(null);
-
-  // 初始化事件路由器
-  useEffect(() => {
-    let mounted = true;
-
-    const router = getEventRouter();
-    router.initialize().then(() => {
-      if (!mounted) return;
-      const unregister = router.register('main', (payload: unknown) => {
-        if (!isAIEvent(payload)) return;
-        sessionStoreManager.getState().dispatchEvent(payload);
-      });
-      eventListenerCleanupRef.current = unregister;
-    });
-
-    return () => {
-      mounted = false;
-      eventListenerCleanupRef.current?.();
-      eventListenerCleanupRef.current = null;
-    };
-  }, []);
-
-  // 派发任务请求（dispatch_task MCP）→ 创建静默后台会话执行
-  useEffect(() => {
-    return initDispatchTaskListener();
-  }, []);
+  // P6：EventRouter 路由与 dispatch_task 监听随对话域迁入 chat-desk 插件
+  //（插件 bootstrap.ts）；宿主仅保留非对话域事件。
 
   // 插件生命周期事件（plugin.lifecycle）→ 刷新插件状态/清单（App 级常驻，
   // 非 PluginTab 消费方也能感知安装/卸载/更新/开关变化）
@@ -114,46 +83,6 @@ export function useAppEvents() {
 
   // 终端脚本监听/自动运行已随内置终端出仓（terminal-desk 插件 + H4 事件桥承接）
 
-  // 工作区切换时清除聊天错误
-  useEffect(() => {
-    const handleWorkspaceSwitched = () => {
-      const sessionId = sessionStoreManager.getState().activeSessionId;
-      if (sessionId) {
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState();
-        if (store?.error) {
-          store.setError(null);
-        }
-      }
-    };
+  // P6：工作区切换清聊天错误随对话域迁入 chat-desk 插件。
 
-    const offSwitched = eventBus.on('workspace-switched', handleWorkspaceSwitched)
-    return () => {
-      offSwitched()
-    }
-  }, [])
-
-  // 外部 config 变更时重新同步工作区列表（另一窗口 / 插件直写 update_config_patch /
-  // 手动编辑 config.json 等场景）。workspaceStore 自身写路径也会触发同一事件，
-  // 以本地写入时间戳防回环：刚写入的变更不需要再拉取。
-  useEffect(() => {
-    let lastLocalWriteAt = 0;
-    const offSwitched = eventBus.on('workspace-switched', () => { lastLocalWriteAt = Date.now(); });
-
-    let unlisten: (() => void) | null = null;
-    const unlistenPromise = listen('config-changed', () => {
-      // 后端 emit 的 payload 仅含 performance；把事件当作"拉取信号"而非数据源。
-      if (Date.now() - lastLocalWriteAt < 800) return; // 本地写入防抖（避免回环拉取）
-      log.debug('config-changed → syncing workspaces from server');
-      useWorkspaceStore.getState().syncFromServer().catch((error) =>
-        log.warn('workspace sync after config-changed failed', { error: String(error) })
-      );
-    });
-    unlistenPromise.then((fn) => { unlisten = fn; }).catch(() => { /* transport 不可用时静默 */ });
-
-    return () => {
-      offSwitched();
-      unlistenPromise.then((fn) => fn()).catch(() => { /* noop */ });
-      unlisten?.();
-    };
-  }, []);
 }

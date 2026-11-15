@@ -10,8 +10,33 @@
  * 单写者：sessionStoreManager（插件域）。本文件只做「读投影 + 动作委托」。
  */
 import { useSyncExternalStore } from 'react'
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
-import type { SessionMetadata } from '@/stores/conversationStore/types'
+import type { SessionMetadata } from '@/types'
+
+// P6：会话状态单写者（sessionStoreManager）随对话域迁入 chat-desk 插件；
+// 宿主经 __POLARIS_APP_CORE__.stores.sessionStoreManager 反向桥动态读取投影。
+// 插件未挂载时返回 undefined（chrome 侧降级为空投影）。
+type ManagerLike = {
+  getState: () => {
+    sessionMetadata: Map<string, SessionMetadata>
+    activeSessionId: string | null
+    stores: Map<string, { getState: () => { isStreaming: boolean } }>
+    switchSession: (...a: unknown[]) => unknown
+    deleteSession: (...a: unknown[]) => unknown
+    updateSessionTitle: (...a: unknown[]) => unknown
+    updateSessionWorkspace?: (...a: unknown[]) => unknown
+    addContextWorkspace?: (...a: unknown[]) => unknown
+    removeContextWorkspace?: (...a: unknown[]) => unknown
+    createSession?: (...a: unknown[]) => string
+    createSessionFromHistory?: (...a: unknown[]) => string
+  }
+  subscribe: (cb: () => void) => () => void
+}
+
+function manager(): ManagerLike | undefined {
+  return (window as unknown as {
+    __POLARIS_APP_CORE__?: { stores?: { sessionStoreManager?: ManagerLike } }
+  }).__POLARIS_APP_CORE__?.stores?.sessionStoreManager
+}
 
 export interface SessionDirectoryState {
   /** 会话元数据列表（id/title/engineId/workspaceId/createdAt…） */
@@ -45,12 +70,25 @@ function setState(patch: Partial<SessionDirectoryState>) {
 // ── 投影：订阅插件域权威 store，裁剪出 chrome 所需切片 ──
 let unsubscribers: Array<() => void> = []
 let projected = false
+let retryTimer: ReturnType<typeof setTimeout> | null = null
 
 export function ensureProjected(): void {
   if (projected) return
+  const mgr = manager()
+  if (!mgr) {
+    // 插件面板未挂载（反向桥未注册）：保持空投影，挂载后重试。
+    // 面板加载是异步 Blob import，晚于 chrome 首渲染；500ms 轮询至注册成功。
+    if (!retryTimer) {
+      retryTimer = setTimeout(() => {
+        retryTimer = null
+        ensureProjected()
+      }, 500)
+    }
+    return
+  }
   projected = true
   const project = () => {
-    const s = sessionStoreManager.getState()
+    const s = mgr.getState()
     const sessions = s.sessionMetadata ? Array.from(s.sessionMetadata.values()) : []
     const streamingMap: Record<string, boolean> = {}
     for (const m of sessions) {
@@ -64,7 +102,7 @@ export function ensureProjected(): void {
       streamingMap,
     })
   }
-  unsubscribers.push(sessionStoreManager.subscribe(project))
+  unsubscribers.push(mgr.subscribe(project))
   project()
 }
 
@@ -101,36 +139,38 @@ export function getSessionDirectorySnapshot(): SessionDirectoryState {
 
 // ── 动作委托（不新增写路径：转投插件域 manager / 总线）──
 export function switchSession(sessionId: string): void {
-  sessionStoreManager.getState().switchSession(sessionId)
+  manager()?.getState().switchSession(sessionId)
 }
 
 export function deleteSession(sessionId: string): void {
-  sessionStoreManager.getState().deleteSession(sessionId)
+  manager()?.getState().deleteSession(sessionId)
 }
 
 export function updateSessionTitle(sessionId: string, title: string): void {
-  sessionStoreManager.getState().updateSessionTitle(sessionId, title)
+  manager()?.getState().updateSessionTitle(sessionId, title)
 }
 
 export function updateSessionWorkspace(...args: unknown[]): void {
-  const fn = (sessionStoreManager.getState() as unknown as Record<string, (...a: unknown[]) => unknown>).updateSessionWorkspace
+  const fn = manager()?.getState().updateSessionWorkspace
   if (typeof fn === 'function') fn(...args)
 }
 
 export function addContextWorkspace(...args: unknown[]): void {
-  const fn = (sessionStoreManager.getState() as unknown as Record<string, (...a: unknown[]) => unknown>).addContextWorkspace
+  const fn = manager()?.getState().addContextWorkspace
   if (typeof fn === 'function') fn(...args)
 }
 
 export function removeContextWorkspace(...args: unknown[]): void {
-  const fn = (sessionStoreManager.getState() as unknown as Record<string, (...a: unknown[]) => unknown>).removeContextWorkspace
+  const fn = manager()?.getState().removeContextWorkspace
   if (typeof fn === 'function') fn(...args)
 }
 
 export function createSession(...args: unknown[]): string {
-  return (sessionStoreManager.getState().createSession as (...a: unknown[]) => string)(...args)
+  const fn = manager()?.getState().createSession
+  return typeof fn === 'function' ? (fn(...args) as string) : ''
 }
 
 export function createSessionFromHistory(...args: unknown[]): string {
-  return (sessionStoreManager.getState().createSessionFromHistory as (...a: unknown[]) => string)(...args)
+  const fn = manager()?.getState().createSessionFromHistory
+  return typeof fn === 'function' ? (fn(...args) as string) : ''
 }

@@ -12,9 +12,6 @@
  * 安全边界：仅 core:true 插件（chat-desk，不可卸载）消费；与宿主同 window
  * 同源加载，无越权面扩大（这些能力本就在主窗口 Realm 内）。
  */
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
-import * as useActiveSession from '@/stores/conversationStore/useActiveSession'
-import * as conversationStoreUtils from '@/stores/conversationStore/conversationStoreUtils'
 import { useConfigStore } from '@/stores/configStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useViewStore } from '@/stores/viewStore'
@@ -35,18 +32,9 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useCompactHandoffStore } from '@/stores/compactHandoffStore'
 import { useDispatchStore } from '@/stores/dispatchStore'
-import { getEventRouter } from '@/services/eventRouter'
 import { dialogStorageService, maybeAutoMigrateOpfs } from '@/services/dialogStorage'
-import { aiChatDispatch, aiChatDispatchStream } from '@/services/aiChatDispatch'
 import * as chatService from '@/services/tauri/chatService'
-import * as sessionRestore from '@/services/sessionRestore'
-import * as sessionHandoff from '@/services/sessionHandoff'
-import * as contextCompactHandoff from '@/services/contextCompactHandoff'
-import * as promptOptimizeService from '@/services/promptOptimizeService'
 import * as promptHistoryService from '@/services/promptHistoryService'
-import * as dispatchTaskService from '@/services/dispatchTaskService'
-import * as webReconnectResync from '@/services/webReconnectResync'
-import { remoteSessionFollower } from '@/services/remoteSessionFollower'
 import * as streamRateTracker from '@/services/streamRateTracker'
 import * as uiDispatchService from '@/services/uiDispatchService'
 import * as capSlashCommand from '@/services/capSlashCommand'
@@ -60,9 +48,6 @@ import { eventBus } from '@/services/eventBus'
 import * as imageSaveService from '@/services/imageSaveService'
 import * as linkExternal from '@/services/linkExternal'
 import { invoke, listen, currentMode, emit } from '@/services/transport'
-import { getKernel } from '@/session-v2/kernel/registry'
-import { useKernelSessionState, subscribeKernelSessionState } from '@/session-v2/hooks/useKernelSessionState'
-import * as aiRuntime from '@/ai-runtime'
 import { pluginRegistry, chatCardRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses } from '@/plugin-system'
 import { Button } from '@/components/Common/Button'
 import { JsonTreeView } from '@/components/Common/JsonTreeView'
@@ -83,9 +68,6 @@ import i18n from '@/i18n'
 export function installAppCoreBridge(): void {
   ;(window as unknown as { __POLARIS_APP_CORE__: unknown }).__POLARIS_APP_CORE__ = {
     stores: {
-      sessionStoreManager,
-      useActiveSession,
-      conversationStoreUtils,
       useConfigStore,
       useWorkspaceStore,
       useViewStore,
@@ -108,20 +90,10 @@ export function installAppCoreBridge(): void {
       useDispatchStore,
     },
     services: {
-      getEventRouter,
       dialogStorageService,
       maybeAutoMigrateOpfs,
-      aiChatDispatch,
-      aiChatDispatchStream,
       chatService,
-      sessionRestore,
-      sessionHandoff,
-      contextCompactHandoff,
-      promptOptimizeService,
       promptHistoryService,
-      dispatchTaskService,
-      webReconnectResync,
-      remoteSessionFollower,
       streamRateTracker,
       uiDispatchService,
       capSlashCommand,
@@ -136,8 +108,6 @@ export function installAppCoreBridge(): void {
       linkExternal,
       transport: { invoke, listen, currentMode, emit },
     },
-    sessionV2: { getKernel, useKernelSessionState, subscribeKernelSessionState },
-    aiRuntime,
     i18n,
     pluginSystem: { pluginRegistry, chatCardRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses },
     components: {

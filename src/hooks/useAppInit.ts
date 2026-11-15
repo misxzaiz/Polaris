@@ -18,8 +18,6 @@ import { useSkillStore } from '@/stores/skillStore';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { usePluginStore } from '@/stores/pluginStore';
 import { usePluginServiceStore } from '@/stores/pluginServiceStore';
-import { sessionStoreManager } from '@/stores/conversationStore';
-import { bootstrapEngines } from '../core/engine-bootstrap';
 import { discoverInstalledPlugins } from '@/services/pluginDiscoveryService';
 import { pluginServiceManager } from '@/services/pluginServiceManager';
 import { disconnect as disconnectTransport } from '@/services/transport';
@@ -154,16 +152,8 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       }
     }
 
-    // 获取配置
-    const config = useConfigStore.getState().config;
-    const defaultEngine = config?.defaultEngine || 'claude-code';
-
-    await sessionStoreManager.getState().initialize();
-    log.info('SessionStoreManager initialized', { defaultEngine });
-
-    setInitPhase('正在初始化 AI 引擎...');
-    // 按需初始化传统 AI Engine
-    await bootstrapEngines(defaultEngine);
+    // P6：会话域初始化（sessionStoreManager.initialize）与引擎装配随 chat-desk
+    // 插件承接（插件 bootstrap.ts）；宿主不再初始化对话域。
 
 
 // 预加载设置相关数据
