@@ -18,6 +18,7 @@ import { useSessionDirectorySessions as useSessionMetadataList, useSessionDirect
 import { useSessionManagerActions, useActiveSessionMessages } from '@/stores/conversationStore'
 import { useWorkspaceStore, useViewStore, useToastStore } from '@/stores'
 import { exportToMarkdown, generateFileName } from '@/services/chatExport'
+import { getSessionStatus } from '@/services/sessionBus'
 import { getHandoffEligibility, handoffSessionToNewSession } from '@/services/sessionHandoff'
 import * as tauri from '@/services/tauri'
 import { createLogger } from '@/utils/logger'
@@ -314,6 +315,16 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
 
     setIsExporting(true)
     try {
+      // P4：导出前经 cap.session 校验会话仍存在（权威状态），避免导出已删会话
+      try {
+        const status = await getSessionStatus(activeSessionId as string)
+        if (!status) {
+          log.warn('会话已不存在，取消导出', { activeSessionId })
+          return
+        }
+      } catch {
+        // 权威状态不可读时不阻断导出（降级为内存数据）
+      }
       const content = exportToMarkdown(messages)
       const fileName = generateFileName('md')
       const filePath = await tauri.saveChatToFile(content, fileName)
