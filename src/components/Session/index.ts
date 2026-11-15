@@ -1,5 +1,3 @@
 export { StatusDot } from './StatusDot'
-export { SessionTab } from './SessionTab'
-export { SessionTabs } from './SessionTabs'
 export { WorkspaceMenu } from './WorkspaceMenu'
 export { WorkspaceSwitchMenu } from './WorkspaceSwitchMenu'

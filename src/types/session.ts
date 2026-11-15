@@ -2,14 +2,13 @@
  * 会话相关类型定义
  */
 
+import type { EngineId } from './config'
+
 /** 会话类型 */
 export type SessionType = 'project' | 'free'
 
 /** 会话状态 */
 export type SessionStatus = 'idle' | 'running' | 'waiting' | 'error' | 'background-running'
-
-/** AI 引擎 ID（与 types/config.ts 保持一致，@/types 经 config.ts re-export） */
-export type EngineId = 'claude-code' | 'simple-ai' | (string & NonNullable<unknown>)
 
 /** 会话元数据 */
 export interface ChatSession {
@@ -88,4 +87,33 @@ export interface SessionMessageState {
   restoredFromExternal?: boolean
   /** 恢复时间 */
   restoredAt?: string
+}
+
+/**
+ * 会话元数据（chat-desk 插件域权威 store 持有；P6 后宿主 chrome 经
+ * sessionDirectory 投影只读消费）。
+ *
+ * 自 conversationStore/types.ts 提升为共享类型：SessionTab/SessionDeleteConfirm/
+ * capSlashCommand 等 chrome 消费方只依赖此形状，不再依赖会话状态层实现。
+ */
+export interface SessionMetadata {
+  id: string
+  title: string
+  type: SessionType
+  engineId?: EngineId
+  workspaceId: string | null
+  workspaceName?: string
+  contextWorkspaceIds: string[]
+  workspaceLocked?: boolean
+  silentMode?: boolean
+  status: SessionStatus
+  createdAt: string
+  updatedAt: string
+  forkFromId?: string
+  modelProfileId?: string
+  model?: string
+  profileMode?: 'official' | 'profile'
+  agent?: string
+  effort?: string
+  permissionMode?: string
 }

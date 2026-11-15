@@ -20,7 +20,7 @@ import { ErrorBanner } from './components/Chat/common/ErrorBanner';
 import { CompactHandoffButton } from './components/Chat/compact-handoff/CompactHandoffButton';
 import { CompactHandoffProgress } from './components/Chat/compact-handoff/CompactHandoffProgress';
 import { MultiWindowMenu } from './components/Chat/session/MultiWindowMenu';
-import { NewSessionButton } from './components/Chat/session/NewSessionButton';
+import { NewSessionButton } from './components/Session/NewSessionButton';
 // 条件渲染的重组件统一懒加载，避免首帧解析 400+ 模块的 Chat barrel 传递依赖
 const MultiSessionGridLazy = lazy(() => import('./components/Chat/session/MultiSessionGrid').then(m => ({ default: m.MultiSessionGrid })));
 // FE-2: NarrowTabOverlay 原经 Editor barrel 静态 import，会把 EditorPanel/Editor.tsx

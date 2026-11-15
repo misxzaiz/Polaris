@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { render } from '@testing-library/react';
-import { ChartNodeView, niceMax } from '@/components/Chat/chatBlocks/chartNodeView';
-import { renderTemplateNodes } from '@/components/Chat/chatBlocks/uiTemplateNodes';
+import { ChartNodeView, niceMax } from '@/components/UiFrame/chartNodeView';
+import { renderTemplateNodes } from '@/components/UiFrame/uiTemplateNodes';
 import type { UiTemplateNode } from '@/plugin-system/uiFrameTypes';
 
 function makeChart(overrides: Partial<Extract<UiTemplateNode, { type: 'chart' }>> = {}): Extract<UiTemplateNode, { type: 'chart' }> {

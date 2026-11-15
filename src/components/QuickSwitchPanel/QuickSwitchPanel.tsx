@@ -10,15 +10,14 @@ import { createPortal } from 'react-dom'
 import { cn } from '@/utils/cn'
 import { QuickSwitchTrigger } from './QuickSwitchTrigger'
 import { QuickSwitchContent } from './QuickSwitchContent'
-import { NewSessionPanel } from '@/components/Chat/session/NewSessionPanel'
+import { NewSessionPanel } from '@/components/Session/NewSessionPanel'
 import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import type { QuickSwitchPanelProps, QuickSessionInfo, QuickWorkspaceInfo } from './types'
 import type { SessionStatus } from '@/types/session'
-import { useSessionDirectorySessions as useSessionMetadataList, useSessionDirectoryActiveId as useActiveSessionId } from '@/stores/sessionDirectoryStore'
-import { useSessionManagerActions, useActiveSessionMessages } from '@/stores/conversationStore'
+import { useSessionDirectorySessions as useSessionMetadataList, useSessionDirectoryActiveId as useActiveSessionId, switchSession as switchSessionAction, deleteSession as deleteSessionAction, updateSessionWorkspace, addContextWorkspace, removeContextWorkspace } from '@/stores/sessionDirectoryStore'
 import { useWorkspaceStore, useViewStore, useToastStore } from '@/stores'
 import { exportToMarkdown, generateFileName } from '@/services/chatExport'
-import { getSessionStatus } from '@/services/sessionBus'
+import { getSessionStatus, readSessionMessages } from '@/services/sessionBus'
 import { getHandoffEligibility, handoffSessionToNewSession } from '@/services/sessionHandoff'
 import * as tauri from '@/services/tauri'
 import { createLogger } from '@/utils/logger'
@@ -94,8 +93,8 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
   // 会话数据
   const sessions = useSessionMetadataList()
   const activeSessionId = useActiveSessionId()
-  const { deleteSession, switchSession } = useSessionManagerActions()
-  const { messages } = useActiveSessionMessages()
+  const deleteSession = deleteSessionAction
+  const switchSession = switchSessionAction
 
   // 工作区数据
   const workspaces = useWorkspaceStore((state) => state.workspaces)
@@ -289,9 +288,7 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
     return activeSession?.workspaceLocked || false
   }, [sessions, activeSessionId])
 
-  // 工作区操作
-  const { updateSessionWorkspace, addContextWorkspace, removeContextWorkspace } = useSessionManagerActions()
-
+  // 工作区操作（sessionDirectory 动作委托，P6：不再直连 conversationStore）
   // 切换主工作区
   const handleSwitchWorkspace = useCallback((workspaceId: string) => {
     if (!activeSessionId || isWorkspaceLocked) return
@@ -311,7 +308,7 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
   // 导出聊天
   const [isExporting, setIsExporting] = useState(false)
   const handleExport = useCallback(async () => {
-    if (messages.length === 0 || isExporting) return
+    if (!activeSessionId || isExporting) return
 
     setIsExporting(true)
     try {
@@ -324,6 +321,15 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
         }
       } catch {
         // 权威状态不可读时不阻断导出（降级为内存数据）
+      }
+      // P6：消息源改 cap.session.message.read 后端权威（原 useActiveSessionMessages
+      // 直连内存 store，随 conversationStore 删除而退役）。entry.content 即完整
+      // ChatMessage JSON（v2-message-log 写入契约，见 v2-kernel snapshotSource）。
+      const entries = await readSessionMessages(activeSessionId as string)
+      const messages = entries.map((e) => e.content as never)
+      if (messages.length === 0) {
+        log.info('会话无消息，跳过导出', { activeSessionId })
+        return
       }
       const content = exportToMarkdown(messages)
       const fileName = generateFileName('md')
@@ -340,7 +346,7 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
     } finally {
       setIsExporting(false)
     }
-  }, [messages, isExporting])
+  }, [activeSessionId, isExporting])
 
   // 打开历史会话
   const handleOpenHistory = useCallback(() => {
@@ -381,7 +387,7 @@ export const QuickSwitchPanel = memo(function QuickSwitchPanel({
               onCreateSession={handleCreateSession}
               onSwitchWorkspace={handleSwitchWorkspace}
               onToggleContextWorkspace={handleToggleContextWorkspace}
-              onExport={messages.length > 0 ? handleExport : undefined}
+              onExport={handleExport}
               isExporting={isExporting}
               onOpenHistory={handleOpenHistory}
               workspaceDropdownOpenRef={workspaceDropdownOpenRef}

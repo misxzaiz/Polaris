@@ -11,7 +11,7 @@
 
 import { invoke } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
-import { normalizePromptHistoryEntries } from '@/components/Chat/input/promptHistory'
+import { normalizePromptHistoryEntries } from '@/utils/promptHistory'
 
 const log = createLogger('PromptHistoryService')
 

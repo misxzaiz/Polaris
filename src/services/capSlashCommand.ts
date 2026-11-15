@@ -12,7 +12,7 @@
  * - 查询命中顺序：id 精确 > 中文名精确 > id 后缀 > 子串
  */
 
-import type { ContextBlock } from '@/stores/conversationStore/types'
+import type { ContextBlock } from '@/types'
 
 /** 目录条目（capCatalogStore 从 cap.help index 解析而来） */
 export interface CapCatalogEntry {

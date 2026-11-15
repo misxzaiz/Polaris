@@ -2,7 +2,7 @@ import { memo, useCallback, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Plus } from 'lucide-react';
-import { NewSessionPanel } from './NewSessionPanel';
+import { NewSessionPanel } from '@/components/Session/NewSessionPanel';
 
 /**
  * 新建会话按钮（状态栏 + 号）

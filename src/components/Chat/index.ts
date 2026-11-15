@@ -27,7 +27,7 @@ export { PendingBriefingCard } from './compact-handoff/PendingBriefingCard';
 export { MultiSessionGrid } from './session/MultiSessionGrid';
 export { MultiWindowMenu } from './session/MultiWindowMenu';
 export { SessionCell } from './session/SessionCell';
-export { NewSessionButton } from './session/NewSessionButton';
+export { NewSessionButton } from '@/components/Session/NewSessionButton';
 
 
 // 工具调用渲染
@@ -43,7 +43,7 @@ export { SessionMessagesView } from './messages/SessionMessagesView';
 export { MessageSearchPanel } from './search/MessageSearchPanel';
 
 // 会话相关
-export { SessionConfigSelector } from './session/SessionConfigSelector';
+export { SessionConfigSelector } from '@/components/Session/SessionConfigSelector';
 export { ChatNavigator } from './session/ChatNavigator';
 
 // 通用组件

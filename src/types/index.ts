@@ -14,3 +14,4 @@ export * from './attachment';
 export * from './errors';
 export * from './modelProfile';
 export * from './engineMetadata';
+export * from './session';

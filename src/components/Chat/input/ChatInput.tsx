@@ -70,7 +70,7 @@ import {
   appendPromptHistoryEntry,
   arePromptHistoryEntriesEqual,
   navigatePromptHistory,
-} from './promptHistory'
+} from '@/utils/promptHistory'
 import {
   persistPromptHistoryEntries,
   readPromptHistoryEntries,

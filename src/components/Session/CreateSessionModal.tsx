@@ -21,7 +21,7 @@ import { createLogger } from '@/utils/logger'
 import type { EngineId } from '@/types'
 import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
-import { SessionConfigSelector } from '@/components/Chat/session/SessionConfigSelector'
+import { SessionConfigSelector } from '@/components/Session/SessionConfigSelector'
 import type { SessionRuntimeConfig } from '@/types/sessionConfig'
 import { useSessionConfig } from '@/stores/sessionConfigStore'
 import {

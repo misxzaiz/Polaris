@@ -16,7 +16,7 @@ import { useSessionConfig } from '@/stores/sessionConfigStore';
 import { Paperclip, MoreHorizontal, RefreshCw } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useContainerWidth } from '@/hooks/useContainerWidth';
-import { SessionConfigSelector } from '../session/SessionConfigSelector';
+import { SessionConfigSelector } from '@/components/Session/SessionConfigSelector';
 import { ContextMeter } from './ContextMeter';
 import { getSelectedEngineHealth } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';

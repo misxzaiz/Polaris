@@ -199,3 +199,29 @@ export type ChipIconType = 'file' | 'symbol' | 'commit' | 'diff' | 'workspace' |
 export function getChipIcon(chip: ContextChip): ChipIconType {
   return chip.type;
 }
+
+// ── 上下文块（ContextBlock · TCB）────────────────────────────────────────────
+// 自 conversationStore/types.ts 提升为共享类型：capSlashCommand 等 chrome 消费方
+// 只依赖此形状，不再依赖会话状态层实现（chat-desk P6）。
+
+/** 上下文块种类：除内置 kinds 外，来源方/插件可用任意字符串 kind 注册渲染/格式化器 */
+export type ContextBlockKind =
+  | 'marquee-context' // 浏览器圈选区域
+  | 'text-selection'  // 页面文本选中（预留）
+  | 'screenshot'      // 页面截图（预留）
+  | string            // 插件/来源自定义 kind（未注册时降级渲染）
+
+/** 上下文块（TCB）· 挂在 AI 输入框的临时上下文（与附件平行，不进附件管线） */
+export interface ContextBlock {
+  id: string
+  kind: ContextBlockKind
+  title: string
+  source?: string
+  dedupeKey?: string
+  userNote?: string
+  data?: Record<string, unknown>
+  // marquee-context 顶层兼容字段（双字段兼容，新 kind 只写 data）
+  url?: string
+  regions?: import('./browserContext').BrowserRegion[]
+  browserLabel?: string
+}

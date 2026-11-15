@@ -12,14 +12,16 @@ import { GitBranchPlus } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { getHandoffEligibility } from '@/services/sessionHandoff'
 import { getEngineDisplayName } from '@/utils/engineDisplay'
-import { getEngineRegistry } from '@/ai-runtime'
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import type { EngineId } from '@/types'
 
 /**
  * 引擎展示偏好顺序。
  *
- * 实际渲染前用 engine-registry 过滤掉未注册/不可用的引擎，
- * 避免硬编码与注册表不同步、或展示出不存在的引擎。
+ * 实际渲染前用后端引擎元数据过滤掉不存在/不可用的引擎，
+ * 避免硬编码与后端注册不同步、或展示出不存在的引擎。
+ * （P6：原 getEngineRegistry 是前端引擎工厂注册表，随 ai-runtime 删除；
+ * 引擎可用性以 engineMetadataStore 的后端元数据为准。）
  */
 
 interface SessionTabContextMenuProps {
@@ -45,9 +47,10 @@ export function SessionTabContextMenu({
   const { t } = useTranslation('chat')
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // 从 registry 动态读取已注册引擎（registry 未就绪时回退全量，避免菜单空）
+  // 从后端引擎元数据动态读取可用引擎（未加载时回退全量，避免菜单空）
   const engineOptions = useMemo<EngineId[]>(() => {
-    const registered = new Set(getEngineRegistry().list().map(d => d.id))
+    const available = useEngineMetadataStore.getState().getEngineIds()
+    const registered = new Set(available)
     const preferredOrder = ['claude-code', 'simple-ai'] as EngineId[]
     // 已知引擎按偏好顺序，其余（插件引擎）追加到末尾
     const known = preferredOrder.filter(id => registered.has(id))

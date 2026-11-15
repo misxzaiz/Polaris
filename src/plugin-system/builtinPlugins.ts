@@ -109,7 +109,7 @@ export function registerBuiltinPlugins(): void {
     'ui.render',
     { pluginId: 'polaris.ui-frame', cardId: 'frame-renderer', mode: 'interaction' },
     () =>
-      import('@/components/Chat/chatBlocks/UiFrameCard').then((m) => ({
+      import('@/components/UiFrame/UiFrameCard').then((m) => ({
         default: m.UiFrameCard,
       })),
   )
