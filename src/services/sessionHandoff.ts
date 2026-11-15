@@ -1,46 +1,13 @@
 /**
- * 会话续接（Session Handoff）— 跨引擎版
+ * 会话续接（Session Handoff）— 宿主反向桥薄壳（P6 插件化后）
  *
- * 将一个已有会话的内容带入一个新会话（可用不同引擎），让新会话了解此前进展后继续。
- *
- * 设计首要约束：避免新会话初始上下文膨胀。按 resolveTransferMode 决策四种模式：
- * - fork          同引擎 + 目标支持 fork（claude-code）：--fork-session 原生续接，不占额外上下文（结构完整）
- * - full-file     源较短：全文落盘 + @ 引用注入（本身小，无负担）
- * - summary       默认：精简摘要落盘 + @ 引用注入（~1-2k token，控制上下文体积）
- * - message-history 仅 simple-ai 目标（直注 SessionOptions.message_history，管线未接，暂降级 summary）
- *
- * 复用现成能力，无后端改动：
- * - 取内容：loadConversationMessages（按引擎分流：claude-code 原生历史 + self JSONL + 内存兜底）
- * - 写文件：ConversationPackager.packToFile / packToSummary（create_file 自动创建父目录）
- * - 建会话：sessionStoreManager.createSession（forkFromId → 首条消息时 --fork-session）
- * - 预填：updateInputDraft（切换后 ChatInput 自动恢复草稿）
- * - 读文件：@ 引用（parseWorkspaceReferences 改写为绝对路径）+ CLI 原生 Read
+ * 内置 Chat 已整体出仓为 chat-desk 插件；续接（handoff）实现随域迁入插件。
+ * 本文件仅保留 chrome（QuickSwitchPanel）需要的两个入口，全部纯委托：
+ * 经 __POLARIS_APP_CORE__.services.sessionHandoff 调用插件内实现。
+ * 未就绪（插件未挂载）时返回不可续接/失败，不在此复刻任何业务逻辑。
  */
 
 import i18n from 'i18next'
-import { createLogger } from '@/utils/logger'
-// P6：会话状态单写者随对话域迁入 chat-desk 插件；宿主经反向桥动态取。
-type ManagerLike = {
-  getState: () => {
-    sessionMetadata: Map<string, { engineId?: string; title?: string; workspaceId?: string | null }>
-    stores: Map<string, { getState: () => Record<string, unknown> & {
-      conversationId?: string
-      messages?: unknown[]
-      archivedMessages?: unknown[]
-      getPersistableMessages?: () => unknown[]
-      updateInputDraft?: (...a: unknown[]) => void
-    } }>
-    createSession: (...a: unknown[]) => string
-    switchSession: (...a: unknown[]) => void
-  }
-}
-
-function sessionManager(): ManagerLike | undefined {
-  return (window as unknown as {
-    __POLARIS_APP_CORE__?: { stores?: { sessionStoreManager?: ManagerLike } }
-  }).__POLARIS_APP_CORE__?.stores?.sessionStoreManager
-}
-
 // 插件侧 sessionHandoff 服务（反向桥）：未就绪时视为不可续接
 function handoffService(): {
   getHandoffEligibility: (sessionId: string) => { enabled: boolean; reasonKey: string }
@@ -53,22 +20,7 @@ function handoffService(): {
     handoffSessionToNewSession: (sessionId: string, targetEngineId?: string) => Promise<{ ok: boolean; newSessionId?: string; error?: string }>
   } | undefined
 }
-import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { aiHistoryDispatch } from './aiHistoryDispatch'
-import { convertClaudeHistoryToChatMessages, type ClaudeCodeMessage } from './claudeHistoryConvert'
-import { dialogStorageService } from './dialogStorage/service'
-import { normalizeRecoveredMessages } from '@/utils/dedupMessages'
-import type { ChatMessage, EngineId } from '@/types'
-import {
-  packToFile,
-  packToSummary,
-  resolveTransferMode,
-  estimateTokens,
-} from './conversationPackager'
-import { normalizeEngineId } from '@/utils/engineDisplay'
-import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
-
-const log = createLogger('SessionHandoff')
+import type { EngineId } from '@/types'
 
 export interface HandoffEligibility {
   enabled: boolean
@@ -83,7 +35,7 @@ export interface HandoffEligibility {
  * 不再限制引擎 —— 任意引擎的会话都可续接（跨引擎时走内容快照路径）。
  */
 export function getHandoffEligibility(sessionId: string): HandoffEligibility {
-  var svc = handoffService() as { getHandoffEligibility: (id: string) => { enabled: boolean; reasonKey: string } } | undefined
+  const svc = handoffService() as { getHandoffEligibility: (id: string) => { enabled: boolean; reasonKey: string } } | undefined
   if (svc) return svc.getHandoffEligibility(sessionId)
   return { enabled: false, reasonKey: 'handoff.reasonNoSession' }
 }
@@ -97,317 +49,15 @@ export interface HandoffResult {
 
 /**
  * 将会话续接到一个新会话（可指定目标引擎，默认沿用源引擎）。
- *
- * @param sessionId       源会话 ID
- * @param targetEngineId  目标引擎（省略则沿用源引擎，向后兼容）
+ * P6：实现随对话域迁入 chat-desk 插件；宿主此函数为纯委托（经反向桥服务）。
  */
 export async function handoffSessionToNewSession(
   sessionId: string,
   targetEngineId?: EngineId,
 ): Promise<HandoffResult> {
-  const manager = sessionManager()!.getState()
-  const meta = manager.sessionMetadata.get(sessionId)
-  const store = manager.stores.get(sessionId)?.getState()
-
-  if (!meta || !store) {
-    return { ok: false, error: i18n.t('chat:handoff.reasonNoSession') }
-  }
-  if (!meta.workspaceId) {
-    return { ok: false, error: i18n.t('chat:handoff.reasonNoWorkspace') }
-  }
-
-  const sourceEngineId = normalizeEngineId(meta.engineId)
-  const targetEngine = normalizeEngineId(targetEngineId ?? sourceEngineId)
-  const conversationId = store.conversationId ?? ''
-
-  const workspace = useWorkspaceStore.getState().workspaces.find((w) => w.id === meta.workspaceId)
-  if (!workspace?.path) {
-    return { ok: false, error: i18n.t('chat:handoff.reasonNoWorkspace') }
-  }
-
-  try {
-    // 1. 取完整原文（按引擎分流：原生历史 / self JSONL / 内存兜底）
-    // 内存兜底用持久化态（已恢复压缩消息），避免把离屏压缩结果作为续接原文。
-    const fallbackMessages = [...((store.getPersistableMessages?.() ?? []) as ChatMessage[]), ...((store.archivedMessages ?? []) as ChatMessage[])]
-    const chatMessages = await loadConversationMessages(sourceEngineId, conversationId, fallbackMessages)
-    if (chatMessages.length === 0) {
-      return { ok: false, error: i18n.t('chat:handoff.emptyContent') }
-    }
-
-    // 2. 按模式创建新会话
-    return await createHandoffSession({
-      messages: chatMessages,
-      sourceTitle: meta.title ?? '',
-      sourceEngineId,
-      sourceConversationId: conversationId,
-      targetEngineId: targetEngine,
-      workspaceId: meta.workspaceId!,
-      workspacePath: workspace.path,
-    })
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e))
-    log.error('会话续接失败', err, { sessionId })
-    return { ok: false, error: err.message }
-  }
-}
-
-export interface HistoryHandoffEligibility {
-  enabled: boolean
-  reasonKey?: string
-}
-
-/** 历史会话条目最小面（P4：原 UnifiedHistoryItem 内联，historyService 已随面板域拆除） */
-export interface HistoryHandoffItem {
-  id: string
-  title: string
-  engineId: string
-  projectPath?: string
-  claudeProjectName?: string
-}
-
-/**
- * 判断历史会话是否可续接。
- *
- * 不再限制引擎。工作区优先使用历史 projectPath，若没有则回退当前工作区。
- */
-export function getHistoryHandoffEligibility(
-  item: HistoryHandoffItem,
-  fallbackWorkspaceId?: string | null,
-): HistoryHandoffEligibility {
-  if (!item.id) return { enabled: false, reasonKey: 'handoff.reasonNoSession' }
-  if (!item.projectPath && !fallbackWorkspaceId) return { enabled: false, reasonKey: 'handoff.reasonNoWorkspace' }
-  return { enabled: true }
-}
-
-/**
- * 将历史会话续接到一个新会话（可指定目标引擎，默认沿用源引擎）。
- */
-export async function handoffHistorySessionToNewSession(
-  item: HistoryHandoffItem,
-  fallbackWorkspaceId?: string | null,
-  targetEngineId?: EngineId,
-): Promise<HandoffResult> {
-  try {
-    const workspaceId = await resolveHistoryWorkspaceId(item, fallbackWorkspaceId)
-    if (!workspaceId) {
-      return { ok: false, error: i18n.t('chat:handoff.reasonNoWorkspace') }
-    }
-
-    const workspace = useWorkspaceStore.getState().workspaces.find((w) => w.id === workspaceId)
-    if (!workspace?.path) {
-      return { ok: false, error: i18n.t('chat:handoff.reasonNoWorkspace') }
-    }
-
-    const chatMessages = await loadHistoryChatMessages(item)
-    if (chatMessages.length === 0) {
-      return { ok: false, error: i18n.t('chat:handoff.emptyContent') }
-    }
-
-    const sourceEngineId = normalizeEngineId(item.engineId)
-    const targetEngine = normalizeEngineId(targetEngineId ?? sourceEngineId)
-
-    return await createHandoffSession({
-      messages: chatMessages,
-      sourceTitle: item.title,
-      sourceEngineId,
-      sourceConversationId: item.id,
-      targetEngineId: targetEngine,
-      workspaceId,
-      workspacePath: workspace.path,
-    })
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e))
-    log.error('历史会话续接失败', err, { sourceId: item.id })
-    return { ok: false, error: err.message }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 核心编排：按 transfer mode 创建新会话
-// ---------------------------------------------------------------------------
-
-interface CreateHandoffParams {
-  messages: ChatMessage[]
-  sourceTitle: string
-  sourceEngineId: EngineId
-  /** 源会话 id（fork 模式作 forkSessionId，文件名作 idSeed） */
-  sourceConversationId: string
-  targetEngineId: EngineId
-  workspaceId: string
-  workspacePath: string
-}
-
-/**
- * 按 resolveTransferMode 决策的模式创建续接新会话
- *
- * - fork：同引擎 + 目标支持 fork + 有 conversationId → createSession(forkFromId)，无引导语（引擎原生记忆）
- * - full-file：源较短 → packToFile + 引导语
- * - summary / message-history：默认 → packToSummary + 引导语（message-history 直注管线未接，暂降级 summary）
- */
-async function createHandoffSession(params: CreateHandoffParams): Promise<HandoffResult> {
-  const {
-    messages, sourceTitle, sourceEngineId, sourceConversationId,
-    targetEngineId, workspaceId, workspacePath,
-  } = params
-
-  const estimatedTokens = estimateTokens(messages)
-  let mode = resolveTransferMode({
-    sourceEngineId,
-    targetEngineId,
-    messageCount: messages.length,
-    estimatedTokens,
-  })
-
-  // fork 必须有真实源会话 id；message-history 直注管线未接，暂降级 summary
-  if (mode === 'fork' && !sourceConversationId) mode = 'summary'
-  if (mode === 'message-history') mode = 'summary'
-
-  const manager = sessionManager()!.getState()
-  const newTitle = i18n.t('chat:handoff.newSessionTitle', { title: sourceTitle })
-
-  // fork 模式：引擎原生续接，不落盘、不预填引导语
-  if (mode === 'fork') {
-    const newSessionId = manager.createSession({
-      type: 'project',
-      workspaceId,
-      title: newTitle,
-      engineId: targetEngineId,
-      forkFromId: sourceConversationId,
-    })
-    log.info('续接新会话已创建（fork）', { sourceConversationId, newSessionId, targetEngineId })
-    return { ok: true, newSessionId }
-  }
-
-  // 内容快照模式：落盘 + 预填引导语
-  const packer = mode === 'full-file' ? packToFile : packToSummary
-  const { fileRef } = await packer(messages, sourceTitle, sourceConversationId, workspacePath)
-  log.info('会话已导出', { mode, absPath: fileRef.absPath, messageCount: messages.length, targetEngineId })
-
-  const newSessionId = manager.createSession({
-    type: 'project',
-    workspaceId,
-    title: newTitle,
-    engineId: targetEngineId,
-  })
-
-  const newStore = manager.stores.get(newSessionId)?.getState()
-  if (newStore) {
-    const guide = i18n.t('chat:handoff.guidePrompt', { ref: `@${fileRef.relPath}` })
-    newStore.updateInputDraft?.({ text: guide, attachments: [] })
-  }
-
-  log.info('续接新会话已创建', { mode, newSessionId, targetEngineId })
-  return { ok: true, newSessionId }
-}
-
-// ---------------------------------------------------------------------------
-// 内容加载：按引擎分流
-// ---------------------------------------------------------------------------
-
-/**
- * 按引擎加载源会话完整消息（不受前端消息压缩影响）
- *
- * - claude-code：从 CLI 原生历史文件读完整原文
- * - simple-ai：从 self JSONL 读完整原文
- * - 加载失败或无 conversationId：回退内存消息（可能已被压缩，记 warn）
- *
- * 亦被压缩交接（contextCompactHandoff）复用作为源消息加载器。
- */
-export async function loadConversationMessages(
-  engineId: EngineId,
-  conversationId: string,
-  fallbackMessages: ChatMessage[],
-): Promise<ChatMessage[]> {
-  if (conversationId) {
-    try {
-      if (engineId === 'claude-code') {
-        // P4：cap.history get_claude_history 直读（claudeCodeHistoryService 已拆）
-        const raw = await aiHistoryDispatch<ClaudeCodeMessage[]>({
-          action: 'get_claude_history',
-          sessionId: conversationId,
-        })
-        if (raw.length > 0) return withAssistantEngineId(convertClaudeHistoryToChatMessages(raw), engineId)
-      } else {
-        // simple-ai：self JSONL（externalId = conversationId）
-        const msgs = await dialogStorageService.getConversationMessages(conversationId)
-        if (msgs.length > 0) {
-          // getConversation 全量读取已由 parseDialogLines 按 id 去重；仍可能含
-          // checkpoint 残留（isStreaming 快照）→ 归一为中断态，避免当"进行中"续接
-          return withAssistantEngineId(normalizeRecoveredMessages(msgs), engineId)
-        }
-      }
-    } catch (e) {
-      log.warn('按引擎加载源会话失败，回退内存消息', { engineId, conversationId, error: String(e) })
-    }
-  }
-
-  if (fallbackMessages.length > 0) {
-    log.warn('使用内存消息作为续接源（可能已被压缩，内容可能不完整）', { engineId, conversationId })
-    return withAssistantEngineId(fallbackMessages, engineId)
-  }
-  return []
-}
-
-/**
- * 按历史项 source/engineId 加载完整消息
- *
- * - claude-code-native：CLI 原生历史
- * - self：self JSONL
- */
-async function loadHistoryChatMessages(item: HistoryHandoffItem): Promise<ChatMessage[]> {
-  const engineId = normalizeEngineId(item.engineId)
-
-  try {
-    if (engineId === 'claude-code') {
-      const raw = await aiHistoryDispatch<ClaudeCodeMessage[]>({
-        action: 'get_claude_history',
-        sessionId: item.id,
-        projectPath: item.claudeProjectName,
-      })
-      return raw.length > 0 ? withAssistantEngineId(convertClaudeHistoryToChatMessages(raw), engineId) : []
-    }
-    // simple-ai：self JSONL（externalId = item.id）
-    const msgs = await dialogStorageService.getConversationMessages(item.id)
-    return msgs.length > 0
-      ? withAssistantEngineId(normalizeRecoveredMessages(msgs), engineId)
-      : []
-  } catch (e) {
-    log.warn('加载历史会话消息失败', { sourceId: item.id, engineId, error: String(e) })
-    return []
-  }
-}
-
-function withAssistantEngineId(messages: ChatMessage[], engineId: EngineId): ChatMessage[] {
-  return messages.map(message => {
-    if (message.type !== 'assistant' || message.engineId) return message
-    return { ...message, engineId }
-  })
-}
-
-async function resolveHistoryWorkspaceId(
-  item: HistoryHandoffItem,
-  fallbackWorkspaceId?: string | null,
-): Promise<string | undefined> {
-  const projectPath = item.projectPath?.trim()
-  const workspaceState = useWorkspaceStore.getState()
-
-  if (projectPath) {
-    const normalizedProjectPath = normalizeWorkspacePath(projectPath)
-    let workspace = workspaceState.workspaces.find(
-      w => normalizeWorkspacePath(w.path) === normalizedProjectPath,
-    )
-    if (workspace) return workspace.id
-
-    try {
-      await workspaceState.createWorkspace(getPathBasename(projectPath), projectPath, false)
-      workspace = useWorkspaceStore.getState().workspaces.find(
-        w => normalizeWorkspacePath(w.path) === normalizedProjectPath,
-      )
-      if (workspace) return workspace.id
-    } catch (error) {
-      log.warn('Failed to resolve handoff workspace', { error: String(error), projectPath })
-    }
-  }
-
-  return fallbackWorkspaceId ?? undefined
+  const svc = handoffService() as {
+    handoffSessionToNewSession: (sessionId: string, targetEngineId?: string) => Promise<HandoffResult>
+  } | undefined
+  if (svc) return svc.handoffSessionToNewSession(sessionId, targetEngineId)
+  return { ok: false, error: i18n.t('chat:handoff.reasonNoSession') }
 }
