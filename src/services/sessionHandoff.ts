@@ -40,6 +40,19 @@ function sessionManager(): ManagerLike | undefined {
     __POLARIS_APP_CORE__?: { stores?: { sessionStoreManager?: ManagerLike } }
   }).__POLARIS_APP_CORE__?.stores?.sessionStoreManager
 }
+
+// 插件侧 sessionHandoff 服务（反向桥）：未就绪时视为不可续接
+function handoffService(): {
+  getHandoffEligibility: (sessionId: string) => { enabled: boolean; reasonKey: string }
+  handoffSessionToNewSession: (sessionId: string, targetEngineId?: string) => Promise<{ ok: boolean; newSessionId?: string; error?: string }>
+} | undefined {
+  return (window as unknown as {
+    __POLARIS_APP_CORE__?: { services?: { sessionHandoff?: unknown } }
+  }).__POLARIS_APP_CORE__?.services?.sessionHandoff as {
+    getHandoffEligibility: (sessionId: string) => { enabled: boolean; reasonKey: string }
+    handoffSessionToNewSession: (sessionId: string, targetEngineId?: string) => Promise<{ ok: boolean; newSessionId?: string; error?: string }>
+  } | undefined
+}
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { aiHistoryDispatch } from './aiHistoryDispatch'
 import { convertClaudeHistoryToChatMessages, type ClaudeCodeMessage } from './claudeHistoryConvert'
@@ -70,17 +83,9 @@ export interface HandoffEligibility {
  * 不再限制引擎 —— 任意引擎的会话都可续接（跨引擎时走内容快照路径）。
  */
 export function getHandoffEligibility(sessionId: string): HandoffEligibility {
-  const manager = sessionManager()!.getState()
-  const meta = manager.sessionMetadata.get(sessionId)
-  const store = manager.stores.get(sessionId)?.getState()
-
-  if (!meta || !store) return { enabled: false, reasonKey: 'handoff.reasonNoSession' }
-  if (!meta.workspaceId) return { enabled: false, reasonKey: 'handoff.reasonNoWorkspace' }
-  if (!store.conversationId && (store.messages ?? []).length === 0) {
-    return { enabled: false, reasonKey: 'handoff.reasonEmpty' }
-  }
-
-  return { enabled: true }
+  var svc = handoffService() as { getHandoffEligibility: (id: string) => { enabled: boolean; reasonKey: string } } | undefined
+  if (svc) return svc.getHandoffEligibility(sessionId)
+  return { enabled: false, reasonKey: 'handoff.reasonNoSession' }
 }
 
 export interface HandoffResult {
