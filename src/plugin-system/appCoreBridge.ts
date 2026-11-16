@@ -31,7 +31,14 @@ import { useSnippetStore } from '@/stores/snippetStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useDispatchStore } from '@/stores/dispatchStore'
-import { dialogStorageService, maybeAutoMigrateOpfs } from '@/services/dialogStorage'
+import {
+  dialogStorageService,
+  maybeAutoMigrateOpfs,
+  isOpfsMigrated,
+  probeOpfsDialogCount,
+  migrateOpfsToTauri,
+  clearOpfsDialogs,
+} from '@/services/dialogStorage'
 import * as chatService from '@/services/tauri/chatService'
 import * as promptHistoryService from '@/services/promptHistoryService'
 import * as streamRateTracker from '@/services/streamRateTracker'
@@ -93,6 +100,7 @@ export function installAppCoreBridge(): void {
     },
     services: {
       dialogStorageService,
+      opfsHelpers: { isOpfsMigrated, probeOpfsDialogCount, migrateOpfsToTauri, clearOpfsDialogs },
       maybeAutoMigrateOpfs,
       chatService,
       promptHistoryService,

@@ -8,7 +8,6 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Smartphone, Plug, PlugZap } from 'lucide-react';
 import type { Config } from '@/types';
-import { DataStorageCard } from './DataStorageCard';
 import { FocusModeSettings } from './FocusModeSettings';
 import { SystemPromptSection } from './SystemPromptSection';
 import { useMobileConnection } from '@/mobile/MobileConnectionContext';
@@ -175,8 +174,7 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
 
       {/* 百度翻译凭证已随 translate 域出仓（translate 插件 configSchema 承接） */}
 
-      {/* 数据存储 */}
-      <DataStorageCard />
+      {/* 数据存储已迁出为 storage-desk 插件（activityBar「存储管理台」） */}
 
       {/* 系统提示词 */}
       <SystemPromptSection />
