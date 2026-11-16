@@ -15,7 +15,6 @@ import { SettingsSidebar, type SettingsTabId } from './SettingsSidebar';
 import { AIEngineTab } from './tabs/AIEngineTab';
 import { GeneralTab } from './tabs/GeneralTab';
 import { ThemeTab } from './tabs/ThemeTab';
-import { PromptSnippetTab, type PromptSnippetTabRef } from './tabs/PromptSnippetTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
 import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { WebTab } from './tabs/WebTab';
@@ -40,7 +39,6 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'general': 'nav.general',
   'theme': 'nav.theme',
   'plugins': 'nav.plugins',
-  'prompt-snippet': 'nav.promptSnippet',
   'ai-engine': 'nav.aiEngine',
   'app-update': 'nav.appUpdate',
   'advanced': 'nav.advanced',
@@ -61,7 +59,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab || 'general');
   const [searchQuery, setSearchQuery] = useState('');
   const [webStatusRefreshKey, setWebStatusRefreshKey] = useState(0);
-  const snippetTabRef = useRef<PromptSnippetTabRef>(null);
 
   // 布局方向由容器实测宽驱动，不走 CSS 媒体查询。
   // 根因：WebView2 在分数缩放(125%)+全屏切换下媒体查询评估会陈旧/部分失效，
@@ -131,10 +128,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   // 保存当前分组配置
   const handleSaveCurrentTab = async () => {
     // 快捷片段：表单打开时转发到表单保存，而非保存 Config
-    if (activeTab === 'prompt-snippet' && snippetTabRef.current?.isFormOpen) {
-      await snippetTabRef.current.saveForm();
-      return;
-    }
 
     if (!localConfig) return;
 
@@ -163,9 +156,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   // 保存所有配置并关闭
   const handleSaveAndClose = async () => {
     // 快捷片段表单打开时，先保存片段
-    if (activeTab === 'prompt-snippet' && snippetTabRef.current?.isFormOpen) {
-      await snippetTabRef.current.saveForm();
-    }
 
     if (!localConfig) return;
 
@@ -264,10 +254,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
                 onConfigChange={setLocalConfig}
                 loading={loading}
               />
-            )}
-
-            {activeTab === 'prompt-snippet' && (
-              <PromptSnippetTab ref={snippetTabRef} />
             )}
 
             {activeTab === 'advanced' && (

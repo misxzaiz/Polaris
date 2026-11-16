@@ -8,7 +8,6 @@ import {
   IconAIEngine,
   IconSearch,
   IconGeneral,
-  IconMessageSquareText,
 } from '../Common/Icons';
 import { Download, Globe, Blocks, Palette } from 'lucide-react';
 import { isTauri } from '@/utils/platform';
@@ -17,7 +16,6 @@ import type { ReactNode } from 'react';
 export type SettingsTabId =
   | 'general'
   | 'theme'
-  | 'prompt-snippet'
   | 'ai-engine'
   | 'app-update'
   | 'plugins'
@@ -47,7 +45,6 @@ interface SettingsSidebarProps {
 const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'general', icon: <IconGeneral size={16} />, labelKey: 'nav.general' },
   { id: 'theme', icon: <Palette size={16} />, labelKey: 'nav.theme' },
-  { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
   { id: 'ai-engine', icon: <IconAIEngine size={16} />, labelKey: 'nav.aiEngine' },
 
   { id: 'plugins', icon: <Blocks size={16} />, labelKey: 'nav.plugins' },
