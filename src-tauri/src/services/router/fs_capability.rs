@@ -42,7 +42,56 @@ pub struct FsCapability;
 const CAP_ID: &str = "cap.fs";
 
 /// 支持的 action 协议（写死为契约，与前端对齐）
-pub const FS_ACTIONS: &[&str] = &["list", "getFileInfo", "exists"];
+pub const FS_ACTIONS: &[&str] = &[
+    "list",
+    "getFileInfo",
+    "exists",
+    "getFileContent",
+    "createFile",
+    "createDirectory",
+    "deleteFile",
+    "renameFile",
+    "copyPath",
+    "copyPathToDirectory",
+    "movePath",
+    "movePathToDirectory",
+    "saveDroppedFileToDirectory",
+    "pathExists",
+    "searchFiles",
+    "searchFileContents",
+    "downloadFileBinary",
+    "downloadDirectoryToZip",
+    "saveImageBytes",
+];
+
+
+/// 取字符串参数（缺失/空报错）
+fn require_str(params: &serde_json::Value, key: &str) -> Result<String, String> {
+    params
+        .get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .ok_or_else(|| format!("cap.fs 需要 {} 参数", key))
+}
+
+/// 在同步 capability invoke 里驱动 async 命令（对齐 ai_chat_capability 的
+/// block_in_place + block_on 范式；调用方均为 tokio 多线程运行时）
+fn async_drive<F, Fut, T>(f: F) -> Result<Value, String>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<T, crate::error::AppError>>,
+    T: serde::Serialize,
+{
+    let handle = tokio::runtime::Handle::try_current()
+        .map_err(|_| "cap.fs 写动作需在 tokio 运行时内调用".to_string())?;
+    tokio::task::block_in_place(move || {
+        handle
+            .block_on(async { f().await })
+            .map(|v| serde_json::to_value(v).unwrap_or(Value::Null))
+            .map_err(|e| e.to_string())
+    })
+}
 
 impl Capability for FsCapability {
     fn id(&self) -> CapabilityId {
@@ -52,15 +101,31 @@ impl Capability for FsCapability {
     fn describe(&self) -> Value {
         standard_describe(
             CAP_ID,
-            "文件只读",
-            "文件系统只读访问：列目录/文件详情/存在性（写操作走 tauri command 通道）",
+            "文件系统访问",
+            "文件系统访问：列目录/文件详情/存在性/读写/复制移动/搜索/打包下载（与前端 file_explorer 命令同源）",
             Some(
-                "只读边界（list/getFileInfo/exists）；Remote 来源默认 deny（策略见 config permissions.rules）",
+                "list/getFileInfo/exists 为只读；其余为写或网络/打包动作；Remote 来源默认 deny（策略见 config permissions.rules）",
             ),
             serde_json::json!({
                 "list": { "params": { "path": "string（必填，绝对路径，目录）" }, "returns": "{ items: FileInfo[] }（直接子项，含 size/modified/created；子项 child_count 恒为 null，目录子项数仅 getFileInfo 提供；路径不存在报错「路径不存在」）", "example": { "action": "list", "path": "<绝对路径>" } },
                 "getFileInfo": { "params": { "path": "string（必填，绝对路径）" }, "returns": "{ item: FileInfo | null }（不存在返回 item=null 不报错；文件：size+modified+created；目录：child_count、size=null）", "example": { "action": "getFileInfo", "path": "<绝对路径>" } },
-                "exists": { "params": { "path": "string（必填，绝对路径）" }, "returns": "{ exists: bool }" }
+                "exists": { "params": { "path": "string（必填，绝对路径）" }, "returns": "{ exists: bool }" },
+                "getFileContent": { "params": { "path": "string（必填，绝对路径）" }, "returns": "string（文件全文，UTF-8）" },
+                "createFile": { "params": { "path": "string（必填）", "content": "string?" }, "returns": "void" },
+                "createDirectory": { "params": { "path": "string（必填）" }, "returns": "void" },
+                "deleteFile": { "params": { "path": "string（必填）" }, "returns": "void" },
+                "renameFile": { "params": { "old_path": "string（必填）", "new_name": "string（必填）" }, "returns": "void" },
+                "copyPath": { "params": { "source": "string（必填）", "destination": "string（必填）" }, "returns": "void" },
+                "copyPathToDirectory": { "params": { "source": "string（必填）", "target_dir": "string（必填）" }, "returns": "FileOperationResult" },
+                "movePath": { "params": { "source": "string（必填）", "destination": "string（必填）" }, "returns": "void" },
+                "movePathToDirectory": { "params": { "source": "string（必填）", "target_dir": "string（必填）" }, "returns": "FileOperationResult" },
+                "saveDroppedFileToDirectory": { "params": { "target_dir": "string（必填）", "file_name": "string（必填）", "content_base64": "string（必填）" }, "returns": "FileOperationResult" },
+                "pathExists": { "params": { "path": "string（必填）" }, "returns": "bool" },
+                "searchFiles": { "params": { "work_dir": "string（必填）", "query": "string（必填）", "max_results": "number?" }, "returns": "FileMatch[]" },
+                "searchFileContents": { "params": { "work_dir": "string（必填）", "query": "string（必填）", "case_sensitive": "bool?", "whole_word": "bool?", "max_results": "number?" }, "returns": "ContentSearchResponse" },
+                "downloadFileBinary": { "params": { "path": "string（必填）" }, "returns": "string（base64）" },
+                "downloadDirectoryToZip": { "params": { "dir_path": "string（必填）" }, "returns": "string（zip 路径）" },
+                "saveImageBytes": { "params": { "path": "string（必填）", "data_base64": "string（必填）" }, "returns": "string（落盘路径）" }
             }),
         )
     }
@@ -100,6 +165,91 @@ impl Capability for FsCapability {
                     .filter(|s| !s.is_empty())
                     .ok_or_else(|| "cap.fs exists 需要 path 参数".to_string())?;
                 Ok(serde_json::json!({ "exists": Path::new(path).exists() }))
+            }
+            // ── 以下与前端 file_explorer 命令同源（双通道：Tauri IPC 与 cap 总线）──
+            // async 命令统一 block_in_place + block_on 驱动（调用方均为多线程运行时）。
+            "getFileContent" => {
+                let path = require_str(&params, "path")?;
+                async_drive(|| async { crate::commands::file_explorer::get_file_content(path).await })
+            }
+            "createFile" => {
+                let path = require_str(&params, "path")?;
+                let content = params.get("content").and_then(|v| v.as_str()).map(String::from);
+                async_drive(|| async { crate::commands::file_explorer::create_file(path, content).await })
+            }
+            "createDirectory" => {
+                let path = require_str(&params, "path")?;
+                async_drive(|| async { crate::commands::file_explorer::create_directory(path).await })
+            }
+            "deleteFile" => {
+                let path = require_str(&params, "path")?;
+                async_drive(|| async { crate::commands::file_explorer::delete_file(path).await })
+            }
+            "renameFile" => {
+                let old_path = require_str(&params, "old_path")?;
+                let new_name = require_str(&params, "new_name")?;
+                async_drive(|| async { crate::commands::file_explorer::rename_file(old_path, new_name).await })
+            }
+            "copyPath" => {
+                let source = require_str(&params, "source")?;
+                let destination = require_str(&params, "destination")?;
+                async_drive(|| async { crate::commands::file_explorer::copy_path(source, destination).await })
+            }
+            "copyPathToDirectory" => {
+                let source = require_str(&params, "source")?;
+                let target_dir = require_str(&params, "target_dir")?;
+                async_drive(|| async { crate::commands::file_explorer::copy_path_to_directory(source, target_dir).await })
+            }
+            "movePath" => {
+                let source = require_str(&params, "source")?;
+                let destination = require_str(&params, "destination")?;
+                async_drive(|| async { crate::commands::file_explorer::move_path(source, destination).await })
+            }
+            "movePathToDirectory" => {
+                let source = require_str(&params, "source")?;
+                let target_dir = require_str(&params, "target_dir")?;
+                async_drive(|| async { crate::commands::file_explorer::move_path_to_directory(source, target_dir).await })
+            }
+            "saveDroppedFileToDirectory" => {
+                let target_dir = require_str(&params, "target_dir")?;
+                let file_name = require_str(&params, "file_name")?;
+                let content_base64 = require_str(&params, "content_base64")?;
+                async_drive(|| async {
+                    crate::commands::file_explorer::save_dropped_file_to_directory(target_dir, file_name, content_base64).await
+                })
+            }
+            "pathExists" => {
+                let path = require_str(&params, "path")?;
+                async_drive(|| async { crate::commands::file_explorer::path_exists(path).await })
+            }
+            "searchFiles" => {
+                let work_dir = require_str(&params, "work_dir")?;
+                let query = require_str(&params, "query")?;
+                let max_results = params.get("max_results").and_then(|v| v.as_u64()).map(|v| v as usize);
+                async_drive(|| async { crate::commands::file_explorer::search_files(work_dir, query, max_results).await })
+            }
+            "searchFileContents" => {
+                let work_dir = require_str(&params, "work_dir")?;
+                let query = require_str(&params, "query")?;
+                let case_sensitive = params.get("case_sensitive").and_then(|v| v.as_bool());
+                let whole_word = params.get("whole_word").and_then(|v| v.as_bool());
+                let max_results = params.get("max_results").and_then(|v| v.as_u64()).map(|v| v as usize);
+                async_drive(|| async {
+                    crate::commands::file_explorer::search_file_contents_detailed(work_dir, query, case_sensitive, whole_word, max_results).await
+                })
+            }
+            "downloadFileBinary" => {
+                let path = require_str(&params, "path")?;
+                async_drive(|| async { crate::commands::file_explorer::download_file_binary(path).await })
+            }
+            "downloadDirectoryToZip" => {
+                let dir_path = require_str(&params, "dir_path")?;
+                async_drive(|| async { crate::commands::file_explorer::download_directory_to_zip(dir_path).await })
+            }
+            "saveImageBytes" => {
+                let path = require_str(&params, "path")?;
+                let data_base64 = require_str(&params, "data_base64")?;
+                async_drive(|| async { crate::commands::file_explorer::save_image_bytes(path, data_base64).await })
             }
             other => Err(unsupported_action(CAP_ID, other, FS_ACTIONS)),
         }
