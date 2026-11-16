@@ -126,15 +126,19 @@ export const rebuildTransport = rebuildHttpTransport;
 // 这里一律监听重建（线上构建 DEV=false 不注册，行为不变）。
 if (typeof window !== 'undefined' && import.meta.env.DEV) {
   eventBus.on('polaris:dev-discovery-ready', () => {
+    // rebuild 只解决「此后发起的请求」；App 初始化（loadConfig/插件发现）可能
+    // 已用错误后端（origin→vite proxy→另一套数据根）完成——逐项补跑不可穷举
+    // （config/插件清单/引擎元数据/…）。dev 专属兜底：整页重载一次，让全部
+    // 初始化都走正确后端。sessionStorage 防循环（仅当本次会话尚未因本事件
+    // 重载过）；discovery 文件不存在时 prefetch 静默不派发，不会走到这里。
+    const key = 'polaris_dev_discovery_reloaded';
+    if (!sessionStorage.getItem(key)) {
+      sessionStorage.setItem(key, '1');
+      window.location.reload();
+      return;
+    }
     rebuildHttpTransport();
     void transport.manualReconnect?.().catch(() => {});
-    // 重建后重载配置：首次 loadConfig 可能发生在 rebuild 之前（拿到的是
-    // origin→vite proxy→错误后端的数据）。动态 import 避免与 configStore 的
-    // 静态循环（configStore 静态 import 本模块）。失败静默——App 初始化流程
-    // 对 config 加载失败已有兜底。
-    void import('@/stores/configStore')
-      .then(({ useConfigStore }) => useConfigStore.getState().loadConfig())
-      .catch(() => {});
   });
 }
 
