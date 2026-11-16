@@ -16,7 +16,6 @@ pub mod file_io;
 // 命令层）已整体删除，管理面迁入 cap.pluginDiscovery / cap.pluginServiceManager
 // （services/router/plugin_discovery_capability.rs / plugin_service_manager_capability.rs）。
 // plugin_state/plugin_config 为独立域保留。
-pub mod plugin_state;
 pub mod plugin_config;
 pub mod data_root_cmd;
 #[cfg(feature = "tauri-app")]
@@ -25,7 +24,7 @@ pub use data_root_cmd::open_path_in_explorer;
 pub mod agent_corpus;
 pub mod nexus;
 #[cfg(feature = "tauri-app")]
-pub use nexus::{nexus_dispatch_group, nexus_list_pipelines, nexus_resolve_escalation, nexus_start_roster};
+pub use nexus::nexus_start_roster;
 
 
 pub mod mobile_config;
@@ -67,11 +66,11 @@ pub mod file_watcher;
 
 pub mod engine_install;
 #[cfg(feature = "tauri-app")]
-pub use engine_install::{engine_detect_version, engine_install, engine_uninstall};
+pub use engine_install::{engine_install, engine_uninstall};
 
 pub mod plugin_engine;
 #[cfg(feature = "tauri-app")]
-pub use plugin_engine::{register_plugin_engine, unregister_plugin_engine, list_plugin_engines};
+pub use plugin_engine::{register_plugin_engine, unregister_plugin_engine};
 
 pub mod claude_settings;
 pub use claude_settings::{read_claude_settings, write_claude_settings, get_claude_settings_path};

@@ -996,15 +996,12 @@ pub fn run() {
             // 见 services/router/plugin_discovery_capability.rs / plugin_service_manager_capability.rs）。
             // 旧命令层 commands/plugin.rs + commands/plugin_service.rs 已整体删除，不再注册
             // Tauri 命令。plugin_state/plugin_config 为独立域保留。
-            commands::plugin_state::plugin_state_load,
-            commands::plugin_state::plugin_state_save,
             // 插件配置读写（受 appConfigRead/appConfigWrite 权限约束）
             commands::plugin_config::plugin_get_config,
             commands::plugin_config::plugin_set_config,
             // （Auto-Mode 已移除，移至外部插件 polaris.claude-code）
             // CLI 信息查询相关
             // 引擎安装 / 卸载 / 检测
-            commands::engine_install::engine_detect_version,
             commands::engine_install::engine_install,
             commands::engine_install::engine_uninstall,
             // 引擎元数据（前端统一消费）
@@ -1018,7 +1015,6 @@ pub fn run() {
             // 插件引擎管理
             commands::plugin_engine::register_plugin_engine,
             commands::plugin_engine::unregister_plugin_engine,
-            commands::plugin_engine::list_plugin_engines,
             // MCP 管理器相关
             // Claude Settings 相关
             commands::claude_settings::read_claude_settings,
@@ -1030,9 +1026,6 @@ pub fn run() {
             commands::data_root_cmd::open_path_in_explorer,
             // 专家/专家团(自定义 + 用户自建,内置 corpus 已移除)
             commands::nexus::nexus_start_roster,
-            commands::nexus::nexus_list_pipelines,
-            commands::nexus::nexus_resolve_escalation,
-            commands::nexus::nexus_dispatch_group,
             // 历史对话存储
             // 会话消息 SQLite 命令层（session-v2 阶段 1b）
             commands::session_messages::message_append,

@@ -43,33 +43,6 @@ pub fn nexus_start_roster_impl(
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn nexus_list_pipelines() -> Vec<nexus_pipeline::RosterPipeline> {
-    nexus_pipeline::list_pipelines()
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn nexus_resolve_escalation(
-    state: tauri::State<'_, AppState>,
-    roster_id: String,
-    qa_slug: String,
-    action: String,
-) -> Result<(), String> {
-    nexus_pipeline::resolve_escalation(&state, &roster_id, &qa_slug, &action)
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn nexus_dispatch_group(
-    state: tauri::State<'_, AppState>,
-    roster_id: String,
-    activation: String,
-) -> Result<Vec<String>, String> {
-    nexus_pipeline::dispatch_group(&state, &roster_id, &activation)
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn nexus_start_roster(
     state: tauri::State<'_, AppState>,
     scenario: String,

@@ -244,8 +244,6 @@ pub async fn handle_ipc_bridge(
         // 走 router_dispatch；旧 HTTP dispatcher 已删除。以下为独立域保留：
         // plugin_state_*（前端记忆）、plugin_get/set_config（插件配置）、
         // register/unregister_plugin_engine（引擎注册表）。
-        "plugin_state_load" => dispatch_plugin_state_load(&state),
-        "plugin_state_save" => dispatch_plugin_state_save(&state, &args),
         // 插件配置读写（受 appConfigRead/appConfigWrite 权限约束）
         "plugin_get_config" => dispatch_plugin_get_config(&state, &args).await,
         "plugin_set_config" => dispatch_plugin_set_config(&state, &args).await,
@@ -811,32 +809,6 @@ async fn dispatch_unregister_plugin_engine(
 // ═══════════════════════════════════════════════════════════════════════════
 // MCP Manager
 // ═══════════════════════════════════════════════════════════════════════════
-
-fn dispatch_plugin_state_load(state: &AppState) -> Result<Json<Value>, WebError> {
-    let service =
-        crate::services::plugin_state_service::PluginStateService::new(get_config_dir(state)?);
-    json_result!(service.load())
-}
-
-fn dispatch_plugin_state_save(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let states: crate::models::plugin_state::PluginStateMap =
-        serde_json::from_value(args.get("states").cloned().unwrap_or(Value::Null))
-            .map_err(|e| WebError::BadRequest(format!("Invalid plugin states: {}", e)))?;
-    let config_dir = get_config_dir(state)?;
-    let service =
-        crate::services::plugin_state_service::PluginStateService::new(config_dir.clone());
-    service.save(&states).map_err(|e| {
-        WebError::Internal(format!("Failed to save plugin states: {}", e))
-    })?;
-
-    // 后端统一感知：diff 旧状态 → 广播 plugin.lifecycle(state_changed) → 返回变更概览
-    let overview = crate::services::plugin_events::handle_plugin_state_change(
-        &config_dir,
-        &states,
-        &state.event_broadcast,
-    );
-    Ok(Json(serde_json::json!({ "ok": true, "lifecycle": overview })))
-}
 
 async fn dispatch_plugin_get_config(
     state: &AppState,

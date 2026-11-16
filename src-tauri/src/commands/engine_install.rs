@@ -44,23 +44,6 @@ pub struct InstallEvent {
 }
 
 /// 检测引擎本地安装状态（命令名传入 `claude`）
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn engine_detect_version(cli_name: String) -> EngineInstallStatus {
-    let paths = find_cli_paths(&cli_name);
-    let installed = !paths.is_empty() || check_cli_installed(&cli_name);
-    let version = if installed {
-        get_cli_version(&cli_name).ok()
-    } else {
-        None
-    };
-    EngineInstallStatus {
-        installed,
-        version,
-        path: paths.into_iter().next(),
-    }
-}
-
 /// Web 模式下的 engine_detect_version 实现（不依赖 Tauri）。
 /// 直接调用 `engine_detect_version_inner` 保持桌面端与 Web 端行为一致。
 pub fn engine_detect_version_impl(cli_name: &str) -> EngineInstallStatus {
