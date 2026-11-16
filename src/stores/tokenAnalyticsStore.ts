@@ -10,6 +10,15 @@
 
 import { create } from 'zustand'
 import { invoke } from '@/services/transport'
+
+/** K-R5 批E2：get_usage_* 命令删除，统一走 cap.usage 总线 */
+async function usageDispatch<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const res = await invoke<{ msgId: string; ok: boolean; result: T; error: string | null }>('router_dispatch', {
+    req: { target: 'cap.usage', payload: { action, ...payload } },
+  })
+  if (!res.ok) throw new Error(res.error || ('cap.usage ' + action + ' 失败'))
+  return res.result
+}
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('TokenAnalyticsStore')
@@ -166,9 +175,9 @@ export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => 
     const args = filterToInvokeArgs(f)
     try {
       const [summary, modelStats, engineStats] = await Promise.all([
-        invoke<UsageSummary>('get_usage_summary', args),
-        invoke<ModelUsageStats[]>('get_usage_model_stats', { startDate: args.startDate, endDate: args.endDate, engineId: args.engineId }),
-        invoke<EngineUsageStats[]>('get_usage_engine_stats', { startDate: args.startDate, endDate: args.endDate, model: args.model }),
+        usageDispatch<UsageSummary>('summary', args),
+        usageDispatch<ModelUsageStats[]>('model_stats', { startDate: args.startDate, endDate: args.endDate, engineId: args.engineId }),
+        usageDispatch<EngineUsageStats[]>('engine_stats', { startDate: args.startDate, endDate: args.endDate, model: args.model }),
       ])
       set({
         cachedSummary: summary,
@@ -204,7 +213,7 @@ export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => 
     const f = get().filterParams
     const args = filterToInvokeArgs(f)
     try {
-      return await invoke<UsageLogEntry[]>('get_usage_recent_logs', { limit, offset, ...args })
+      return await usageDispatch<UsageLogEntry[]>('recent_logs', { limit, offset, ...args })
     } catch {
       return []
     }
@@ -215,7 +224,7 @@ export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => 
       ? { startDate, endDate }
       : timeRangeToDates(range)
     try {
-      return await invoke<DailyUsageStats[]>('get_usage_daily_trends', { ...dates, engineId, model })
+      return await usageDispatch<DailyUsageStats[]>('daily_trends', { ...dates, engineId, model })
     } catch {
       return []
     }

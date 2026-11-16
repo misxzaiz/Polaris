@@ -300,11 +300,6 @@ pub async fn handle_ipc_bridge(
         // ── Usage Statistics ───────────────────────────────────────────────
         // 查询代理层用量数据库（与 Tauri 命令同名同参，走 record_usage 写入）。
         // 参数为 camelCase（前端 invoke 直接透传），这里转成后端函数的 snake_case。
-        "get_usage_summary" => dispatch_get_usage_summary(&args),
-        "get_usage_model_stats" => dispatch_get_usage_model_stats(&args),
-        "get_usage_engine_stats" => dispatch_get_usage_engine_stats(&args),
-        "get_usage_daily_trends" => dispatch_get_usage_daily_trends(&args),
-        "get_usage_recent_logs" => dispatch_get_usage_recent_logs(&args),
 
         // ── Model Profile（model-desk）────────────────────────────────────
         // 与 Tauri 命令同名同参（commands/model_profile.rs，仅 tauri-app 编译）；
@@ -1393,57 +1388,6 @@ async fn dispatch_fetch_models_for_profile(args: &Value) -> Result<Json<Value>, 
     )
     .map_err(|e| WebError::BadRequest(format!("invalid profile: {}", e)))?;
     json_result!(crate::services::ModelProfileService::fetch_models(&profile).await)
-}
-
-fn dispatch_get_usage_summary(args: &Value) -> Result<Json<Value>, WebError> {
-    let db = crate::services::usage_db::get_usage_db()
-        .ok_or_else(|| WebError::Internal("用量数据库未初始化".into()))?;
-    let start_date = opt_i64(args, "startDate");
-    let end_date = opt_i64(args, "endDate");
-    let model = optional_string(args, "model");
-    let engine_id = optional_string(args, "engineId");
-    json_result!(db.get_summary(start_date, end_date, model.as_deref(), engine_id.as_deref()))
-}
-
-fn dispatch_get_usage_model_stats(args: &Value) -> Result<Json<Value>, WebError> {
-    let db = crate::services::usage_db::get_usage_db()
-        .ok_or_else(|| WebError::Internal("用量数据库未初始化".into()))?;
-    let start_date = opt_i64(args, "startDate");
-    let end_date = opt_i64(args, "endDate");
-    let engine_id = optional_string(args, "engineId");
-    json_result!(db.get_model_stats(start_date, end_date, engine_id.as_deref()))
-}
-
-fn dispatch_get_usage_engine_stats(args: &Value) -> Result<Json<Value>, WebError> {
-    let db = crate::services::usage_db::get_usage_db()
-        .ok_or_else(|| WebError::Internal("用量数据库未初始化".into()))?;
-    let start_date = opt_i64(args, "startDate");
-    let end_date = opt_i64(args, "endDate");
-    let model = optional_string(args, "model");
-    let engine_id = optional_string(args, "engineId");
-    json_result!(db.get_engine_stats(start_date, end_date, model.as_deref(), engine_id.as_deref()))
-}
-
-fn dispatch_get_usage_daily_trends(args: &Value) -> Result<Json<Value>, WebError> {
-    let db = crate::services::usage_db::get_usage_db()
-        .ok_or_else(|| WebError::Internal("用量数据库未初始化".into()))?;
-    let start_date = opt_i64(args, "startDate");
-    let end_date = opt_i64(args, "endDate");
-    let model = optional_string(args, "model");
-    let engine_id = optional_string(args, "engineId");
-    json_result!(db.get_daily_trends(start_date, end_date, model.as_deref(), engine_id.as_deref()))
-}
-
-fn dispatch_get_usage_recent_logs(args: &Value) -> Result<Json<Value>, WebError> {
-    let db = crate::services::usage_db::get_usage_db()
-        .ok_or_else(|| WebError::Internal("用量数据库未初始化".into()))?;
-    let limit = opt_i64(args, "limit").unwrap_or(20);
-    let offset = opt_i64(args, "offset").unwrap_or(0);
-    let start_date = opt_i64(args, "startDate");
-    let end_date = opt_i64(args, "endDate");
-    let model = optional_string(args, "model");
-    let engine_id = optional_string(args, "engineId");
-    json_result!(db.get_recent_logs(limit, offset, start_date, end_date, model.as_deref(), engine_id.as_deref()))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

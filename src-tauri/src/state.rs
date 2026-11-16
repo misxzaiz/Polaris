@@ -480,6 +480,9 @@ pub fn create_app_state(
         // 文件浏览器读取类操作统一走总线（AI/插件经 cap_dispatch/bus_dispatch 可触达，
         // 权限+审计同源）；写操作（创建/删除/重命名）仍走既有 tauri command 通道。
         let _ = bus.register_handle(Box::new(FsCapability));
+        // cap.usage —— K-R5 批E2：用量统计唯一入口（原 commands/usage.rs tauri
+        // command 收口；只读，数据源 UsageDb 全局单例）。
+        let _ = bus.register_handle(Box::new(crate::services::router::UsageCapability));
         // cap.prompt_snippet —— 第四步迁移第二块：快捷片段唯一入口。
         // 装配时一次性只读导入旧 prompt-snippets.json（domain 为空才导入，旧文件保留）
         match prompt_snippet_capability::import_legacy_store(
