@@ -14,6 +14,17 @@ import { readFileBinaryText } from '@/services/tauri/fileService'
 let shimUrl: string | null = null
 let reactDomShimUrl: string | null = null
 
+/**
+ * 模块级加载缓存（路径 → 已加载模块）。
+ *
+ * 根因（2026-11-16 AI 回复重复显示）：同一插件 entry 被动态 import 多次时，
+ * 每次都会新建 Blob URL → 模块顶层代码重新执行 → 插件内模块级单例
+ * （chat-desk 的 EventRouter 等）出现多实例，各自订阅 chat-event →
+ * 同一事件被处理两遍（流式 token 双拼、会话双写）。
+ * 面板/卡片/UI 贡献三层 loader 共用本缓存，同一路径只加载一次。
+ */
+const moduleCache = new Map<string, Promise<Record<string, unknown>>>()
+
 async function ensureReactDomShim(): Promise<string> {
   if (reactDomShimUrl) return reactDomShimUrl
 
@@ -93,34 +104,45 @@ async function ensureReactShim(): Promise<string> {
  * 从磁盘文件加载一个 ES module。宿主 React import 会被重写为 shim。
  */
 export async function loadModuleFromFile(filePath: string): Promise<Record<string, unknown>> {
-  // 面板/卡片 bundle 常含大 vendor（如 exceljs ~950KB），get_file_content 的
-  // 1MB 文本限制会误杀合法 bundle（gezhi panel.js 1.45MB 即中招）。改用二进制
-  // 接口（download_file_binary，50MB 上限）读取，绕过文本限制。
-  const code = await readFileBinaryText(filePath)
-  const reactShimUrl = await ensureReactShim()
-  const reactDomShimUrl = await ensureReactDomShim()
+  // 同路径复用已加载模块（见 moduleCache 注释：防重复执行插件顶层代码产生多例单例）
+  const cached = moduleCache.get(filePath)
+  if (cached) return cached
 
-  // 2026-11-15 chat-desk P3 实测：上下文感知扫描器（reactImportRewrite）在
-  // mermaid 库的反引号模板串密集段会错位（把闭合反引号当开启，吞掉 7KB+ 代码），
-  // 导致后续 4 处真实 `import ... from "react"` 漏重写 → 面板加载失败
-  // 「Failed to resolve module specifier "react"」。
-  // 已验证 bundle 内所有 `from "react"` 形态均为真实 import 语句（无字符串字面量
-  // 误伤面），改用全局替换：正确率 140/140，误替换风险为零。
-  const patchedCode = code
-    .replace(/(from\s*)(["'])react\/jsx-runtime\2/g, `$1$2${reactShimUrl}$2`)
-    .replace(/(from\s*)(["'])react-dom\/client\2/g, `$1$2${reactDomShimUrl}$2`)
-    .replace(/(from\s*)(["'])react-dom\2/g, `$1$2${reactDomShimUrl}$2`)
-    .replace(/(from\s*)(["'])react\2/g, `$1$2${reactShimUrl}$2`)
+  const pending = (async () => {
+    // 面板/卡片 bundle 常含大 vendor（如 exceljs ~950KB），get_file_content 的
+    // 1MB 文本限制会误杀合法 bundle（gezhi panel.js 1.45MB 即中招）。改用二进制
+    // 接口（download_file_binary，50MB 上限）读取，绕过文本限制。
+    const code = await readFileBinaryText(filePath)
+    const reactShimUrl = await ensureReactShim()
+    const reactDomShimUrl = await ensureReactDomShim()
 
-  const blob = new Blob([patchedCode], { type: 'application/javascript' })
-  const blobUrl = URL.createObjectURL(blob)
+    // 2026-11-15 chat-desk P3 实测：上下文感知扫描器（reactImportRewrite）在
+    // mermaid 库的反引号模板串密集段会错位（把闭合反引号当开启，吞掉 7KB+ 代码），
+    // 导致后续 4 处真实 `import ... from "react"` 漏重写 → 面板加载失败
+    // 「Failed to resolve module specifier "react"」。
+    // 已验证 bundle 内所有 `from "react"` 形态均为真实 import 语句（无字符串字面量
+    // 误伤面），改用全局替换：正确率 140/140，误替换风险为零。
+    const patchedCode = code
+      .replace(/(from\s*)(["'])react\/jsx-runtime\2/g, `$1$2${reactShimUrl}$2`)
+      .replace(/(from\s*)(["'])react-dom\/client\2/g, `$1$2${reactDomShimUrl}$2`)
+      .replace(/(from\s*)(["'])react-dom\2/g, `$1$2${reactDomShimUrl}$2`)
+      .replace(/(from\s*)(["'])react\2/g, `$1$2${reactShimUrl}$2`)
 
-  try {
-    const mod = await import(/* @vite-ignore */ blobUrl)
-    return mod
-  } finally {
-    URL.revokeObjectURL(blobUrl)
-  }
+    const blob = new Blob([patchedCode], { type: 'application/javascript' })
+    const blobUrl = URL.createObjectURL(blob)
+
+    try {
+      const mod = await import(/* @vite-ignore */ blobUrl)
+      return mod
+    } finally {
+      URL.revokeObjectURL(blobUrl)
+    }
+  })()
+
+  moduleCache.set(filePath, pending)
+  // 失败时移除缓存，允许下次重试（面板 error retry 面板仍可用）
+  pending.catch(() => moduleCache.delete(filePath))
+  return pending
 }
 
 /**
