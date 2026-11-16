@@ -30,6 +30,7 @@ import { useOverlayStore } from '@/stores/overlayStore'
 import { useSnippetStore } from '@/stores/snippetStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
+import { useFileExplorerStore } from '@/stores/fileExplorerStore'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import {
   dialogStorageService,
@@ -95,6 +96,7 @@ export function installAppCoreBridge(): void {
       useSnippetStore,
       useSkillStore,
       useFileEditorStore,
+      useFileExplorerStore,
       useDispatchStore,
     },
     services: {
