@@ -239,7 +239,9 @@ export const disconnect = (): void => { transport.disconnect?.(); };
  * Git 数据统一由插件自带 service 提供（经 cap.pluginServiceManager.request 转发）。
  */
 
-export const invoke = transport.invoke;
+export function invoke<T = unknown>(command: string, args?: Record<string, unknown>): Promise<T> {
+  return transport.invoke<T>(command, args);
+}
 
 /**
  * 统一 listen — 监听后端事件
@@ -253,6 +255,8 @@ export const listen = <T>(event: string, handler: (p: T) => void): Promise<() =>
   }
   return transport.listen<T>(event, handler);
 };
+// 注意：invoke/listen 均为运行时转发（每次调用取当前 transport）——
+// rebuildHttpTransport 重建实例后，既有消费方的引用自动指向新实例。
 
 /**
  * 手动重连 — 重置重连计数器并立即尝试重新建立连接
