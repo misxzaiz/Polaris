@@ -44,7 +44,6 @@ fn get_settings_path() -> PathBuf {
     home.join(".claude").join("settings.json")
 }
 
-#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn read_claude_settings() -> Result<ClaudeSettings> {
     let path = get_settings_path();
     if !path.exists() {
@@ -57,7 +56,6 @@ pub async fn read_claude_settings() -> Result<ClaudeSettings> {
     Ok(settings)
 }
 
-#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn write_claude_settings(settings: ClaudeSettings) -> Result<()> {
     let path = get_settings_path();
     if let Some(parent) = path.parent() {
@@ -101,14 +99,12 @@ fn unique_tmp_path(target: &std::path::Path) -> std::path::PathBuf {
     target.with_file_name(format!("{}.tmp-{}-{ts}", name, std::process::id()))
 }
 
-#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn get_claude_settings_path() -> Result<String> {
     Ok(get_settings_path().to_string_lossy().to_string())
 }
 
 /// 向 settings.json 的 permissions 列表追加规则（去重保序）。
 /// kind: "allow" | "deny" | "ask"。返回更新后的完整 settings 供前端同步。
-#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn add_claude_permission_rules(rules: Vec<String>, kind: String) -> Result<ClaudeSettings> {
     let mut settings = read_claude_settings().await?;
     let mut perms = settings.permissions.take().unwrap_or_default();

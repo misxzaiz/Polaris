@@ -986,10 +986,6 @@ pub fn run() {
             commands::plugin_engine::unregister_plugin_engine,
             // MCP 管理器相关
             // Claude Settings 相关
-            commands::claude_settings::read_claude_settings,
-            commands::claude_settings::write_claude_settings,
-            commands::claude_settings::get_claude_settings_path,
-            commands::claude_settings::add_claude_permission_rules,
             // 数据根（DataRoot）—— 管理面已上总线（cap.data_root）；仅保留
             // open_path_in_explorer 平台壳命令（step7 §3：资源管理器不进总线）
             commands::data_root_cmd::open_path_in_explorer,
