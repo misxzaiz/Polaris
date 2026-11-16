@@ -106,20 +106,14 @@ pub fn message_revise_undelete_inner(conversation_id: String, after_ts: i64) -> 
 // Tauri commands（桌面端）
 // ============================================================================
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn message_append(entry: MessageEntry) -> Result<bool> {
     message_append_inner(entry)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn message_revise(id: String, content: serde_json::Value) -> Result<i64> {
     message_revise_inner(id, content)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn message_read(
     conversation_id: String,
     after_timestamp: Option<i64>,
@@ -128,32 +122,22 @@ pub fn message_read(
     message_read_inner(conversation_id, after_timestamp, limit)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn message_read_history(id: String) -> Result<Vec<MessageEntry>> {
     message_read_history_inner(id)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn message_get_latest(id: String) -> Result<Option<MessageEntry>> {
     message_get_latest_inner(id)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn message_delete_by_conversation(conversation_id: String) -> Result<()> {
     message_delete_by_conversation_inner(conversation_id)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn message_tombstone_after(conversation_id: String, after_ts: i64) -> Result<u64> {
     message_tombstone_after_inner(conversation_id, after_ts)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn message_revise_undelete(conversation_id: String, after_ts: i64) -> Result<u64> {
     message_revise_undelete_inner(conversation_id, after_ts)
 }

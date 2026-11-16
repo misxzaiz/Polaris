@@ -296,20 +296,14 @@ pub fn session_index_delete_inner(workspace_key: String, session_id: String) -> 
 // Tauri commands（桌面端）
 // ============================================================================
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_get_status(conversation_id: String) -> Result<SessionStatus> {
     session_get_status_inner(conversation_id)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_request_start(conversation_id: String, device_id: String) -> Result<serde_json::Value> {
     session_request_start_inner(conversation_id, device_id)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_request_interrupt(
     conversation_id: String,
     device_id: String,
@@ -317,38 +311,26 @@ pub fn session_request_interrupt(
     session_request_interrupt_inner(conversation_id, device_id)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_event_append(event: SessionEventEntry) -> Result<bool> {
     session_event_append_inner(event)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_event_read(conversation_id: String) -> Result<Vec<SessionEventEntry>> {
     session_event_read_inner(conversation_id)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_event_read_after_seq(seq: i64) -> Result<Vec<SessionEventEntry>> {
     session_event_read_after_seq_inner(seq)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_event_current_seq() -> Result<i64> {
     session_event_current_seq_inner()
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_event_delete_by_conversation(conversation_id: String) -> Result<()> {
     session_event_delete_by_conversation_inner(conversation_id)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_reconcile(
     conversation_id: String,
     client_messages: Vec<MessageEntry>,
@@ -357,26 +339,18 @@ pub fn session_reconcile(
     session_reconcile_inner(conversation_id, client_messages, client_running)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_register(record: SessionRecord) -> Result<SessionRecord> {
     session_register_inner(record)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_get(id: String) -> Result<Option<SessionRecord>> {
     session_get_inner(id)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_list() -> Result<Vec<SessionRecord>> {
     session_list_inner()
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_append_message(
     id: String,
     message_id: String,
@@ -385,8 +359,6 @@ pub fn session_append_message(
     session_append_message_inner(id, message_id, expected_version)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_update_metadata(
     id: String,
     patch: serde_json::Value,
@@ -395,14 +367,10 @@ pub fn session_update_metadata(
     session_update_metadata_inner(id, patch, expected_version)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_delete(id: String) -> Result<()> {
     session_delete_inner(id)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_index_register(
     workspace_key: String,
     record: SessionRecord,
@@ -410,14 +378,10 @@ pub fn session_index_register(
     session_index_register_inner(workspace_key, record)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_index_list(workspace_key: String) -> Result<(Vec<SessionProjection>, i64)> {
     session_index_list_inner(workspace_key)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_index_list_after(
     workspace_key: String,
     after_seq: i64,
@@ -425,8 +389,6 @@ pub fn session_index_list_after(
     session_index_list_after_inner(workspace_key, after_seq)
 }
 
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn session_index_delete(workspace_key: String, session_id: String) -> Result<()> {
     session_index_delete_inner(workspace_key, session_id)
 }

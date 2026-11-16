@@ -997,34 +997,7 @@ pub fn run() {
             commands::nexus::nexus_start_roster,
             // 历史对话存储
             // 会话消息 SQLite 命令层（session-v2 阶段 1b）
-            commands::session_messages::message_append,
-            commands::session_messages::message_revise,
-            commands::session_messages::message_read,
-            commands::session_messages::message_read_history,
-            commands::session_messages::message_get_latest,
-            commands::session_messages::message_delete_by_conversation,
-            commands::session_messages::message_tombstone_after,
-            commands::session_messages::message_revise_undelete,
             // 会话状态权威命令层（session-v2 阶段 2）
-            commands::session_state_commands::session_get_status,
-            commands::session_state_commands::session_request_start,
-            commands::session_state_commands::session_request_interrupt,
-            commands::session_state_commands::session_event_append,
-            commands::session_state_commands::session_event_read,
-            commands::session_state_commands::session_event_read_after_seq,
-            commands::session_state_commands::session_event_current_seq,
-            commands::session_state_commands::session_event_delete_by_conversation,
-            commands::session_state_commands::session_reconcile,
-            commands::session_state_commands::session_register,
-            commands::session_state_commands::session_get,
-            commands::session_state_commands::session_list,
-            commands::session_state_commands::session_append_message,
-            commands::session_state_commands::session_update_metadata,
-            commands::session_state_commands::session_delete,
-            commands::session_state_commands::session_index_register,
-            commands::session_state_commands::session_index_list,
-            commands::session_state_commands::session_index_list_after,
-            commands::session_state_commands::session_index_delete,
             // 会话历史索引（统一时间线 / 全文搜索 / 标注）
             // 模型 Profile 命令
             // 用量统计命令
