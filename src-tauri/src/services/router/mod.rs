@@ -47,6 +47,7 @@ mod ui_input_capability;
 mod self_capability;
 mod self_mutate_capability;
 mod mcp_capability;
+mod meta_capability;
 mod hook_capability;
 mod ui_render_capability;
 mod session_capability;
@@ -86,6 +87,7 @@ pub use dynamic_capability::{DynamicCapability, DynamicCapabilityConfig, Dynamic
 pub use registry_capability::RegistryCapability;
 pub(crate) use registry_capability::check_override_permission;
 pub use mcp_capability::{McpCapability, MCP_CAP_ID};
+pub use meta_capability::MetaCapability;
 pub use hook_capability::HookCapability;
 pub use ui_render_capability::UiRenderCapability;
 pub use session_capability::SessionCapability;

@@ -56,13 +56,9 @@ use commands::file_io::{test_param_serialization, write_file_absolute, read_file
 // 面板经 cap.pluginServiceManager.request 转发，AI 工具经插件 MCP 提供。
 // 翻译域已整体出仓（2026-11-14，B2-4）：baidu_translate 命令删除，
 // 百度 API 调用在 translate 插件 service（Node fetch + md5）内实现。
-#[cfg(feature = "tauri-app")]
 // 终端命令包装层已随内置终端出仓（P5，terminal-desk 插件承接）：
 // terminal_* 8 个 tauri command 删除；PTY 核心（TerminalManager/sink/open_in_external_impl）
 // 与 cap.terminal（terminal_capability.rs）保留——见 plans/terminal-desk-optimization-and-removal-plan.md §4.5。
-#[cfg(feature = "tauri-app")]
-use commands::{test_model_profile_connection, fetch_models_for_profile};
-
 use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
 use ai::EngineRegistry;
@@ -1007,18 +1003,11 @@ pub fn run() {
             commands::plugin_config::plugin_set_config,
             // （Auto-Mode 已移除，移至外部插件 polaris.claude-code）
             // CLI 信息查询相关
-            commands::cli_info::cli_get_agents,
-            commands::cli_info::cli_get_auth_status,
-            commands::cli_info::cli_get_version,
-            commands::cli_info::cli_check_installed,
-            commands::cli_info::cli_find_paths,
-            commands::cli_info::cli_get_version_for,
             // 引擎安装 / 卸载 / 检测
             commands::engine_install::engine_detect_version,
             commands::engine_install::engine_install,
             commands::engine_install::engine_uninstall,
             // 引擎元数据（前端统一消费）
-            commands::engine_metadata::get_engine_metadata_list,
             // 统一转发总线（第三步 RouterBus）——契约能力 dispatch
             commands::router::router_dispatch,
             commands::router::router_list_caps,
@@ -1040,17 +1029,10 @@ pub fn run() {
             // open_path_in_explorer 平台壳命令（step7 §3：资源管理器不进总线）
             commands::data_root_cmd::open_path_in_explorer,
             // 专家/专家团(自定义 + 用户自建,内置 corpus 已移除)
-            commands::agent_corpus::simple_ai_list_agents,
             commands::nexus::nexus_start_roster,
             commands::nexus::nexus_list_pipelines,
             commands::nexus::nexus_resolve_escalation,
             commands::nexus::nexus_dispatch_group,
-            commands::agent_corpus::agent_corpus_rosters,
-            commands::agent_corpus::user_roster_save,
-            commands::agent_corpus::user_roster_delete,
-            commands::agent_corpus::custom_agent_list,
-            commands::agent_corpus::custom_agent_save,
-            commands::agent_corpus::custom_agent_delete,
             // 历史对话存储
             // 会话消息 SQLite 命令层（session-v2 阶段 1b）
             commands::session_messages::message_append,
@@ -1083,8 +1065,6 @@ pub fn run() {
             commands::session_state_commands::session_index_delete,
             // 会话历史索引（统一时间线 / 全文搜索 / 标注）
             // 模型 Profile 命令
-            test_model_profile_connection,
-            fetch_models_for_profile,
             // 用量统计命令
             // 文件下载
             commands::file_explorer::download_file_binary,

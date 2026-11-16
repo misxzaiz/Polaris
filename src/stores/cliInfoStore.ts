@@ -115,6 +115,15 @@ interface CliInfoState {
 
 import { invoke } from '@/services/transport'
 
+/** K-R5 批E3：cli_* 命令删除，走 cap.meta 总线 */
+async function metaDispatch<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const res = await invoke<{ msgId: string; ok: boolean; result: T; error: string | null }>('router_dispatch', {
+    req: { target: 'cap.meta', payload: { action, ...payload } },
+  })
+  if (!res.ok) throw new Error(res.error || ('cap.meta ' + action + ' 失败'))
+  return res.result
+}
+
 // ============================================================
 // Store 创建
 // ============================================================
@@ -135,7 +144,7 @@ export const useCliInfoStore = create<CliInfoState>((set, get) => ({
   fetchAgents: async () => {
     try {
       log.debug('获取 CLI Agent 列表...')
-      const agents = await invoke<CliAgentInfo[]>('cli_get_agents')
+      const agents = await metaDispatch<CliAgentInfo[]>('cli_agents')
       log.debug(`获取到 ${agents.length} 个 Agent`)
       set({ agents, error: null })
     } catch (err) {
@@ -148,7 +157,7 @@ export const useCliInfoStore = create<CliInfoState>((set, get) => ({
   fetchAuthStatus: async () => {
     try {
       log.debug('获取认证状态...')
-      const authStatus = await invoke<CliAuthStatus>('cli_get_auth_status')
+      const authStatus = await metaDispatch<CliAuthStatus>('cli_auth_status')
       log.debug(`认证状态: loggedIn=${authStatus.loggedIn}, method=${authStatus.authMethod}`)
       set({ authStatus, error: null })
     } catch (err) {
@@ -160,7 +169,7 @@ export const useCliInfoStore = create<CliInfoState>((set, get) => ({
 
   fetchVersion: async () => {
     try {
-      const version = await invoke<string>('cli_get_version')
+      const version = await metaDispatch<string>('cli_version')
       set({ version })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

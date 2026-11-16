@@ -8,6 +8,15 @@
 
 import { invoke } from '@/services/transport';
 
+/** K-R5 批E3：agent_corpus_* 命令删除，统一走 cap.meta 总线 */
+async function metaDispatch<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const res = await invoke<{ msgId: string; ok: boolean; result: T; error: string | null }>('router_dispatch', {
+    req: { target: 'cap.meta', payload: { action, ...payload } },
+  });
+  if (!res.ok) throw new Error(res.error || ('cap.meta ' + action + ' 失败'));
+  return res.result;
+}
+
 // ============================================================================
 // 专家团(roster)与自定义专家
 // ============================================================================
@@ -35,15 +44,15 @@ export async function saveUserRoster(params: {
   summary: string;
   members: string[];
 }): Promise<void> {
-  return invoke('user_roster_save', params);
+  return metaDispatch('roster_save', params);
 }
 
 export async function deleteUserRoster(slug: string): Promise<void> {
-  return invoke('user_roster_delete', { slug });
+  return metaDispatch('roster_delete', { slug });
 }
 
 export async function getRosters(): Promise<RosterDef[]> {
-  const raw = await invoke<{ rosters: RosterDef[] }>('agent_corpus_rosters');
+  const raw = await metaDispatch<{ rosters: RosterDef[] }>('agent_rosters');
   return raw?.rosters ?? [];
 }
 
@@ -58,7 +67,7 @@ export interface CustomAgent {
 }
 
 export async function listCustomAgents(): Promise<CustomAgent[]> {
-  return invoke<CustomAgent[]>('custom_agent_list');
+  return metaDispatch<CustomAgent[]>('agent_custom_list');
 }
 
 export async function saveCustomAgent(params: {
@@ -69,11 +78,11 @@ export async function saveCustomAgent(params: {
   systemPrompt: string;
   tools?: string[];
 }): Promise<string> {
-  return invoke<string>('custom_agent_save', params);
+  return metaDispatch<string>('agent_custom_save', params);
 }
 
 export async function deleteCustomAgent(slug: string): Promise<void> {
-  return invoke('custom_agent_delete', { slug });
+  return metaDispatch('agent_custom_delete', { slug });
 }
 
 // NEXUS pipeline 封装（startRoster/resolveEscalation/dispatchLaterGroup/listPipelines）

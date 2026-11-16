@@ -10,6 +10,15 @@
 
 import { create } from 'zustand'
 import { invoke } from '@/services/transport'
+
+/** K-R5 批E3：get_engine_metadata_list 命令删除，走 cap.meta */
+async function metaDispatch<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const res = await invoke<{ msgId: string; ok: boolean; result: T; error: string | null }>('router_dispatch', {
+    req: { target: 'cap.meta', payload: { action, ...payload } },
+  })
+  if (!res.ok) throw new Error(res.error || ('cap.meta ' + action + ' 失败'))
+  return res.result
+}
 import { createLogger } from '@/utils/logger'
 import type { EngineMetadata } from '@/types/engineMetadata'
 
@@ -50,7 +59,7 @@ export const useEngineMetadataStore = create<EngineMetadataStore>((set, get) => 
     if (get().loaded || get().loading) return
     set({ loading: true, error: null })
     try {
-      const metadatas = await invoke<EngineMetadata[]>('get_engine_metadata_list')
+      const metadatas = await metaDispatch<EngineMetadata[]>('engine_metadata_list')
       set({ metadatas, loaded: true, loading: false })
       log.info(`已加载 ${metadatas.length} 个引擎元数据`)
     } catch (e) {

@@ -27,11 +27,6 @@ pub mod nexus;
 #[cfg(feature = "tauri-app")]
 pub use nexus::{nexus_dispatch_group, nexus_list_pipelines, nexus_resolve_escalation, nexus_start_roster};
 
-#[cfg(feature = "tauri-app")]
-pub use agent_corpus::{
-    agent_corpus_rosters, custom_agent_delete, custom_agent_list,
-    custom_agent_save, simple_ai_list_agents, user_roster_delete, user_roster_save,
-};
 
 pub mod mobile_config;
 #[cfg(feature = "tauri-app")]
@@ -70,17 +65,9 @@ pub mod file_watcher;
 
 // 终端命令
 
-pub mod cli_info;
-#[cfg(feature = "tauri-app")]
-pub use cli_info::{cli_get_agents, cli_get_auth_status, cli_get_version};
-
 pub mod engine_install;
 #[cfg(feature = "tauri-app")]
 pub use engine_install::{engine_detect_version, engine_install, engine_uninstall};
-
-pub mod engine_metadata;
-#[cfg(feature = "tauri-app")]
-pub use engine_metadata::get_engine_metadata_list;
 
 pub mod plugin_engine;
 #[cfg(feature = "tauri-app")]
@@ -88,10 +75,6 @@ pub use plugin_engine::{register_plugin_engine, unregister_plugin_engine, list_p
 
 pub mod claude_settings;
 pub use claude_settings::{read_claude_settings, write_claude_settings, get_claude_settings_path};
-
-pub mod model_profile;
-#[cfg(feature = "tauri-app")]
-pub use model_profile::{test_model_profile_connection, fetch_models_for_profile};
 
 pub mod router;
 #[cfg(feature = "tauri-app")]
