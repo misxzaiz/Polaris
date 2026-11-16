@@ -229,11 +229,6 @@ pub async fn handle_ipc_bridge(
         "fs_watch_stop" => dispatch_fs_watch_stop(&state),
 
         // ── MCP Manager ────────────────────────────────────────────────────
-        "mcp_list_servers" => dispatch_mcp_list_servers(&state, &args),
-        "mcp_health_check" => dispatch_mcp_health_check(&state),
-        "mcp_health_check_one" => dispatch_mcp_health_check_one(&state, &args),
-        "mcp_add_server" => dispatch_mcp_add_server(&state, &args),
-        "mcp_remove_server" => dispatch_mcp_remove_server(&state, &args),
 
         // ── Terminal ───────────────────────────────────────────────────────
 
@@ -1449,42 +1444,6 @@ fn dispatch_get_usage_recent_logs(args: &Value) -> Result<Json<Value>, WebError>
     let model = optional_string(args, "model");
     let engine_id = optional_string(args, "engineId");
     json_result!(db.get_recent_logs(limit, offset, start_date, end_date, model.as_deref(), engine_id.as_deref()))
-}
-
-fn get_mcp_service(state: &AppState) -> Result<crate::services::mcp_manager_service::McpManagerService, WebError> {
-    let claude_path = {
-        let store = state.lock_config()?;
-        store.get().resolve_claude_cmd()
-    };
-    Ok(crate::services::mcp_manager_service::McpManagerService::new(claude_path))
-}
-
-fn dispatch_mcp_list_servers(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let service = get_mcp_service(state)?;
-    let workspace_path = require_string(args, "workspacePath").unwrap_or_default();
-    json_result!(service.list_servers(&workspace_path))
-}
-
-fn dispatch_mcp_health_check(state: &AppState) -> Result<Json<Value>, WebError> {
-    let service = get_mcp_service(state)?;
-    json_result!(service.health_check())
-}
-
-fn dispatch_mcp_health_check_one(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let name = require_string(args, "name")?;
-    let service = get_mcp_service(state)?;
-    json_result!(service.health_check_one(&name))
-}
-
-fn dispatch_mcp_add_server(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let _ = (state, args);
-    // MCP add/remove server requires local filesystem access to config files
-    Err(WebError::BadRequest("MCP server management requires local runtime".into()))
-}
-
-fn dispatch_mcp_remove_server(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let _ = (state, args);
-    Err(WebError::BadRequest("MCP server management requires local runtime".into()))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

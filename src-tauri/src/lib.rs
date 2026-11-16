@@ -948,12 +948,6 @@ pub fn run() {
             // MCP 诊断
             // Prompt Snippet 快捷片段
             // 聊天相关（统一接口）
-            commands::provider_diagnostics::provider_route_logs,
-            commands::provider_diagnostics::provider_route_logs_clear,
-            commands::provider_diagnostics::provider_stats,
-            commands::provider_diagnostics::provider_stats_clear,
-            commands::provider_diagnostics::provider_failed_calls,
-            commands::provider_diagnostics::provider_failed_calls_clear,
             // 统一会话历史接口（支持分页）
             // Claude Code 原生会话历史相关（旧接口，保留兼容）
             // AskUserQuestion 相关
@@ -1037,13 +1031,6 @@ pub fn run() {
             commands::plugin_engine::unregister_plugin_engine,
             commands::plugin_engine::list_plugin_engines,
             // MCP 管理器相关
-            commands::mcp_manager::mcp_list_servers,
-            commands::mcp_manager::mcp_get_server,
-            commands::mcp_manager::mcp_health_check,
-            commands::mcp_manager::mcp_health_check_one,
-            commands::mcp_manager::mcp_add_server,
-            commands::mcp_manager::mcp_remove_server,
-            commands::mcp_manager::mcp_start_auth,
             // Claude Settings 相关
             commands::claude_settings::read_claude_settings,
             commands::claude_settings::write_claude_settings,

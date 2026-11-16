@@ -116,6 +116,8 @@ pub struct McpCapability {
     config_dir: Option<std::path::PathBuf>,
     /// 事件广播（set_plugin_tools 广播 plugin.lifecycle 触发前端刷新）
     broadcaster: Option<crate::web::EventBroadcaster>,
+    /// K-R5 批E：config store（管理面动作解析 claude CLI 路径用）
+    config_store: Option<std::sync::Arc<std::sync::Mutex<crate::services::config_store::ConfigStore>>>,
 }
 
 impl McpCapability {
@@ -128,7 +130,17 @@ impl McpCapability {
             registry: McpClientRegistry::from_servers(servers),
             config_dir,
             broadcaster: None,
+            config_store: None,
         }
+    }
+
+    /// K-R5 批E：注入 config store（管理面 list/get/add/remove/health 用）。
+    pub fn with_config_store(
+        mut self,
+        store: std::sync::Arc<std::sync::Mutex<crate::services::config_store::ConfigStore>>,
+    ) -> Self {
+        self.config_store = Some(store);
+        self
     }
 
     /// 注入事件广播（set_plugin_tools 触发前端刷新）。
@@ -212,6 +224,25 @@ impl McpCapability {
     }
 }
 
+
+impl McpCapability {
+    /// K-R5 批E：管理面动作公共入口——config store 解析 claude CLI 路径构造
+    /// McpManagerService，同步执行（管理面均为阻塞 IO，量小）。
+    fn invoke_mgr<T: serde::Serialize, F>(&self, payload: &Value, f: F) -> Result<Value, String>
+    where
+        F: FnOnce(crate::services::mcp_manager_service::McpManagerService, &Value) -> Result<T, String>,
+    {
+        let store = self.config_store.as_ref()
+            .ok_or_else(|| "cap.mcp 管理面动作不可用（config store 未注入）".to_string())?;
+        let claude_path = {
+            let st = store.lock().map_err(|e| e.to_string())?;
+            st.get().resolve_claude_cmd()
+        };
+        let svc = crate::services::mcp_manager_service::McpManagerService::new(claude_path);
+        f(svc, payload).map(|v| serde_json::to_value(v).unwrap_or(Value::Null))
+    }
+}
+
 impl Capability for McpCapability {
     fn id(&self) -> CapabilityId {
         CapabilityId(MCP_CAP_ID.into())
@@ -284,16 +315,62 @@ impl Capability for McpCapability {
             "call" => self.invoke_call(payload, ctx),
             "list_plugin_tools" => self.invoke_list_plugin_tools(payload),
             "set_plugin_tools" => self.invoke_set_plugin_tools(payload),
+            // ── K-R5 批E：MCP 管理面（原 commands/mcp_manager.rs tauri command
+            // 收口；McpManagerService 同一实现，桌面/Web/插件统一总线入口）──
+            "list_servers" => self.invoke_mgr(&payload, |svc, payload: &Value| {
+                let workspace_path = payload.get("workspacePath").and_then(Value::as_str).unwrap_or_default().to_string();
+                svc.list_servers(&workspace_path)
+                    .map_err(|e| e.to_string())
+            }),
+            "get_server" => self.invoke_mgr(&payload, |svc, payload: &Value| {
+                let name = payload.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+                let workspace_path = payload.get("workspacePath").and_then(Value::as_str).unwrap_or_default().to_string();
+                svc.get_server(&name, &workspace_path).map_err(|e| e.to_string())
+            }),
+            "health" => self.invoke_mgr(&payload, |svc, _payload: &Value| {
+                svc.health_check().map_err(|e| e.to_string())
+            }),
+            "health_one" => self.invoke_mgr(&payload, |svc, payload: &Value| {
+                let name = payload.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+                svc.health_check_one(&name).map_err(|e| e.to_string())
+            }),
+            "add_server" => self.invoke_mgr(&payload, |svc, payload: &Value| {
+                let name = payload.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+                let command = payload.get("command").and_then(Value::as_str).unwrap_or_default().to_string();
+                let args: Vec<String> = payload.get("args").and_then(Value::as_array)
+                    .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let transport = payload.get("transport").and_then(Value::as_str).unwrap_or("stdio").to_string();
+                let scope = payload.get("scope").and_then(Value::as_str).unwrap_or("project").to_string();
+                svc.add_server(&name, &command, &args, &transport, &scope)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            }),
+            "remove_server" => self.invoke_mgr(&payload, |svc, payload: &Value| {
+                let name = payload.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+                let scope = payload.get("scope").and_then(Value::as_str).map(String::from);
+                svc.remove_server(&name, scope.as_deref())
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            }),
+            "start_auth" => self.invoke_mgr(&payload, |svc, payload: &Value| {
+                let name = payload.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+                let url = payload.get("url").and_then(Value::as_str).unwrap_or_default().to_string();
+                let scope = payload.get("scope").and_then(Value::as_str).unwrap_or("project").to_string();
+                svc.start_auth(&name, &url, &scope)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            }),
             "" => Ok(json!({
                 "ok": false,
-                "error": "cap.mcp 需要 action 参数（call / list_plugin_tools / set_plugin_tools）",
+                "error": "cap.mcp 需要 action 参数（call / list_plugin_tools / set_plugin_tools / list_servers / get_server / health / health_one / add_server / remove_server / start_auth）",
             })),
             other => Ok(json!({
                 "ok": false,
                 "error": unsupported_action(
                     MCP_CAP_ID,
                     other,
-                    &["call", "list_plugin_tools", "set_plugin_tools"],
+                    &["call", "list_plugin_tools", "set_plugin_tools", "list_servers", "get_server", "health", "health_one", "add_server", "remove_server", "start_auth"],
                 ),
             })),
         }

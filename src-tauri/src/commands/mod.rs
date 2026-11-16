@@ -16,8 +16,6 @@ pub mod file_io;
 // 命令层）已整体删除，管理面迁入 cap.pluginDiscovery / cap.pluginServiceManager
 // （services/router/plugin_discovery_capability.rs / plugin_service_manager_capability.rs）。
 // plugin_state/plugin_config 为独立域保留。
-#[cfg(feature = "tauri-app")]
-pub mod provider_diagnostics;
 pub mod plugin_state;
 pub mod plugin_config;
 pub mod data_root_cmd;
@@ -87,10 +85,6 @@ pub use engine_metadata::get_engine_metadata_list;
 pub mod plugin_engine;
 #[cfg(feature = "tauri-app")]
 pub use plugin_engine::{register_plugin_engine, unregister_plugin_engine, list_plugin_engines};
-
-pub mod mcp_manager;
-#[cfg(feature = "tauri-app")]
-pub use mcp_manager::{mcp_list_servers, mcp_get_server, mcp_health_check, mcp_health_check_one, mcp_add_server, mcp_remove_server, mcp_start_auth};
 
 pub mod claude_settings;
 pub use claude_settings::{read_claude_settings, write_claude_settings, get_claude_settings_path};

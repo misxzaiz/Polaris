@@ -640,6 +640,7 @@ pub fn create_app_state(
                     mcp_servers,
                     Some(config_dir.clone()),
                 )
+                .with_config_store(config_store_arc.clone())
                 .with_broadcaster(event_broadcast.clone()),
             ));
         }
