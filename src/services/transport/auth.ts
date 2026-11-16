@@ -89,6 +89,23 @@ function prefetchDevDiscovery(): void {
 // 模块加载即预取（仅 dev + 强制 HTTP 时真正发请求）
 prefetchDevDiscovery();
 
+/**
+ * 等待 dev discovery 就绪（幂等）。
+ * main.tsx 在 render 前 await 它：保证首次 transport 创建时 getServerUrl()
+ * 已能拿到真实后端地址（否则回退 origin→vite proxy→可能另一套后端）。
+ * 非 dev / 已就绪时立即返回。
+ */
+export async function ensureDevDiscoveryReady(): Promise<void> {
+  if (!isDevHttpDiscoveryEnabled()) return;
+  if (devDiscovery) return;
+  prefetchDevDiscovery();
+  // prefetch 是 fire-and-forget，这里轮询等待其完成（最多 3s）
+  for (let i = 0; i < 60; i++) {
+    if (devDiscovery) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 
 /**
  * 获取服务器地址

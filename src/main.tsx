@@ -203,7 +203,6 @@ if (import.meta.env.PROD && typeof navigator !== 'undefined' && 'serviceWorker' 
 // P6：跨端只读会话跟随（remoteSessionFollower）随对话域迁入 chat-desk 插件
 //（插件 bootstrap.ts 启动）；宿主不再启动。
 
-const root = document.getElementById("root") as HTMLElement;
 
 /**
  * 根组件选择：
@@ -236,8 +235,17 @@ function RootApp() {
   return <App />;
 }
 
-ReactDOM.createRoot(root).render(
-  <React.StrictMode>
-    <RootApp />
-  </React.StrictMode>,
-);
+// Dev HTTP 模式：先等后端发现文件就绪（保证 transport 首建即指向真实后端，
+// 避免 origin→vite proxy→另一套后端的数据分裂），再挂载应用。桌面/生产无感。
+const rootEl = document.getElementById('root') as HTMLElement;
+const start = import.meta.env.DEV && !('__TAURI_INTERNALS__' in window)
+  ? import('@/services/transport/auth').then((m) => m.ensureDevDiscoveryReady())
+  : Promise.resolve();
+
+void start.then(() => {
+  ReactDOM.createRoot(rootEl).render(
+    <React.StrictMode>
+      <RootApp />
+    </React.StrictMode>,
+  );
+});

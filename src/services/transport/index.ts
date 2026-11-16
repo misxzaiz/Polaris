@@ -105,13 +105,20 @@ function createConfiguredHttpTransport(): TransportAdapter {
   );
 }
 
-let transport: TransportAdapter = currentMode === 'tauri'
+let transport: TransportAdapter | null = currentMode === 'tauri'
   ? tauriTransport
-  : createConfiguredHttpTransport();
+  : null; // http 模式惰性创建：等 dev discovery 就绪（main.tsx render 前 await），避免固化到错误后端
+
+function getTransport(): TransportAdapter {
+  if (!transport) {
+    transport = createConfiguredHttpTransport();
+  }
+  return transport;
+}
 
 function rebuildHttpTransport(): void {
   if (currentMode !== 'http') return;
-  transport.disconnect?.();
+  getTransport().disconnect?.();
   transport = createConfiguredHttpTransport();
 }
 
@@ -138,7 +145,7 @@ if (typeof window !== 'undefined' && import.meta.env.DEV) {
       return;
     }
     rebuildHttpTransport();
-    void transport.manualReconnect?.().catch(() => {});
+    void getTransport().manualReconnect?.().catch(() => {});
   });
 }
 
@@ -169,9 +176,10 @@ async function loadMobileServerConfig(): Promise<void> {
 const mobileConfigLoadPromise = isMobileTauri()
   ? loadMobileServerConfig().then(() => {
       const url = getServerUrl();
-      if (url && transport.manualReconnect) {
+      const reconnect = getTransport().manualReconnect;
+      if (url && reconnect) {
         log.info('Mobile config loaded, reconnecting...');
-        transport.manualReconnect().catch(() => {});
+        reconnect.call(getTransport()).catch(() => {});
       }
     })
   : Promise.resolve();
@@ -237,7 +245,7 @@ export const emit = currentMode === 'tauri'
  * 断开传输层连接（清理 WebSocket 等资源）。
  * 仅在 HTTP 模式下有效；Tauri 模式为空操作。
  */
-export const disconnect = (): void => { transport.disconnect?.(); };
+export const disconnect = (): void => { getTransport().disconnect?.(); };
 
 /**
  * 统一 invoke — 调用后端命令
@@ -251,7 +259,7 @@ export const disconnect = (): void => { transport.disconnect?.(); };
  */
 
 export function invoke<T = unknown>(command: string, args?: Record<string, unknown>): Promise<T> {
-  return transport.invoke<T>(command, args);
+  return getTransport().invoke<T>(command, args);
 }
 
 /**
@@ -264,7 +272,7 @@ export const listen = <T>(event: string, handler: (p: T) => void): Promise<() =>
   if (currentMode === 'http' && LOCAL_EVENTS.has(event)) {
     return Promise.resolve(listenLocal(event, handler));
   }
-  return transport.listen<T>(event, handler);
+  return getTransport().listen<T>(event, handler);
 };
 // 注意：invoke/listen 均为运行时转发（每次调用取当前 transport）——
 // rebuildHttpTransport 重建实例后，既有消费方的引用自动指向新实例。
@@ -276,8 +284,9 @@ export const listen = <T>(event: string, handler: (p: T) => void): Promise<() =>
  * 用于 Web 端在达到最大重连次数后，用户手动触发重连。
  */
 export const manualReconnect = (): Promise<void> => {
-  if (transport.manualReconnect) {
-    return transport.manualReconnect();
+  const reconnect = getTransport().manualReconnect;
+  if (reconnect) {
+    return reconnect.call(getTransport());
   }
   return Promise.reject(new Error('Manual reconnect not supported in this mode'));
 };
