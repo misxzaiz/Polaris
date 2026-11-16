@@ -325,6 +325,12 @@ pub async fn handle_ipc_bridge(
         "get_usage_daily_trends" => dispatch_get_usage_daily_trends(&args),
         "get_usage_recent_logs" => dispatch_get_usage_recent_logs(&args),
 
+        // ── Model Profile（model-desk）────────────────────────────────────
+        // 与 Tauri 命令同名同参（commands/model_profile.rs，仅 tauri-app 编译）；
+        // service 层（ModelProfileService）无 feature 门控，web 分发直接调它。
+        "test_model_profile_connection" => dispatch_test_model_profile_connection(&args).await,
+        "fetch_models_for_profile" => dispatch_fetch_models_for_profile(&args).await,
+
         // ── Built-in Browser（已退役）────────────────────────────────────
         // 内置浏览器已出仓为 browser-desk 插件（CDP 驱动系统 Chrome，独立进程），
         // 主仓不再有 browser_* 命令。落到此分支的调用显式给出域相关提示，
@@ -1527,6 +1533,26 @@ fn opt_i64(args: &Value, key: &str) -> Option<i64> {
             v.as_str().and_then(|s| s.trim().parse::<i64>().ok())
         }
     })
+}
+
+async fn dispatch_test_model_profile_connection(args: &Value) -> Result<Json<Value>, WebError> {
+    let profile: crate::models::config::ModelProfile = serde_json::from_value(
+        args.get("profile")
+            .cloned()
+            .ok_or_else(|| WebError::BadRequest("missing profile".to_string()))?,
+    )
+    .map_err(|e| WebError::BadRequest(format!("invalid profile: {}", e)))?;
+    json_result!(crate::services::ModelProfileService::test_connection(&profile).await)
+}
+
+async fn dispatch_fetch_models_for_profile(args: &Value) -> Result<Json<Value>, WebError> {
+    let profile: crate::models::config::ModelProfile = serde_json::from_value(
+        args.get("profile")
+            .cloned()
+            .ok_or_else(|| WebError::BadRequest("missing profile".to_string()))?,
+    )
+    .map_err(|e| WebError::BadRequest(format!("invalid profile: {}", e)))?;
+    json_result!(crate::services::ModelProfileService::fetch_models(&profile).await)
 }
 
 fn dispatch_get_usage_summary(args: &Value) -> Result<Json<Value>, WebError> {
