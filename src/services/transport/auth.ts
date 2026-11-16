@@ -35,7 +35,12 @@ let devDiscovery: DevServerDiscovery | null = null;
 /** 是否已发起过预取（避免重复 fetch） */
 let devDiscoveryFetched = false;
 /** 发现文件新鲜度阈值（毫秒）。超过则认为后端已退出，忽略。 */
-const DEV_DISCOVERY_MAX_AGE = 5 * 60 * 1000;
+// 12 小时：发现文件在后端启动时写一次（进程长期运行不再刷新），
+// 页面随时可能（重）加载——时效必须覆盖后端整个生命周期。
+// 过短会导致「后端跑了一段时间后打开/刷新页面」时发现被误判过期，
+// transport 回退 origin→vite proxy→另一套后端（数据源分裂，实测复现）。
+// 风险面不变：文件本就仅 dev 存在，后端退出后由 cleanup 删除。
+const DEV_DISCOVERY_MAX_AGE = 12 * 60 * 60 * 1000;
 
 /** 是否启用 dev 强制 HTTP 自发现 */
 function isDevHttpDiscoveryEnabled(): boolean {
