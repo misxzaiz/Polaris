@@ -35,20 +35,7 @@ use commands::window::{
     notify_session_complete,
 };
 #[cfg(feature = "tauri-app")]
-use commands::file_explorer::{
-    read_directory, get_file_content, create_file, create_directory,
-    delete_file, rename_file, path_exists, read_commands, search_files,
-    search_file_contents, search_file_contents_detailed,
-    copy_path, move_path, copy_path_to_directory, move_path_to_directory, save_dropped_file_to_directory, save_image_bytes,
-};
-#[cfg(feature = "tauri-app")]
-use commands::file_clipboard::{
-    set_file_clipboard, get_file_clipboard,
-};
-#[cfg(feature = "tauri-app")]
-use commands::file_watcher::{
-    fs_watch_start, fs_watch_stop, fs_watch_status,
-};
+use commands::file_watcher::{fs_watch_start, fs_watch_stop, fs_watch_status};
 #[cfg(feature = "tauri-app")]
 use commands::file_io::{test_param_serialization, write_file_absolute, read_file_absolute};
 // Git 域已整体出仓（2026-11-12，架构方案 C）：git_* 命令、cap.git 与
@@ -954,26 +941,8 @@ pub fn run() {
             dispatch_create_task,
             // 工作区相关
             // 文件浏览器相关
-            read_directory,
-            get_file_content,
-            create_file,
-            save_image_bytes,
-            create_directory,
-            delete_file,
-            rename_file,
-            path_exists,
-            read_commands,
-            search_files,
-            search_file_contents,
-            search_file_contents_detailed,
-            copy_path,
-            move_path,
-            copy_path_to_directory,
-            move_path_to_directory,
-            save_dropped_file_to_directory,
-            set_file_clipboard,
-            get_file_clipboard,
             // 文件监听相关
+            // 文件监听相关（桌面窗口事件功能，属窗口/生命周期核）
             fs_watch_start,
             fs_watch_stop,
             fs_watch_status,
@@ -1060,8 +1029,6 @@ pub fn run() {
             // 模型 Profile 命令
             // 用量统计命令
             // 文件下载
-            commands::file_explorer::download_file_binary,
-            commands::file_explorer::download_directory_to_zip,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -67,6 +67,9 @@ pub const FS_ACTIONS: &[&str] = &[
     "getHomeDir",
     "validateWorkspacePath",
     "readCommands",
+    // K-R5 批F：系统文件剪贴板 + 文件监听（原 file_clipboard.rs/file_watcher.rs 收口）
+    "clipWrite",
+    "clipRead",
 ];
 
 
@@ -272,6 +275,23 @@ impl Capability for FsCapability {
             "readCommands" => {
                 let work_dir = params.get("work_dir").and_then(|v| v.as_str()).map(String::from);
                 async_drive(|| async { crate::commands::file_explorer::read_commands(work_dir).await })
+            }
+            // ── K-R5 批F：系统剪贴板（原 file_clipboard.rs）──
+            "clipWrite" => {
+                let paths: Vec<String> = params.get("paths").and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let operation = params.get("operation").and_then(|v| v.as_str()).unwrap_or("copy").to_string();
+                async_drive(move || async move {
+                    let op = match operation.as_str() {
+                        "cut" => crate::commands::file_clipboard::FileClipboardOperation::Cut,
+                        _ => crate::commands::file_clipboard::FileClipboardOperation::Copy,
+                    };
+                    crate::commands::file_clipboard::set_file_clipboard(paths, op).await
+                })
+            }
+            "clipRead" => {
+                async_drive(|| async { crate::commands::file_clipboard::get_file_clipboard().await })
             }
             other => Err(unsupported_action(CAP_ID, other, FS_ACTIONS)),
         }

@@ -13,7 +13,7 @@ use crate::state::AppState;
 pub fn fs_watch_start(
     root_path: String,
     app_handle: tauri::AppHandle,
-    state: tauri::State<AppState>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<()> {
     // 检查性能开关
     let perf = {
@@ -39,7 +39,7 @@ pub fn fs_watch_start(
 /// 停止文件系统监听
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn fs_watch_stop(state: tauri::State<AppState>) -> Result<()> {
+pub fn fs_watch_stop(state: tauri::State<'_, AppState>) -> Result<()> {
     let mut manager = state
         .file_watcher_manager
         .lock()
@@ -51,7 +51,7 @@ pub fn fs_watch_stop(state: tauri::State<AppState>) -> Result<()> {
 /// 获取文件监听状态
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn fs_watch_status(state: tauri::State<AppState>) -> bool {
+pub fn fs_watch_status(state: tauri::State<'_, AppState>) -> bool {
     let manager = state
         .file_watcher_manager
         .lock()

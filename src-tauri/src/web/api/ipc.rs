@@ -51,7 +51,6 @@ pub async fn handle_ipc_bridge(
 
     match command.as_str() {
         // ── Workspace ──────────────────────────────────────────────────────
-        "path_exists" => dispatch_path_exists(&args),
 
         // ── Snippets ───────────────────────────────────────────────────────
 
@@ -162,24 +161,6 @@ pub async fn handle_ipc_bridge(
         "reset_cli_config" => dispatch_reset_cli_config(&state).await,
 
         // ── File Explorer ──────────────────────────────────────────────────
-        "read_directory" => dispatch_read_directory(&args).await,
-        "get_file_content" => dispatch_get_file_content(&args).await,
-        "create_file" => dispatch_create_file(&args).await,
-        "create_directory" => dispatch_create_directory(&args).await,
-        "delete_file" => dispatch_delete_file(&args).await,
-        "rename_file" => dispatch_rename_file(&args).await,
-        "copy_path" => dispatch_copy_path(&args).await,
-        "move_path" => dispatch_move_path(&args).await,
-        "copy_path_to_directory" => dispatch_copy_path_to_directory(&args).await,
-        "move_path_to_directory" => dispatch_move_path_to_directory(&args).await,
-        "save_dropped_file_to_directory" => dispatch_save_dropped_file_to_directory(&args).await,
-        "set_file_clipboard" => dispatch_set_file_clipboard(&args).await,
-        "get_file_clipboard" => dispatch_get_file_clipboard().await,
-        "search_files" => dispatch_search_files(&args).await,
-        "search_file_contents" => dispatch_search_file_contents(&args).await,
-        "search_file_contents_detailed" => dispatch_search_file_contents_detailed(&args).await,
-        "read_commands" => dispatch_read_commands(&args).await,
-        "download_file_binary" => dispatch_download_file_binary(&args).await,
 
         // ── Contract Router: 统一转发总线（契约第三步 P2）──────────────────
         // 基础设施臂，不属于任何业务域：2026-11-11 提交 a755f3fb「Scheduler 域
@@ -226,7 +207,6 @@ pub async fn handle_ipc_bridge(
             tracing::debug!("[Web:IPC] fs_watch_start: no-op in web mode (no AppHandle)");
             Ok(Json(serde_json::json!({ "status": "ok" })))
         }
-        "fs_watch_stop" => dispatch_fs_watch_stop(&state),
 
         // ── MCP Manager ────────────────────────────────────────────────────
 
@@ -362,11 +342,6 @@ fn get_config_dir(state: &AppState) -> Result<std::path::PathBuf, WebError> {
 // ═══════════════════════════════════════════════════════════════════════════
 // Workspace
 // ═══════════════════════════════════════════════════════════════════════════
-
-fn dispatch_path_exists(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
-    Ok(Json(serde_json::to_value(Path::new(&path).exists()).unwrap()))
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Snippets
@@ -513,125 +488,6 @@ async fn dispatch_reset_cli_config(state: &AppState) -> Result<Json<Value>, WebE
 // File Explorer — delegate to command functions directly
 // ═══════════════════════════════════════════════════════════════════════════
 
-async fn dispatch_read_directory(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
-    json_result!(crate::commands::file_explorer::read_directory(path).await)
-}
-
-async fn dispatch_get_file_content(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
-    json_result!(crate::commands::file_explorer::get_file_content(path).await)
-}
-
-async fn dispatch_create_file(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
-    let content = args.get("content").and_then(|v| v.as_str()).map(String::from);
-    json_result!(crate::commands::file_explorer::create_file(path, content).await)
-}
-
-async fn dispatch_create_directory(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
-    json_result!(crate::commands::file_explorer::create_directory(path).await)
-}
-
-async fn dispatch_delete_file(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
-    json_result!(crate::commands::file_explorer::delete_file(path).await)
-}
-
-async fn dispatch_rename_file(args: &Value) -> Result<Json<Value>, WebError> {
-    let old_path = require_string(args, "oldPath")?;
-    let new_name = require_string(args, "newName")?;
-    json_result!(crate::commands::file_explorer::rename_file(old_path, new_name).await)
-}
-
-async fn dispatch_copy_path(args: &Value) -> Result<Json<Value>, WebError> {
-    let source = require_string(args, "source")?;
-    let destination = require_string(args, "destination")?;
-    json_result!(crate::commands::file_explorer::copy_path(source, destination).await)
-}
-
-async fn dispatch_move_path(args: &Value) -> Result<Json<Value>, WebError> {
-    let source = require_string(args, "source")?;
-    let destination = require_string(args, "destination")?;
-    json_result!(crate::commands::file_explorer::move_path(source, destination).await)
-}
-
-async fn dispatch_copy_path_to_directory(args: &Value) -> Result<Json<Value>, WebError> {
-    let source = require_string(args, "source")?;
-    let target_dir = require_string(args, "targetDir")?;
-    json_result!(crate::commands::file_explorer::copy_path_to_directory(source, target_dir).await)
-}
-
-async fn dispatch_move_path_to_directory(args: &Value) -> Result<Json<Value>, WebError> {
-    let source = require_string(args, "source")?;
-    let target_dir = require_string(args, "targetDir")?;
-    json_result!(crate::commands::file_explorer::move_path_to_directory(source, target_dir).await)
-}
-
-async fn dispatch_save_dropped_file_to_directory(args: &Value) -> Result<Json<Value>, WebError> {
-    let target_dir = require_string(args, "targetDir")?;
-    let file_name = require_string(args, "fileName")?;
-    let content_base64 = require_string(args, "contentBase64")?;
-    json_result!(crate::commands::file_explorer::save_dropped_file_to_directory(target_dir, file_name, content_base64).await)
-}
-
-async fn dispatch_set_file_clipboard(args: &Value) -> Result<Json<Value>, WebError> {
-    let paths = args
-        .get("paths")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| WebError::BadRequest("missing paths".to_string()))?
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect::<Vec<_>>();
-    let operation = serde_json::from_value(
-        args.get("operation")
-            .cloned()
-            .ok_or_else(|| WebError::BadRequest("missing operation".to_string()))?,
-    )
-    .map_err(|e| WebError::BadRequest(e.to_string()))?;
-    json_result!(crate::commands::file_clipboard::set_file_clipboard(paths, operation).await)
-}
-
-async fn dispatch_get_file_clipboard() -> Result<Json<Value>, WebError> {
-    json_result!(crate::commands::file_clipboard::get_file_clipboard().await)
-}
-
-async fn dispatch_search_files(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path").or_else(|_| require_string(args, "workDir"))?;
-    let query = require_string(args, "query")?;
-    let max_results = args.get("maxDepth").or_else(|| args.get("maxResults")).and_then(|v| v.as_u64()).map(|n| n as usize);
-    json_result!(crate::commands::file_explorer::search_files(path, query, max_results).await)
-}
-
-async fn dispatch_search_file_contents(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path").or_else(|_| require_string(args, "workDir"))?;
-    let query = require_string(args, "query")?;
-    let case_sensitive = args.get("caseSensitive").and_then(|v| v.as_bool());
-    let whole_word = args.get("wholeWord").and_then(|v| v.as_bool());
-    let max_results = args.get("maxResults").and_then(|v| v.as_u64()).map(|n| n as usize);
-    json_result!(crate::commands::file_explorer::search_file_contents(path, query, case_sensitive, whole_word, max_results).await)
-}
-
-async fn dispatch_search_file_contents_detailed(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path").or_else(|_| require_string(args, "workDir"))?;
-    let query = require_string(args, "query")?;
-    let case_sensitive = args.get("caseSensitive").and_then(|v| v.as_bool());
-    let whole_word = args.get("wholeWord").and_then(|v| v.as_bool());
-    let max_results = args.get("maxResults").and_then(|v| v.as_u64()).map(|n| n as usize);
-    json_result!(crate::commands::file_explorer::search_file_contents_detailed(path, query, case_sensitive, whole_word, max_results).await)
-}
-
-async fn dispatch_read_commands(args: &Value) -> Result<Json<Value>, WebError> {
-    let work_dir = args.get("workDir").and_then(|v| v.as_str()).map(String::from);
-    json_result!(crate::commands::file_explorer::read_commands(work_dir).await)
-}
-
-async fn dispatch_download_file_binary(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
-    json_result!(crate::commands::file_explorer::download_file_binary(path).await)
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Terminal
 // ═══════════════════════════════════════════════════════════════════════════
@@ -761,15 +617,6 @@ async fn dispatch_write_claude_settings(args: &Value) -> Result<Json<Value>, Web
 // ═══════════════════════════════════════════════════════════════════════════
 // File Watcher
 // ═══════════════════════════════════════════════════════════════════════════
-
-fn dispatch_fs_watch_stop(state: &AppState) -> Result<Json<Value>, WebError> {
-    let mut manager = state
-        .file_watcher_manager
-        .lock()
-        .map_err(|e| WebError::Internal(e.to_string()))?;
-    manager.stop();
-    Ok(Json(serde_json::json!({ "status": "ok" })))
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Plugin

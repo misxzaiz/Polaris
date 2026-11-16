@@ -18,28 +18,23 @@ export async function validateWorkspacePath(path: string): Promise<boolean> {
   return res.valid;
 }
 
-/** 获取目录信息 */
-export async function getDirectoryInfo(path: string) {
-  return invoke('get_directory_info', { path });
-}
-
 // ============================================================================
 // 文件浏览器相关命令
 // ============================================================================
 
 /** 读取目录内容 */
 export async function readDirectory(path: string) {
-  return invoke('read_directory', { path });
+  return fsDispatch<FileInfo[]>('list', { path });
 }
 
 /** 获取文件内容 */
 export async function getFileContent(path: string): Promise<string> {
-  return invoke('get_file_content', { path });
+  return fsDispatch<string>('getFileContent', { path });
 }
 
 /** 读取文件内容（别名） */
 export async function readFile(path: string): Promise<string> {
-  return invoke('get_file_content', { path });
+  return fsDispatch<string>('getFileContent', { path });
 }
 
 /**
@@ -51,7 +46,7 @@ export async function readFile(path: string): Promise<string> {
  * 注意：仅适用于文本型模块文件（.js/.mjs/.html 等）；二进制文件请用 downloadFile。
  */
 export async function readFileBinaryText(path: string): Promise<string> {
-  const base64Content: string = await invoke('download_file_binary', { path });
+  const base64Content: string = await fsDispatch<string>('downloadFileBinary', { path });
   const binaryString = atob(base64Content);
   const bytes = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) {
@@ -71,7 +66,7 @@ export async function downloadFile(
 ): Promise<void> {
   try {
     // 优先使用二进制接口（Tauri 环境）
-    const base64Content: string = await invoke('download_file_binary', { path: filePath });
+    const base64Content: string = await fsDispatch<string>('downloadFileBinary', { path: filePath });
     const binaryString = atob(base64Content);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
@@ -107,27 +102,27 @@ function downloadBlob(blob: Blob, fileName: string): void {
 
 /** 创建文件 */
 export async function createFile(path: string, content?: string) {
-  return invoke('create_file', { path, content });
+  return fsDispatch<void>('createFile', { path, content });
 }
 
 /** 创建目录 */
 export async function createDirectory(path: string) {
-  return invoke('create_directory', { path });
+  return fsDispatch<void>('createDirectory', { path });
 }
 
 /** 删除文件或目录 */
 export async function deleteFile(path: string) {
-  return invoke('delete_file', { path });
+  return fsDispatch<void>('deleteFile', { path });
 }
 
 /** 重命名文件或目录 */
 export async function renameFile(oldPath: string, newName: string) {
-  return invoke('rename_file', { oldPath, newName });
+  return fsDispatch<void>('renameFile', { path: oldPath, new_name: newName });
 }
 
 /** 检查路径是否存在 */
 export async function pathExists(path: string) {
-  return invoke('path_exists', { path });
+  return fsDispatch<boolean>('pathExists', { path });
 }
 
 /** 复制/移动文件操作结果 */
@@ -144,22 +139,22 @@ export interface SystemFileClipboard {
 
 /** 复制文件或目录 */
 export async function copyPath(source: string, destination: string) {
-  return invoke('copy_path', { source, destination });
+  return fsDispatch<void>('copyPath', { source, destination });
 }
 
 /** 复制文件或目录到目标目录，自动处理同名冲突 */
 export async function copyPathToDirectory(source: string, targetDir: string): Promise<FileOperationResult> {
-  return invoke('copy_path_to_directory', { source, targetDir });
+  return fsDispatch<FileOperationResult>('copyPathToDirectory', { source, target_dir: targetDir });
 }
 
 /** 移动文件或目录 */
 export async function movePath(source: string, destination: string) {
-  return invoke('move_path', { source, destination });
+  return fsDispatch<void>('movePath', { source, destination });
 }
 
 /** 移动文件或目录到目标目录，自动处理同名冲突 */
 export async function movePathToDirectory(source: string, targetDir: string): Promise<FileOperationResult> {
-  return invoke('move_path_to_directory', { source, targetDir });
+  return fsDispatch<FileOperationResult>('movePathToDirectory', { source, target_dir: targetDir });
 }
 
 /** 保存拖入的文件到目标目录 */
@@ -168,7 +163,7 @@ export async function saveDroppedFileToDirectory(
   fileName: string,
   contentBase64: string,
 ): Promise<FileOperationResult> {
-  return invoke('save_dropped_file_to_directory', { targetDir, fileName, contentBase64 });
+  return fsDispatch<FileOperationResult>('saveDroppedFileToDirectory', { target_dir: targetDir, file_name: fileName, content_base64: contentBase64 });
 }
 
 /** 写入系统文件剪贴板 */

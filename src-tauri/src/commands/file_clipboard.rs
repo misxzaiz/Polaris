@@ -244,12 +244,10 @@ mod platform {
     }
 }
 
-#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn set_file_clipboard(paths: Vec<String>, operation: FileClipboardOperation) -> Result<()> {
     platform::set_file_clipboard(paths, operation)
 }
 
-#[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn get_file_clipboard() -> Result<Option<SystemFileClipboard>> {
     platform::get_file_clipboard()
 }

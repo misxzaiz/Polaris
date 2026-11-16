@@ -4,6 +4,7 @@
  */
 
 import { invoke } from '@/services/transport';
+import { fsDispatch } from '@/services/tauri/fileService';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ChatService');
@@ -250,7 +251,7 @@ export async function saveChatToFile(content: string, defaultFileName: string): 
 
     if (filePath) {
       // 写入文件内容，使用已有的 create_file 命令
-      await invoke('create_file', { path: filePath, content });
+      await fsDispatch('createFile', { path: filePath, content });
       return filePath;
     }
     return null;

@@ -13,7 +13,7 @@
  * 本模块只产出 ConversationPack / 文件引用。
  */
 
-import { invoke } from '@/services/tauri'
+import { fsDispatch } from '@/services/tauri/fileService'
 import { joinPath } from '@/utils/path'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { messagesToMarkdown } from '@/utils/sessionExport'
@@ -137,7 +137,7 @@ export async function packToFile(
   const relPath = `${HANDOFF_DIR}/${fileName}`
   const absPath = joinPath(workspacePath, relPath)
 
-  await invoke('create_file', { path: absPath, content: markdown })
+  await fsDispatch('createFile', { path: absPath, content: markdown })
   log.info('对话已打包落盘', { absPath, messageCount: messages.length })
 
   return {
@@ -170,7 +170,7 @@ export async function packToSummary(
   const relPath = `${HANDOFF_DIR}/${fileName}`
   const absPath = joinPath(workspacePath, relPath)
 
-  await invoke('create_file', { path: absPath, content: markdown })
+  await fsDispatch('createFile', { path: absPath, content: markdown })
   log.info('对话摘要已打包落盘', { absPath, messageCount: messages.length })
 
   return {

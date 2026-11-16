@@ -77,9 +77,9 @@ function parseSkillContent(content: string, filePath: string, fileName: string):
 async function scanSubdirFormat(dirPath: string): Promise<SkillItem[]> {
   const results: SkillItem[] = [];
   try {
-    const entries = await tauri.readDirectory(dirPath) as Array<{ name: string; path: string; isDir: boolean }>;
+    const entries = await tauri.readDirectory(dirPath) as Array<{ name: string; path: string; is_dir: boolean }>;
     for (const entry of entries) {
-      if (entry.isDir) {
+      if (entry.is_dir) {
         const skillMdPath = `${dirPath}/${entry.name}/SKILL.md`;
         try {
           const content = await tauri.readFile(skillMdPath);
@@ -99,9 +99,9 @@ async function scanSubdirFormat(dirPath: string): Promise<SkillItem[]> {
 async function scanFlatFormat(dirPath: string): Promise<SkillItem[]> {
   const results: SkillItem[] = [];
   try {
-    const entries = await tauri.readDirectory(dirPath) as Array<{ name: string; path: string; isDir: boolean }>;
+    const entries = await tauri.readDirectory(dirPath) as Array<{ name: string; path: string; is_dir: boolean }>;
     for (const entry of entries) {
-      if (!entry.isDir && entry.name.toLowerCase().endsWith('.md')) {
+      if (!entry.is_dir && entry.name.toLowerCase().endsWith('.md')) {
         const filePath = `${dirPath}/${entry.name}`;
         try {
           const content = await tauri.readFile(filePath);
