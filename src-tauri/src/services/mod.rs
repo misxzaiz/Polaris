@@ -31,9 +31,10 @@ pub mod nexus_verdict;
 pub mod nexus_pipeline;
 pub mod ai_chat_core;
 pub mod context_core;
-pub mod form_core;
-pub mod form_flow;
-pub mod form_template;
+pub use form::core as form_core;
+pub use form::flow as form_flow;
+pub use form::template as form_template;
+pub mod form;
 pub mod ai_history_core;
 pub mod router;
 

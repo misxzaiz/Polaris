@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use crate::contracts::Value;
 use serde_json::json;
 
-use super::form_core::{self, FormTemplate};
+use super::core::FormTemplate;
 
 /// 模板根目录（相对 DataRoot）。
 const TEMPLATE_DIR: &str = "form-templates";
@@ -123,7 +123,7 @@ fn template_path(root: &Path, name: &str) -> PathBuf {
 /// 名称处理：合法的直接使用；含中文/非法字符的自动 slug 化（不报错）；
 /// 与已有模板同名时追加 `-2/-3/…` 唯一化。返回最终落盘名。
 pub fn save_template(root: &Path, source: &Value) -> Result<Value, String> {
-    let template = form_core::FormTemplate::from_value(source)
+    let template = FormTemplate::from_value(source)
         .ok_or_else(|| "模板缺少 name 或 name 为空".to_string())?;
     // 字段 schema 校验（非法结构直接拒绝，不落盘）——名称 slug 化不代表结构合法
     template.validate().map_err(|e| format!("模板字段非法: {}", e))?;
@@ -191,8 +191,8 @@ pub fn list_templates(root: &Path) -> Result<Vec<Value>, String> {
                     "version": t.version,
                     "title": t.title,
                     "mode": t.mode,
-                    "fieldCount": t.fields.as_array().map(|a| a.len()).unwrap_or(0),
-                    "styleKeys": t.style.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default(),
+                    "fieldCount": t.fields.as_array().map(|arr: &Vec<serde_json::Value>| arr.len()).unwrap_or(0),
+                    "styleKeys": t.style.as_object().map(|o: &serde_json::Map<String, serde_json::Value>| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default(),
                 }));
             }
         }
@@ -354,7 +354,7 @@ mod tests {
         assert_eq!(loaded.name, "bootstrap");
         assert_eq!(loaded.title.as_deref(), Some("项目启动"));
         assert_eq!(loaded.mode.as_deref(), Some("collect"));
-        assert_eq!(loaded.fields.as_array().map(|a| a.len()), Some(1));
+        assert_eq!(loaded.fields.as_array().map(|arr: &Vec<serde_json::Value>| arr.len()), Some(1));
         cleanup(&root);
     }
 
