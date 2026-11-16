@@ -68,8 +68,6 @@ import { OverlayGuard } from '@/components/Common/OverlayGuard'
 import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import { Modal } from '@/components/Common/Modal'
 import { DropdownMenu } from '@/components/Common/DropdownMenu'
-import { WorkspaceBadge } from '@/components/Session/WorkspaceBadge'
-import { WorkspaceMenu } from '@/components/Session/WorkspaceMenu'
 import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput'
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
 import * as Icons from '@/components/Common/Icons'
@@ -102,6 +100,7 @@ export function installAppCoreBridge(): void {
       useDispatchStore,
       useCommandStore,
       useNarrowTabStore,
+      sessionDirectoryStore: (window as any).__POLARIS_APP_CORE__?.stores?.sessionDirectoryStore,
     },
     services: {
       dialogStorageService,
@@ -136,8 +135,6 @@ export function installAppCoreBridge(): void {
       ConfirmDialog,
       Modal,
       DropdownMenu,
-      WorkspaceBadge,
-      WorkspaceMenu,
       WorkspaceSearchInput,
       useWorkspaceFilter,
       CreateWorkspaceModal,
