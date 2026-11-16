@@ -1,0 +1,1 @@
+=== 重新查: core.services.tauri undefined 但 deps.tauri proxy 正常工作过 = appCoreBridge 的 services 里确实没有 tauri，而 files-desk deps.tauri proxy 的 get 抛错被上层 catch？不。

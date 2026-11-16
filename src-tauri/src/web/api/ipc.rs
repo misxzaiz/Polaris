@@ -51,9 +51,6 @@ pub async fn handle_ipc_bridge(
 
     match command.as_str() {
         // ── Workspace ──────────────────────────────────────────────────────
-        "validate_workspace_path" => dispatch_validate_workspace_path(&args),
-        "get_home_dir" => dispatch_get_home_dir(),
-        "get_directory_info" => dispatch_get_directory_info(&args),
         "path_exists" => dispatch_path_exists(&args),
 
         // ── Snippets ───────────────────────────────────────────────────────
@@ -385,35 +382,6 @@ fn get_config_dir(state: &AppState) -> Result<std::path::PathBuf, WebError> {
 // ═══════════════════════════════════════════════════════════════════════════
 // Workspace
 // ═══════════════════════════════════════════════════════════════════════════
-
-fn dispatch_validate_workspace_path(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
-    let p = Path::new(&path);
-    let valid = p.exists() && p.is_dir();
-    Ok(Json(serde_json::to_value(valid).unwrap()))
-}
-
-fn dispatch_get_home_dir() -> Result<Json<Value>, WebError> {
-    let home = dirs::home_dir()
-        .and_then(|p| p.to_str().map(String::from))
-        .ok_or_else(|| WebError::Internal("Cannot determine home directory".into()))?;
-    Ok(Json(Value::String(home)))
-}
-
-fn dispatch_get_directory_info(args: &Value) -> Result<Json<Value>, WebError> {
-    let path = require_string(args, "path")?;
-    let p = Path::new(&path);
-    if !p.exists() || !p.is_dir() {
-        return Err(WebError::BadRequest("Path does not exist or is not a directory".into()));
-    }
-    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown");
-    let has_git = p.join(".git").exists();
-    Ok(Json(serde_json::json!({
-        "name": name,
-        "path": path,
-        "hasGit": has_git
-    })))
-}
 
 fn dispatch_path_exists(args: &Value) -> Result<Json<Value>, WebError> {
     let path = require_string(args, "path")?;

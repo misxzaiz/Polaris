@@ -62,6 +62,11 @@ pub const FS_ACTIONS: &[&str] = &[
     "downloadFileBinary",
     "downloadDirectoryToZip",
     "saveImageBytes",
+    // K-R5 批B：workspace 三命令收口（原 tauri command validate_workspace_path /
+    // get_home_dir / read_commands 的总线等价）
+    "getHomeDir",
+    "validateWorkspacePath",
+    "readCommands",
 ];
 
 
@@ -250,6 +255,23 @@ impl Capability for FsCapability {
                 let path = require_str(&params, "path")?;
                 let data_base64 = require_str(&params, "data_base64")?;
                 async_drive(|| async { crate::commands::file_explorer::save_image_bytes(path, data_base64).await })
+            }
+            // ── K-R5 批B：workspace 域收口 ──
+            "getHomeDir" => {
+                let home = dirs::home_dir()
+                    .and_then(|p| p.to_str().map(String::from))
+                    .ok_or_else(|| "无法获取用户主目录".to_string())?;
+                Ok(serde_json::json!({ "home": home }))
+            }
+            "validateWorkspacePath" => {
+                let path = require_str(&params, "path")?;
+                let p = std::path::Path::new(&path);
+                let valid = p.exists() && p.is_dir();
+                Ok(serde_json::json!({ "valid": valid }))
+            }
+            "readCommands" => {
+                let work_dir = params.get("work_dir").and_then(|v| v.as_str()).map(String::from);
+                async_drive(|| async { crate::commands::file_explorer::read_commands(work_dir).await })
             }
             other => Err(unsupported_action(CAP_ID, other, FS_ACTIONS)),
         }

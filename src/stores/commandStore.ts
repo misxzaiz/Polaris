@@ -3,7 +3,7 @@
  */
 
 import { create } from 'zustand';
-import { invoke } from '@/services/transport';
+import { fsDispatch } from '@/services/tauri/fileService';
 import type { Command } from '@/types/command';
 import { builtinCommands } from '@/types/command';
 import { createLogger } from '@/utils/logger';
@@ -51,7 +51,7 @@ export const useCommandStore = create<CommandState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      const customCommands = await invoke<CommandFile[]>('read_commands', { workDir });
+      const customCommands = await fsDispatch<CommandFile[]>('readCommands', { work_dir: workDir });
 
       const commands: Command[] = [
         ...builtinCommands,

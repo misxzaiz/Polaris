@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore } from '@/stores';
 import { Button } from '../Common';
 import { createLogger } from '@/utils/logger';
-import { invoke } from '@/services/transport';
+import { fsDispatch } from '@/services/tauri/fileService';
 
 const log = createLogger('CreateWorkspaceModal');
 
@@ -47,7 +47,7 @@ function ServerDirectoryPicker({
     (async () => {
       try {
         setLoading(true);
-        const home = await invoke<string>('get_home_dir');
+        const home = await fsDispatch<{ home: string }>('getHomeDir').then((r) => r.home);
         setCurrentPath(home);
         setPathHistory([home]);
         await loadDirectory(home);
@@ -63,7 +63,7 @@ function ServerDirectoryPicker({
     setLoading(true);
     setError('');
     try {
-      const items = await invoke<DirectoryInfo[]>('read_directory', { path: dirPath });
+      const items = await fsDispatch<{ items: DirectoryInfo[] }>('list', { path: dirPath }).then((r) => r.items);
       // 只显示目录，按名称排序
       const dirs = items
         .filter((item) => item.isDir)

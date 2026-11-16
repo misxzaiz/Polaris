@@ -43,6 +43,7 @@ import {
   clearOpfsDialogs,
 } from '@/services/dialogStorage'
 import * as chatService from '@/services/tauri/chatService'
+import * as tauriFileService from '@/services/tauri/fileService'
 import * as promptHistoryService from '@/services/promptHistoryService'
 import * as streamRateTracker from '@/services/streamRateTracker'
 import * as uiDispatchService from '@/services/uiDispatchService'
@@ -125,6 +126,8 @@ export function installAppCoreBridge(): void {
       imageSaveService,
       linkExternal,
       transport: { invoke, listen, currentMode, emit },
+      // K-R5 批B：files-desk deps.tauri 的数据源（readDirectory/fsWatchStart 等全量 fileService）
+      tauri: tauriFileService,
     },
     i18n,
     pluginSystem: { pluginRegistry, chatCardRegistry, pluginTabRendererRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses },

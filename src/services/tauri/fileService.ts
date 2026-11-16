@@ -13,7 +13,9 @@ import type { FileInfo } from '@/types/fileExplorer';
 
 /** 验证工作区路径 */
 export async function validateWorkspacePath(path: string): Promise<boolean> {
-  return invoke('validate_workspace_path', { path });
+  // K-R5 批B：走 cap.fs（原 validate_workspace_path 命令删除）
+  const res = await fsDispatch<{ valid: boolean }>('validateWorkspacePath', { path });
+  return res.valid;
 }
 
 /** 获取目录信息 */
@@ -385,7 +387,7 @@ interface FsDispatchResponse {
  * 经统一总线调用 cap.fs（读操作统一走总线，获得权限 gate + 审计；
  * 写操作仍走上方 tauri command 通道）
  */
-async function fsDispatch<T = unknown>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+export async function fsDispatch<T = unknown>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   const res = await invoke<FsDispatchResponse>('router_dispatch', {
     req: { target: 'cap.fs', payload: { action, ...payload } },
   });

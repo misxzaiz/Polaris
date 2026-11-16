@@ -26,10 +26,7 @@ use services::logger::Logger;
 #[cfg(feature = "tauri-app")]
 use commands::dispatch::{dispatch_report_status, dispatch_create_task};
 #[cfg(feature = "tauri-app")]
-use commands::{
-    get_directory_info, get_home_dir, get_server_config, set_server_config,
-    validate_workspace_path,
-};
+use commands::{get_server_config, set_server_config};
 #[cfg(feature = "tauri-app")]
 use commands::window::{
     toggle_devtools,
@@ -966,9 +963,6 @@ pub fn run() {
             dispatch_report_status,
             dispatch_create_task,
             // 工作区相关
-            validate_workspace_path,
-            get_directory_info,
-            get_home_dir,
             // 文件浏览器相关
             read_directory,
             get_file_content,
