@@ -21,7 +21,6 @@ import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { WebTab } from './tabs/WebTab';
 import { PluginTab } from './tabs/PluginTab';
 import { PerformanceTab } from './tabs/PerformanceTab';
-import { PluginSlotPlaceholder } from '@/components/PluginSlotPlaceholder';
 import { createLogger } from '@/utils/logger';
 import { applyWebServer, getConfig } from '@/services/tauri/configService';
 import { currentMode } from '@/services/transport';
@@ -256,15 +255,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
               />
             )}
 
-            {(activeTab as string) === 'model-provider' && (
-              <PluginSlotPlaceholder
-                title={t('pluginSlotPlaceholder.modelDeskTitle', { defaultValue: '模型供应商管理已迁移为插件' })}
-                hint={t('pluginSlotPlaceholder.modelDeskHint', {
-                  defaultValue:
-                    '安装并启用 model-desk 插件后，在左侧「模型管理台」面板管理模型供应商（Profile 增删改/连接测试/拉取模型）与 Token 用量看板。插件管理：设置 → 插件。',
-                })}
-              />
-            )}
 
             {activeTab === 'theme' && <ThemeTab />}
 
@@ -301,15 +291,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
               />
             )}
 
-            {(activeTab as string) === 'token-stats' && (
-              <PluginSlotPlaceholder
-                title={t('pluginSlotPlaceholder.tokenStatsTitle', { defaultValue: 'Token 统计已迁移为插件' })}
-                hint={t('pluginSlotPlaceholder.tokenStatsHint', {
-                  defaultValue:
-                    '安装并启用 model-desk 插件后，在左侧「模型管理台」面板查看 Token 用量看板（汇总/模型/引擎/日趋势/明细）。插件管理：设置 → 插件。',
-                })}
-              />
-            )}
 
             {activeTab === 'performance' && (
               <PerformanceTab
