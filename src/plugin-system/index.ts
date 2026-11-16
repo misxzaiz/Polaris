@@ -1,5 +1,6 @@
 export { pluginRegistry } from './registry'
 export { pluginPanelRegistry } from './panelRegistry'
+export { pluginTabRendererRegistry } from './pluginTabRendererRegistry'
 export { chatCardRegistry } from './chatCardRegistry'
 export { pluginIconMap } from './icons'
 export { getPluginIconComponent, resolvePluginIcon, resolvePluginIconSync, usePluginIcon } from './iconResolver'

@@ -58,14 +58,13 @@ import { eventBus } from '@/services/eventBus'
 import * as imageSaveService from '@/services/imageSaveService'
 import * as linkExternal from '@/services/linkExternal'
 import { invoke, listen, currentMode, emit } from '@/services/transport'
-import { pluginRegistry, chatCardRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses } from '@/plugin-system'
+import { pluginRegistry, chatCardRegistry, pluginTabRendererRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses } from '@/plugin-system'
 import { Button } from '@/components/Common/Button'
 import { JsonTreeView } from '@/components/Common/JsonTreeView'
 import { OverlayGuard } from '@/components/Common/OverlayGuard'
 import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import { Modal } from '@/components/Common/Modal'
 import { DropdownMenu } from '@/components/Common/DropdownMenu'
-import { DiffViewer } from '@/components/Diff/DiffViewer'
 import { WorkspaceBadge } from '@/components/Session/WorkspaceBadge'
 import { WorkspaceMenu } from '@/components/Session/WorkspaceMenu'
 import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput'
@@ -123,7 +122,7 @@ export function installAppCoreBridge(): void {
       transport: { invoke, listen, currentMode, emit },
     },
     i18n,
-    pluginSystem: { pluginRegistry, chatCardRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses },
+    pluginSystem: { pluginRegistry, chatCardRegistry, pluginTabRendererRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses },
     components: {
       Button,
       JsonTreeView,
@@ -131,7 +130,6 @@ export function installAppCoreBridge(): void {
       ConfirmDialog,
       Modal,
       DropdownMenu,
-      DiffViewer,
       WorkspaceBadge,
       WorkspaceMenu,
       WorkspaceSearchInput,

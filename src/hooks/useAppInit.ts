@@ -129,28 +129,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       useConfigStore.getState().config?.performance ?? {},
     );
 
-    // 性能开关 codeEditorLanguages：开启时在 idle 预热全部编辑器语言包，
-    // 使后续打开任意文件时 dynamic import 命中模块缓存、消除首延迟。
-    // 默认关闭（零预加载，打开文件时按扩展名单点 import）。
-    if (useConfigStore.getState().config?.performance?.codeEditorLanguages) {
-      const runPreload = () => {
-        // FE-2: 改动态 import——静态 import Editor.tsx 会把 @codemirror 全家
-        // （manualChunks 钉入单一 codemirror chunk，~1MB）拽回首载；
-        // 预热调用点本就在异步 idle 回调中，加载时机后移不改变语义。
-        import('@/components/Editor/Editor')
-          .then(({ preloadLanguageExtensions }) => preloadLanguageExtensions())
-          .catch((e) =>
-            log.warn('Editor language preload failed', { error: String(e) }),
-          );
-      };
-      // 优先 idle 时预加载，避免与首屏渲染抢资源；不支持 requestIdleCallback 时立即降级
-      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-        (window as unknown as { requestIdleCallback: (cb: () => void) => number })
-          .requestIdleCallback(runPreload);
-      } else {
-        runPreload();
-      }
-    }
 
     // P6：会话域初始化（sessionStoreManager.initialize）与引擎装配随 chat-desk
     // 插件承接（插件 bootstrap.ts）；宿主不再初始化对话域。

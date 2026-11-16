@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Layout, ConnectingOverlay, ErrorBoundary, ToastContainer, PermissionPromptHost } from './components/Common';
-import { FileExplorer } from './components/FileExplorer';
 import { createLogger } from './utils/logger';
 
 const log = createLogger('App');
@@ -13,7 +12,7 @@ import { PluginPanelHost } from './components/Plugins/PluginPanelHost';
 // 传导的 @codemirror 全家（manualChunks 钉入单一 codemirror chunk，~1MB）拽回首载。
 // 它仅 isCompact && narrowTabId 时渲染，改 React.lazy 移出首载；overlay 场景
 // fallback 用 null，对齐本文件 FileSearchModal 等既有 Suspense 范式。
-const NarrowTabOverlayLazy = lazy(() => import('./components/Editor/NarrowTabOverlay').then(m => ({ default: m.NarrowTabOverlay })));
+
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { RightSlideOver } from './components/Common/RightSlideOver';
 import { PluginSlotPlaceholder } from './components/PluginSlotPlaceholder';
@@ -29,7 +28,7 @@ const SettingsPage = lazy(() => import('./components/Settings/SettingsPage').the
 const DeveloperPanel = lazy(() => import('./components/Developer/DeveloperPanel').then(m => ({ default: m.DeveloperPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
 const CreateSessionModal = lazy(() => import('./components/Session/CreateSessionModal').then(m => ({ default: m.CreateSessionModal })));
-const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal').then(m => ({ default: m.FileSearchModal })));
+
 
 // 懒加载大型面板组件，减少初始 bundle 大小
 // Git 面板已插件化（2026-11-12）：内置 GitPanel 移出主仓，git.panel 席位由
@@ -246,7 +245,15 @@ function App() {
     <LeftPanelContent
       currentType={leftPanelType}
       activePanelType={activeLeftPanelType}
-      filesContent={<FileExplorer />}
+      filesContent={
+        <PluginSlotPlaceholder
+          title={t('pluginSlotPlaceholder.filesTitle', { defaultValue: '文件工作台已迁移为插件' })}
+          hint={t('pluginSlotPlaceholder.filesHint', {
+            defaultValue:
+              '安装并启用 files-desk 插件后，此席位由插件面板接管（文件浏览器/编辑器/Diff）。插件管理：设置 → 插件。',
+          })}
+        />
+      }
       gitContent={
         <PluginSlotPlaceholder
           title={t('pluginSlotPlaceholder.gitTitle', {
@@ -335,7 +342,7 @@ function App() {
                 窗口拖宽后 CenterStage 接管同一批 tab。 */}
             {isCompact && narrowTabId && (
               <Suspense fallback={null}>
-                <NarrowTabOverlayLazy />
+
               </Suspense>
             )}
 
@@ -413,7 +420,7 @@ function App() {
 
         {showFileSearch && (
           <Suspense fallback={null}>
-            <FileSearchModal onClose={() => useOverlayStore.getState().setFileSearchOpen(false)} />
+
           </Suspense>
         )}
 

@@ -4,22 +4,21 @@
  * 包含 TabBar 和 TabContent,支持 Editor 和 DiffViewer 切换
  */
 
-import { ReactNode, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, FileDiff, FileText, Image as ImageIcon, GitPullRequest, Rows3, Columns2, Globe2, Pin } from 'lucide-react'
 import { useTabStore, Tab } from '@/stores/tabStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useFileExplorerStore } from '@/stores/fileExplorerStore'
-import { DiffViewer } from '@/components/Diff/DiffViewer'
 // FE-2: BreadcrumbBar 是轻组件，走深度路径绕过 Editor barrel——barrel 一旦静态绑定
 // EditorPanel/CodeMirrorEditor 会把 @codemirror 全家（单一 codemirror chunk，~1MB）拽回首载。
-import { BreadcrumbBar } from '@/components/Editor/BreadcrumbBar'
 // FE-2: EditorPanel 静态链（EditorPanel → Editor.tsx → @codemirror/*）是 CenterStage
 // 常规布局必渲染路径，改 React.lazy 移出首载。fallback 用 null：TabContent case 'editor'
 // 的容器 flex-1 自带尺寸约束（尺寸由外层 flex 决定而非内容），加载完成前后占位不变，
 // 不引起布局跳动——比 loading 文案更稳，无文本闪烁。
-const EditorPanel = lazy(() => import('@/components/Editor/EditorPanel').then(m => ({ default: m.EditorPanel })))
+const EditorPanelStub = () => null
+
 import { TabContextMenu } from './TabContextMenu'
 import { ImagePreview } from '@/components/Preview/ImagePreview'
 import { VideoPreview } from '@/components/Preview/VideoPreview'
@@ -47,7 +46,6 @@ export function TabBar({ className = '' }: TabBarProps) {
   const { t } = useTranslation('common')
   const tabs = useTabStore((state) => state.tabs)
   const activeTabId = useTabStore((state) => state.activeTabId)
-  const closeTab = useTabStore((state) => state.closeTab)
   const setTabDirty = useTabStore((state) => state.setTabDirty)
   const closeOtherTabs = useTabStore((state) => state.closeOtherTabs)
   const closeAllTabs = useTabStore((state) => state.closeAllTabs)
@@ -107,6 +105,7 @@ export function TabBar({ className = '' }: TabBarProps) {
   }
 
   // 检查 Tab 是否有未保存更改
+  const closeTab = useTabStore((state) => state.closeTab)
   const checkTabDirty = useCallback((tab: Tab): boolean => {
     // 只有 editor 类型的 Tab 才有 dirty 状态
     if (tab.type === 'editor' && tab.filePath) {
@@ -454,7 +453,6 @@ export function TabContent({ className = '' }: TabContentProps) {
   const activeTab = useTabStore((state) => state.getActiveTab())
   const openDiffTab = useTabStore((state) => state.openDiffTab)
   const openEditorTab = useTabStore((state) => state.openEditorTab)
-  const closeTab = useTabStore((state) => state.closeTab)
   const switchToFile = useFileEditorStore((state) => state.switchToFile)
   const currentWorkspace = useWorkspaceStore((state) => {
     const targetId = state.viewingWorkspaceId || state.currentWorkspaceId
@@ -495,12 +493,28 @@ export function TabContent({ className = '' }: TabContentProps) {
   }
 
   // 根据 Tab 类型渲染不同内容
+  // P0-3 扩展：editor/diff 优先交给插件注册的 Tab 渲染器（files-desk 接管后由插件渲染），
+  // 插件未注册时回退内置实现（灰度兼容）。
+  const pluginRendererForTab = pluginTabRendererRegistry.get(activeTab.type)
+  if (pluginRendererForTab) {
+    const PluginTabRenderer = pluginRendererForTab
+    return (
+      <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
+        <PluginTabRenderer
+          tab={activeTab}
+          onOpenDiffInTab={(diff, options) => openDiffTab(diff as never, options as never)}
+          onOpenFileInEditor={(filePath) => openEditorTab(filePath, getFileNameFromPath(filePath))}
+          className={className}
+        />
+      </div>
+    )
+  }
   switch (activeTab.type) {
     case 'editor':
       return (
         <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
           <Suspense fallback={null}>
-            <EditorPanel filePath={activeTab.filePath} />
+            <EditorPanelStub />
           </Suspense>
         </div>
       )
@@ -545,20 +559,11 @@ export function TabContent({ className = '' }: TabContentProps) {
             </div>
           </div>
 
-          {/* Diff 内容 */}
+          {/* Diff 渲染已迁出为 files-desk 插件（pluginTabRendererRegistry 优先接管）；此处占位 */}
           <div className="flex-1 overflow-auto">
-            <DiffViewer
-              oldContent={activeTab.diffData?.old_content}
-              newContent={activeTab.diffData?.new_content}
-              changeType={activeTab.diffData?.change_type}
-              statusHint={activeTab.diffData?.status_hint}
-              contentOmitted={activeTab.diffData?.content_omitted ?? false}
-              viewMode={diffViewMode}
-              filePath={activeTab.diffData?.file_path}
-              autoFocus
-              onOpenFile={openDiffFileInEditor}
-              onLineClick={openDiffFileInEditor}
-              onClose={() => closeTab(activeTab.id)}
+            <PluginSlotPlaceholder
+              title={t('pluginSlotPlaceholder.diffTitle', { defaultValue: 'Diff 查看已迁移为插件' })}
+              hint={t('pluginSlotPlaceholder.diffHint', { defaultValue: '安装并启用 files-desk 插件后，此处由插件渲染 Diff 视图。' })}
             />
           </div>
         </div>
@@ -662,7 +667,7 @@ export function CenterStage({ children, className = '' }: CenterStageProps) {
   return (
     <main className={`flex flex-col flex-1 min-w-0 overflow-hidden bg-background-base ${className}`}>
       <TabBar />
-      <BreadcrumbBar />
+      {/* BreadcrumbBar 已随 files-desk 插件出仓（Editor 域） */}
       <TabContent />
       {children}
     </main>

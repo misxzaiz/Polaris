@@ -395,19 +395,6 @@ function handlePerfSwitch(prev: PerformanceFeatures, next: PerformanceFeatures):
     });
   }
 
-  // codeEditorLanguages：false → true 时预热编辑器语言包
-  if (!prev.codeEditorLanguages && next.codeEditorLanguages) {
-    perfLog.info('codeEditorLanguages 开启，预热编辑器语言包');
-    import('@/components/Editor/Editor')
-      .then(({ preloadLanguageExtensions }) => {
-        void preloadLanguageExtensions().catch((err) => {
-          perfLog.warn('编辑器语言包预热失败', { error: String(err) });
-        });
-      })
-      .catch((err) => {
-        perfLog.warn('加载 Editor 模块失败', { error: String(err) });
-      });
-  }
 }
 
 /**
