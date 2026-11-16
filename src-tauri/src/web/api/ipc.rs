@@ -6,19 +6,17 @@
 //! to the appropriate business logic function.
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::Request;
 use axum::Json;
-use serde::Deserialize;
 use serde_json::Value;
 
 use crate::commands::router::RouterDispatchRequest;
-use crate::contracts::Router as _; // dispatch
 use crate::AppState;
+use crate::contracts::Router as _; // dispatch
 
 use super::WebError;
 

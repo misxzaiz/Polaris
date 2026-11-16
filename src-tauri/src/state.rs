@@ -616,7 +616,6 @@ pub fn create_app_state(
         // workspace_path 以 config_dir 占位：mimo-tts 等插件的 command/args 不依赖
         // {{workspacePath}}，对依赖它的 server 由调用方传真实 workspace 再解析（后续扩展）。
         {
-            use crate::contracts::Router as _;
             use crate::services::mcp_config_service::resolve_workspace_mcp_runtime_service;
             use std::path::Path;
             let mcp_servers = resolve_workspace_mcp_runtime_service(

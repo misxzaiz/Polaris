@@ -23,7 +23,6 @@ use tauri::AppHandle;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
-use crate::AppState;
 
 /// 终端会话信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
