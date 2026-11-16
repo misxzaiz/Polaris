@@ -216,9 +216,6 @@ pub async fn handle_ipc_bridge(
         "cli_check_installed" => dispatch_cli_check_installed(&args),
         "cli_find_paths" => dispatch_cli_find_paths(&args),
         "cli_get_version_for" => dispatch_cli_get_version_for(&args),
-        "find_claude_paths" => dispatch_find_claude_paths(),
-        "validate_claude_path" => dispatch_validate_claude_path(&args),
-        "detect_claude" => dispatch_detect_claude(&state),
         "read_claude_settings" => dispatch_read_claude_settings().await,
         "write_claude_settings" => dispatch_write_claude_settings(&args).await,
         "get_claude_settings_path" => dispatch_get_claude_settings_path().await,
@@ -779,17 +776,6 @@ fn dispatch_cli_find_paths(args: &Value) -> Result<Json<Value>, WebError> {
 fn dispatch_cli_get_version_for(args: &Value) -> Result<Json<Value>, WebError> {
     let _ = args;
     Ok(Json(Value::Null))
-}
-fn dispatch_find_claude_paths() -> Result<Json<Value>, WebError> {
-    Ok(Json(serde_json::to_value(crate::services::config_store::ConfigStore::find_claude_paths()).unwrap_or_default()))
-}
-fn dispatch_validate_claude_path(args: &Value) -> Result<Json<Value>, WebError> {
-    let p = require_string(args, "path")?;
-    json_result!(crate::services::config_store::ConfigStore::validate_claude_path(p))
-}
-fn dispatch_detect_claude(state: &AppState) -> Result<Json<Value>, WebError> {
-    let store = state.lock_config()?;
-    Ok(Json(serde_json::to_value(store.detect_claude()).unwrap_or_default()))
 }
 async fn dispatch_read_claude_settings() -> Result<Json<Value>, WebError> {
     json_result!(crate::commands::claude_settings::read_claude_settings().await)

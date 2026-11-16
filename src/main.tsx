@@ -63,7 +63,7 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
   // AI 会话（经 RouterBus，后端仍有权限 gate）
   'router_dispatch', 'router_dispatch_stream',
   // 基础
-  'health_check', 'get_cli_info',
+  'health_check',
   // chat-desk（ai-chat-plugin-extraction-spec P3.b）：会话配置选择器数据源。
   // 全部为只读元数据/清单查询；写路径（profile 保存等）仍走 cap.config，不在白名单。
   'get_engine_metadata_list', 'cli_get_agents', 'cli_get_version',

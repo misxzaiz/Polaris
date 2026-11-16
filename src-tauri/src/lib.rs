@@ -446,43 +446,6 @@ async fn reset_cli_config(state: tauri::State<'_, AppState>) -> Result<Config> {
     Ok(next_config)
 }
 
-/// 查找所有可用的 Claude CLI 路径
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-fn find_claude_paths() -> Vec<String> {
-    ConfigStore::find_claude_paths()
-}
-
-/// 路径验证结果
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PathValidationResult {
-    /// 路径是否有效
-    pub valid: bool,
-    /// 错误信息
-    pub error: Option<String>,
-    /// Claude 版本
-    pub version: Option<String>,
-}
-
-/// 验证 Claude CLI 路径
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-fn validate_claude_path(path: String) -> PathValidationResult {
-    match ConfigStore::validate_claude_path(path) {
-        Ok((valid, error, version)) => PathValidationResult {
-            valid,
-            error,
-            version,
-        },
-        Err(_) => PathValidationResult {
-            valid: false,
-            error: Some("验证过程中发生错误".to_string()),
-            version: None,
-        },
-    }
-}
-
 
 /// 健康检查（异步版）。
 ///
@@ -497,15 +460,6 @@ async fn health_check(state: tauri::State<'_, AppState>) -> Result<HealthStatus>
     };
     // store 在此作用域结束时已释放，不会跨越 await
     Ok(ConfigStore::health_status_async(config).await)
-}
-
-/// 检测 Claude CLI
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-fn detect_claude(state: tauri::State<AppState>) -> Option<String> {
-    let store = state.config_store.lock()
-        .unwrap_or_else(|e| e.into_inner());
-    store.detect_claude()
 }
 
 // ============================================================================
@@ -992,11 +946,8 @@ pub fn run() {
             set_server_config,
             set_work_dir,
             reset_cli_config,
-            find_claude_paths,
-            validate_claude_path,
             // 健康检查
             health_check,
-            detect_claude,
             // MCP 诊断
             // Prompt Snippet 快捷片段
             // 聊天相关（统一接口）
