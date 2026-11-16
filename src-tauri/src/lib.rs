@@ -1065,14 +1065,6 @@ pub fn run() {
             commands::agent_corpus::custom_agent_save,
             commands::agent_corpus::custom_agent_delete,
             // 历史对话存储
-            commands::dialog_storage::dialog_list,
-            commands::dialog_storage::dialog_list_meta,
-            commands::dialog_storage::dialog_read,
-            commands::dialog_storage::dialog_read_page,
-            commands::dialog_storage::dialog_write,
-            commands::dialog_storage::dialog_consolidate,
-            commands::dialog_storage::dialog_append,
-            commands::dialog_storage::dialog_delete,
             // 会话消息 SQLite 命令层（session-v2 阶段 1b）
             commands::session_messages::message_append,
             commands::session_messages::message_revise,

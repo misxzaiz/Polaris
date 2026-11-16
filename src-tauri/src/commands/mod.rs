@@ -40,11 +40,6 @@ pub mod mobile_config;
 pub use mobile_config::{get_server_config, set_server_config};
 
 pub mod dialog_storage;
-#[cfg(feature = "tauri-app")]
-pub use dialog_storage::{
-    dialog_append, dialog_delete, dialog_list, dialog_list_meta, dialog_read, dialog_read_page,
-    dialog_write,
-};
 
 pub mod session_messages;
 #[cfg(feature = "tauri-app")]

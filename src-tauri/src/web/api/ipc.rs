@@ -263,14 +263,6 @@ pub async fn handle_ipc_bridge(
         "open_path_in_explorer" => dispatch_open_path_in_explorer(&args),
 
         // ── Dialog Storage ─────────────────────────────────────────────────
-        "dialog_list" => dispatch_dialog_list(),
-        "dialog_list_meta" => dispatch_dialog_list_meta(),
-        "dialog_read" => dispatch_dialog_read(&args),
-        "dialog_read_page" => dispatch_dialog_read_page(&args),
-        "dialog_write" => dispatch_dialog_write(&args),
-        "dialog_consolidate" => dispatch_dialog_consolidate(&args),
-        "dialog_append" => dispatch_dialog_append(&args),
-        "dialog_delete" => dispatch_dialog_delete(&args),
 
         // ── Session Messages（session-v2 阶段 1b，SQLite append-only）────────
         "message_append" => dispatch_message_append(&args),
@@ -954,108 +946,7 @@ fn dispatch_open_path_in_explorer(args: &Value) -> Result<Json<Value>, WebError>
 
 // ── Dialog Storage dispatchers ──────────────────────────────────────────────
 
-fn dispatch_dialog_list() -> Result<Json<Value>, WebError> {
-    let names = crate::commands::dialog_storage::dialog_list_inner()
-        .map_err(|e| WebError::Internal(format!("dialog_list 失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(names).unwrap()))
-}
-
-fn dispatch_dialog_list_meta() -> Result<Json<Value>, WebError> {
-    let entries = crate::commands::dialog_storage::dialog_list_meta_inner()
-        .map_err(|e| WebError::Internal(format!("dialog_list_meta 失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(entries).unwrap()))
-}
-
-fn dispatch_dialog_read(args: &Value) -> Result<Json<Value>, WebError> {
-    let name = args
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
-    let content = crate::commands::dialog_storage::dialog_read_inner(name)
-        .map_err(|e| WebError::Internal(format!("dialog_read 失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(content).unwrap()))
-}
-
-fn dispatch_dialog_write(args: &Value) -> Result<Json<Value>, WebError> {
-    let name = args
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
-    let content = args
-        .get("content")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| WebError::BadRequest("content 参数缺失".to_string()))?;
-    crate::commands::dialog_storage::dialog_write_inner(name, content)
-        .map_err(|e| WebError::Internal(format!("dialog_write 失败: {}", e)))?;
-    Ok(crate::web::error::ok_response())
-}
-
-fn dispatch_dialog_append(args: &Value) -> Result<Json<Value>, WebError> {    let name = args
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
-    let meta_line = args.get("metaLine").and_then(|v| v.as_str());
-    let lines: Vec<String> = args
-        .get("lines")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .ok_or_else(|| WebError::BadRequest("lines 参数缺失".to_string()))?;
-    crate::commands::dialog_storage::dialog_append_inner(name, meta_line, &lines)
-        .map_err(|e| WebError::Internal(format!("dialog_append 失败: {}", e)))?;
-    Ok(crate::web::error::ok_response())
-}
-
 /// 前端整写的原子合并写入口（阶段 1A⑥，plans/jsonl-single-writer-spec.md §2）
-fn dispatch_dialog_consolidate(args: &Value) -> Result<Json<Value>, WebError> {
-    let name = args
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
-    let meta_json = args
-        .get("metaJson")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| WebError::BadRequest("metaJson 参数缺失".to_string()))?;
-    let messages_json = args
-        .get("messagesJson")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| WebError::BadRequest("messagesJson 参数缺失".to_string()))?;
-    let result =
-        crate::commands::dialog_storage::dialog_consolidate_inner(name, meta_json, messages_json)
-            .map_err(|e| WebError::Internal(format!("dialog_consolidate 失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(result).unwrap_or(
-        serde_json::json!({ "total": 0 }),
-    )))
-}
-
-fn dispatch_dialog_read_page(args: &Value) -> Result<Json<Value>, WebError> {
-    let name = args
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
-    let before_seq = args.get("beforeSeq").and_then(|v| v.as_i64());
-    let limit = args
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(50) as usize;
-    let page = crate::commands::dialog_storage::dialog_read_page_inner(name, before_seq, limit)
-        .map_err(|e| WebError::Internal(format!("dialog_read_page 失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(page).unwrap()))
-}
-
-fn dispatch_dialog_delete(args: &Value) -> Result<Json<Value>, WebError> {
-    let name = args
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
-    crate::commands::dialog_storage::dialog_delete_inner(name)
-        .map_err(|e| WebError::Internal(format!("dialog_delete 失败: {}", e)))?;
-    Ok(crate::web::error::ok_response())
-}
-
 // ── Session Messages dispatchers（session-v2 阶段 1b）────────────────────────
 
 /// 解析完整消息条目（camelCase，对齐后端 MessageEntry 反序列化）

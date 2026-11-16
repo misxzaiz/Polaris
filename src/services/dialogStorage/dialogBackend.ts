@@ -13,7 +13,7 @@
  * 文件名约定：{externalId}.jsonl
  */
 
-import { invoke } from '@/services/transport'
+import { aiHistoryDispatch } from '@/services/aiHistoryDispatch'
 import { isTauri, isWeb } from '@/utils/platform'
 import { createLogger } from '@/utils/logger'
 
@@ -98,8 +98,10 @@ export interface DialogBackend {
 export class RemoteBackend implements DialogBackend {
   readonly kind = 'remote' as const
 
+  // K-R5 批C：dialog_* 全部走 cap.history 总线（原 tauri command 已删）
+
   async writeFile(name: string, content: string): Promise<void> {
-    await invoke<void>('dialog_write', { name, content })
+    await aiHistoryDispatch({ action: 'dialog_write', name, content })
   }
 
   async consolidateFile(
@@ -107,24 +109,24 @@ export class RemoteBackend implements DialogBackend {
     metaJson: string,
     messagesJson: string,
   ): Promise<{ total: number }> {
-    return invoke<{ total: number }>('dialog_consolidate', { name, metaJson, messagesJson })
+    return aiHistoryDispatch<{ total: number }>({ action: 'dialog_consolidate', name, metaJson, messagesJson })
   }
 
   async readFile(name: string): Promise<string | null> {
-    const result = await invoke<string | null>('dialog_read', { name })
+    const result = await aiHistoryDispatch<string | null>({ action: 'dialog_read', name })
     return result ?? null
   }
 
   async listFiles(): Promise<string[]> {
-    return invoke<string[]>('dialog_list')
+    return aiHistoryDispatch<string[]>({ action: 'dialog_list' })
   }
 
   async listMeta(): Promise<DialogMetaEntry[]> {
-    return invoke<DialogMetaEntry[]>('dialog_list_meta')
+    return aiHistoryDispatch<DialogMetaEntry[]>({ action: 'dialog_list_meta' })
   }
 
   async appendFile(name: string, metaLine: string, lines: string[]): Promise<void> {
-    await invoke<void>('dialog_append', { name, metaLine, lines })
+    await aiHistoryDispatch({ action: 'dialog_append', name, metaLine, lines })
   }
 
   async readPage(
@@ -132,7 +134,8 @@ export class RemoteBackend implements DialogBackend {
     beforeSeq: number | null,
     limit: number,
   ): Promise<DialogPageRaw | null> {
-    const result = await invoke<DialogPageRaw | null>('dialog_read_page', {
+    const result = await aiHistoryDispatch<DialogPageRaw | null>({
+      action: 'dialog_read_page',
       name,
       beforeSeq: beforeSeq ?? undefined,
       limit,
@@ -141,7 +144,7 @@ export class RemoteBackend implements DialogBackend {
   }
 
   async deleteFile(name: string): Promise<void> {
-    await invoke<void>('dialog_delete', { name })
+    await aiHistoryDispatch({ action: 'dialog_delete', name })
   }
 }
 

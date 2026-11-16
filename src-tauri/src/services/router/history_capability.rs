@@ -50,6 +50,16 @@ pub const HISTORY_ACTIONS: &[&str] = &[
     "mark",
     "archive_page",
     "list_running",
+    // K-R5 批C：dialog_storage 域收口（原 tauri command dialog_* 的总线等价；
+    // inner 实现复用，桌面/Web/AI/插件同一入口）
+    "dialog_list",
+    "dialog_list_meta",
+    "dialog_read",
+    "dialog_write",
+    "dialog_append",
+    "dialog_read_page",
+    "dialog_delete",
+    "dialog_consolidate",
 ];
 
 /// cap.history —— 会话历史能力（唯一实现）
@@ -303,6 +313,71 @@ impl Capability for HistoryCapability {
                             "cap.history list_running"
                         );
                         Ok(serde_json::json!({ "running": running }))
+                    }
+                    "dialog_list" => {
+                        let names = crate::commands::dialog_storage::dialog_list_inner()
+                            .map_err(|e| e.to_message())?;
+                        serde_json::to_value(names).map_err(|e| e.to_string())
+                    }
+                    "dialog_list_meta" => {
+                        let entries = crate::commands::dialog_storage::dialog_list_meta_inner()
+                            .map_err(|e| e.to_message())?;
+                        serde_json::to_value(entries).map_err(|e| e.to_string())
+                    }
+                    "dialog_read" => {
+                        let name = req_str("name", "dialog_read")?;
+                        let content = crate::commands::dialog_storage::dialog_read_inner(&name)
+                            .map_err(|e| e.to_message())?;
+                        serde_json::to_value(content).map_err(|e| e.to_string())
+                    }
+                    "dialog_write" => {
+                        let name = req_str("name", "dialog_write")?;
+                        let content = req_str("content", "dialog_write")?;
+                        crate::commands::dialog_storage::dialog_write_inner(&name, &content)
+                            .map_err(|e| e.to_message())?;
+                        Ok(serde_json::json!({ "ok": true }))
+                    }
+                    "dialog_append" => {
+                        let name = req_str("name", "dialog_append")?;
+                        let meta_line = opt_str("metaLine");
+                        let lines: Vec<String> = match get("lines") {
+                            Some(v) => serde_json::from_value(v.clone())
+                                .map_err(|e| format!("lines 解析失败（string[]）: {e}"))?,
+                            None => Vec::new(),
+                        };
+                        crate::commands::dialog_storage::dialog_append_inner(&name, meta_line.as_deref(), &lines)
+                            .map_err(|e| e.to_message())?;
+                        Ok(serde_json::json!({ "ok": true }))
+                    }
+                    "dialog_read_page" => {
+                        let name = req_str("name", "dialog_read_page")?;
+                        let before_seq = get("beforeSeq").and_then(|v| v.as_i64());
+                        let limit = opt_usize("limit").unwrap_or(200).clamp(1, 1000);
+                        let page = crate::commands::dialog_storage::dialog_read_page_inner(
+                            &name,
+                            before_seq,
+                            limit,
+                        )
+                        .map_err(|e| e.to_message())?;
+                        serde_json::to_value(page).map_err(|e| e.to_string())
+                    }
+                    "dialog_delete" => {
+                        let name = req_str("name", "dialog_delete")?;
+                        crate::commands::dialog_storage::dialog_delete_inner(&name)
+                            .map_err(|e| e.to_message())?;
+                        Ok(serde_json::json!({ "ok": true }))
+                    }
+                    "dialog_consolidate" => {
+                        let name = req_str("name", "dialog_consolidate")?;
+                        let meta_json = req_str("metaJson", "dialog_consolidate")?;
+                        let messages_json = req_str("messagesJson", "dialog_consolidate")?;
+                        let result = crate::commands::dialog_storage::dialog_consolidate_inner(
+                            &name,
+                            &meta_json,
+                            &messages_json,
+                        )
+                        .map_err(|e| e.to_message())?;
+                        serde_json::to_value(result).map_err(|e| e.to_string())
                     }
                     // 未知动作文案统一走 contracts::unsupported_action（列出合法
                     // 动作与 cap.help 指路，AI 可自纠）

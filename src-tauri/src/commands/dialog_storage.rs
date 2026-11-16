@@ -631,65 +631,6 @@ fn consolidate_compute(
 // ============================================================================
 
 #[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn dialog_list() -> Result<Vec<String>> {
-    dialog_list_inner()
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn dialog_list_meta() -> Result<Vec<DialogMetaEntry>> {
-    dialog_list_meta_inner()
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn dialog_read(name: String) -> Result<Option<String>> {
-    dialog_read_inner(&name)
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn dialog_write(name: String, content: String) -> Result<()> {
-    dialog_write_inner(&name, &content)
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn dialog_consolidate(
-    name: String,
-    meta_json: String,
-    messages_json: String,
-) -> Result<ConsolidateResult> {
-    dialog_consolidate_inner(&name, &meta_json, &messages_json)
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn dialog_append(name: String, meta_line: Option<String>, lines: Vec<String>) -> Result<()> {
-    dialog_append_inner(&name, meta_line.as_deref(), &lines)
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn dialog_read_page(
-    name: String,
-    before_seq: Option<i64>,
-    limit: usize,
-) -> Result<Option<DialogPage>> {
-    dialog_read_page_inner(&name, before_seq, limit)
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn dialog_delete(name: String) -> Result<()> {
-    dialog_delete_inner(&name)
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
