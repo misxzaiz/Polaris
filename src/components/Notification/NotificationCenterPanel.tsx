@@ -9,9 +9,24 @@
 
 import { useEffect, useRef, type ElementType } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { SessionMetadata } from '@/types'
+type SessionDirectoryLike = {
+  getState: () => {
+    sessionMetadata: Map<string, SessionMetadata>
+    metadataMap: Map<string, SessionMetadata>
+    activeSessionId: string | null
+    createSession: (...a: unknown[]) => string
+    switchSession: (...a: unknown[]) => void
+  }
+}
+function sessionDirectory(): SessionDirectoryLike {
+  return (window as unknown as { __POLARIS_APP_CORE__?: { stores?: { sessionDirectoryStore?: SessionDirectoryLike } } })
+    .__POLARIS_APP_CORE__?.stores?.sessionDirectoryStore as SessionDirectoryLike
+}
+
 import { CheckCircle, XCircle, AlertTriangle, Info, X, Trash2, CheckCheck, Inbox } from 'lucide-react'
 import { useToastStore, type ToastType, type NotificationRecord } from '@/stores/toastStore'
-import { switchSession as switchSessionAction } from '@/stores/sessionDirectoryStore'
+
 import { cn } from '@/utils/cn'
 
 const iconMap: Record<ToastType, ElementType> = {
@@ -61,7 +76,7 @@ export function NotificationCenterPanel({ onClose }: NotificationCenterPanelProp
 
   const handleSwitch = (n: NotificationRecord) => {
     if (n.sessionId) {
-      switchSessionAction(n.sessionId)
+      sessionDirectory().getState().switchSession(n.sessionId)
     }
     onClose?.()
   }

@@ -27,7 +27,7 @@ const ChatMainSlot = lazy(() => import('./components/Layout/ChatMainSlot').then(
 const SettingsPage = lazy(() => import('./components/Settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const DeveloperPanel = lazy(() => import('./components/Developer/DeveloperPanel').then(m => ({ default: m.DeveloperPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
-const CreateSessionModal = lazy(() => import('./components/Session/CreateSessionModal').then(m => ({ default: m.CreateSessionModal })));
+const CreateSessionModal = lazy(() => import('@/plugin-system/appCoreBridge').then(m => ({ default: (m as any).core().components.CreateSessionModal as React.ComponentType<{ onClose: () => void; onCreated?: (sessionId: string) => void }> })));
 
 
 // 懒加载大型面板组件，减少初始 bundle 大小

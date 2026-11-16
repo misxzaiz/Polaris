@@ -17,12 +17,27 @@ import { useConfigStore } from '@/stores';
 import { useViewStore } from '@/stores/viewStore';
 import { useOverlayStore } from '@/stores/overlayStore';
 import { useFocusModeStore } from '@/stores/focusModeStore';
-import { getSessionDirectorySnapshot, createSession as createSessionAction, switchSession as switchSessionAction } from '@/stores/sessionDirectoryStore';
+
 import { eventBus } from '@/services/eventBus';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useWindowSize } from './useWindowSize';
 import * as tauri from '@/services/tauri';
 import { isTauri } from '@/utils/platform';
+import type { SessionMetadata } from '@/types';
+type SessionDirectoryLike = {
+  getState: () => {
+    sessionMetadata: Map<string, SessionMetadata>
+    metadataMap: Map<string, SessionMetadata>
+    activeSessionId: string | null
+    createSession: (...a: unknown[]) => string
+    switchSession: (...a: unknown[]) => void
+  }
+}
+function sessionDirectory(): SessionDirectoryLike {
+  return (window as unknown as { __POLARIS_APP_CORE__?: { stores?: { sessionDirectoryStore?: SessionDirectoryLike } } })
+    .__POLARIS_APP_CORE__?.stores?.sessionDirectoryStore as SessionDirectoryLike
+}
+
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('WindowManager');
@@ -120,8 +135,8 @@ export function useWindowManager({
         }
 
         // Ctrl/Cmd + '+'（不含 Shift）：快速新建会话并切换
-        const dir = getSessionDirectorySnapshot();
-        const manager = { ...dir, sessionMetadata: dir.metadataMap, createSession: createSessionAction, switchSession: switchSessionAction };
+        const dir = sessionDirectory().getState();
+        const manager = { ...dir, sessionMetadata: dir.metadataMap, createSession: (...a: unknown[]) => dir.createSession(...a), switchSession: (...a: unknown[]) => dir.switchSession(...a) };
         // 新会话跟随当前活跃会话的工作区：有工作区则建 project 会话，否则建 free 会话
         const activeId = manager.activeSessionId;
         const activeWorkspaceId = activeId

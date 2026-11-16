@@ -5,7 +5,7 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { useViewStore } from '@/stores/viewStore'
 import { ResizeHandle } from '../Common'
-import { QuickSwitchPanel } from '../QuickSwitchPanel'
+const QuickSwitchPanel = (window as unknown as { __POLARIS_APP_CORE__?: { components?: { QuickSwitchPanel?: React.ComponentType } } }).__POLARIS_APP_CORE__?.components?.QuickSwitchPanel ?? (() => null)
 
 interface RightPanelProps {
   children: ReactNode
