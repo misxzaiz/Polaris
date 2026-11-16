@@ -123,7 +123,7 @@ export const useSessionConfig = create<SessionConfigState>()(
       // 让状态栏手动选择（Profile/官方）刷新后保留。
       //
       // 与后端 config.json 的双写一致性由两条路径保证：
-      // - 设置页激活（ModelProviderTab.handleActivate）双向同步：写镜像 + 写后端 activeModelProfileId
+      // - 设置页激活（model-desk 面板 handleActivate）双向同步：写镜像 + 写后端 activeModelProfileId
       // - 状态栏切换（SessionConfigSelector.handleSelect）写镜像 + 会话 metadata
       // 两者都更新镜像，镜像始终反映「最近的全局默认或手动选择」。
       partialize: (state) => ({

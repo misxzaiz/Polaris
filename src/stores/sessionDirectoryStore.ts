@@ -2,7 +2,7 @@
  * sessionDirectory 薄 store（ai-chat-plugin-extraction-spec P3.d / §7）
  *
  * 宿主 chrome（SessionTabs/SessionTab/WorkspaceMenu/CreateSessionModal/
- * SessionDeleteConfirm/NotificationCenterPanel/QuickSwitchPanel/ModelProviderTab）
+ * SessionDeleteConfirm/NotificationCenterPanel/QuickSwitchPanel/model-desk）
  * 的会话只读消费面：只含元数据/activeId/流式摘要，由 sessionStoreManager
  * （插件域权威）订阅投影；写动作（切换/删除/新建）经 cap.session /
  * cap.ai.chat 总线或 manager actions 委托，本 store 不新增写路径。

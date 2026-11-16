@@ -10,7 +10,7 @@ import {
   IconGeneral,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { BarChart3, Download, Globe, Blocks, Server, Palette } from 'lucide-react';
+import { Download, Globe, Blocks, Palette } from 'lucide-react';
 import { isTauri } from '@/utils/platform';
 import type { ReactNode } from 'react';
 
@@ -19,12 +19,10 @@ export type SettingsTabId =
   | 'theme'
   | 'prompt-snippet'
   | 'ai-engine'
-  | 'model-provider'
   | 'app-update'
   | 'plugins'
   | 'advanced'
   | 'web'
-  | 'token-stats'
   | 'performance';
 
 export interface SettingsNavItem {
@@ -51,8 +49,6 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'theme', icon: <Palette size={16} />, labelKey: 'nav.theme' },
   { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
   { id: 'ai-engine', icon: <IconAIEngine size={16} />, labelKey: 'nav.aiEngine' },
-  { id: 'model-provider', icon: <Server size={16} />, labelKey: 'nav.modelProvider' },
-  { id: 'token-stats', icon: <BarChart3 size={16} />, labelKey: 'nav.tokenStats' },
 
   { id: 'plugins', icon: <Blocks size={16} />, labelKey: 'nav.plugins' },
   { id: 'app-update', icon: <Download size={16} />, labelKey: 'nav.appUpdate' },

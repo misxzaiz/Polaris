@@ -73,6 +73,10 @@ const HOST_INVOKE_ALLOWLIST: ReadonlySet<string> = new Set([
   'create_file', 'read_directory', 'get_file_content',
   // chat-desk 全局权限规则写入（PermissionRequestRenderer scope=global）
   'add_claude_permission_rules',
+  // model-desk（模型供应商管理台）：Profile 连接测试/拉模型 + Token 用量统计
+  'test_model_profile_connection', 'fetch_models_for_profile',
+  'get_usage_summary', 'get_usage_model_stats', 'get_usage_engine_stats',
+  'get_usage_daily_trends', 'get_usage_recent_logs',
 ])
 
 ;(window as any).__POLARIS_HOST_INVOKE__ = (cmd: string, args?: Record<string, unknown>) => {

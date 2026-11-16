@@ -320,7 +320,7 @@ export function isProfileForEngine(
  * 取 Profile 实际可选的模型列表。
  *
  * `modelOptions` 为空/未设置时回退到 `[model]`（与 UI 下拉的三个构造点
- * SessionConfigSelector / ChatInput / ModelProviderTab 一致），并过滤空串。
+ * SessionConfigSelector / ChatInput / model-desk 面板一致），并过滤空串。
  * 集中在此，避免各调用点各写一份回退逻辑。
  *
  * 注意：过滤口径与 modelList 的 `.filter(Boolean)` 一致——**不做 trim**，

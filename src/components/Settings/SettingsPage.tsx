@@ -13,7 +13,6 @@ import { useConfigStore, useToastStore } from '@/stores';
 import { Button } from '../Common';
 import { SettingsSidebar, type SettingsTabId } from './SettingsSidebar';
 import { AIEngineTab } from './tabs/AIEngineTab';
-import { ModelProviderTab } from './tabs/ModelProviderTab';
 import { GeneralTab } from './tabs/GeneralTab';
 import { ThemeTab } from './tabs/ThemeTab';
 import { PromptSnippetTab, type PromptSnippetTabRef } from './tabs/PromptSnippetTab';
@@ -22,7 +21,7 @@ import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { WebTab } from './tabs/WebTab';
 import { PluginTab } from './tabs/PluginTab';
 import { PerformanceTab } from './tabs/PerformanceTab';
-import { TokenStatsTab } from './tabs/TokenStatsTab';
+import { PluginSlotPlaceholder } from '@/components/PluginSlotPlaceholder';
 import { createLogger } from '@/utils/logger';
 import { applyWebServer, getConfig } from '@/services/tauri/configService';
 import { currentMode } from '@/services/transport';
@@ -44,11 +43,9 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'plugins': 'nav.plugins',
   'prompt-snippet': 'nav.promptSnippet',
   'ai-engine': 'nav.aiEngine',
-  'model-provider': 'nav.modelProvider',
   'app-update': 'nav.appUpdate',
   'advanced': 'nav.advanced',
   'web': 'nav.web',
-  'token-stats': 'nav.tokenStats',
   'performance': 'nav.performance',
 };
 
@@ -91,7 +88,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
     'ai-engine': ['defaultEngine', 'claudeCode'],
-    'model-provider': ['modelProfiles', 'activeModelProfileId'],
     performance: ['performance', 'perfMigrationDismissed'],
   };
 
@@ -260,11 +256,13 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
               />
             )}
 
-            {activeTab === 'model-provider' && (
-              <ModelProviderTab
-                config={localConfig}
-                onConfigChange={setLocalConfig}
-                loading={loading}
+            {(activeTab as string) === 'model-provider' && (
+              <PluginSlotPlaceholder
+                title={t('pluginSlotPlaceholder.modelDeskTitle', { defaultValue: '模型供应商管理已迁移为插件' })}
+                hint={t('pluginSlotPlaceholder.modelDeskHint', {
+                  defaultValue:
+                    '安装并启用 model-desk 插件后，在左侧「模型管理台」面板管理模型供应商（Profile 增删改/连接测试/拉取模型）与 Token 用量看板。插件管理：设置 → 插件。',
+                })}
               />
             )}
 
@@ -303,8 +301,14 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
               />
             )}
 
-            {activeTab === 'token-stats' && (
-              <TokenStatsTab />
+            {(activeTab as string) === 'token-stats' && (
+              <PluginSlotPlaceholder
+                title={t('pluginSlotPlaceholder.tokenStatsTitle', { defaultValue: 'Token 统计已迁移为插件' })}
+                hint={t('pluginSlotPlaceholder.tokenStatsHint', {
+                  defaultValue:
+                    '安装并启用 model-desk 插件后，在左侧「模型管理台」面板查看 Token 用量看板（汇总/模型/引擎/日趋势/明细）。插件管理：设置 → 插件。',
+                })}
+              />
             )}
 
             {activeTab === 'performance' && (
