@@ -128,6 +128,13 @@ if (typeof window !== 'undefined' && import.meta.env.DEV) {
   eventBus.on('polaris:dev-discovery-ready', () => {
     rebuildHttpTransport();
     void transport.manualReconnect?.().catch(() => {});
+    // 重建后重载配置：首次 loadConfig 可能发生在 rebuild 之前（拿到的是
+    // origin→vite proxy→错误后端的数据）。动态 import 避免与 configStore 的
+    // 静态循环（configStore 静态 import 本模块）。失败静默——App 初始化流程
+    // 对 config 加载失败已有兜底。
+    void import('@/stores/configStore')
+      .then(({ useConfigStore }) => useConfigStore.getState().loadConfig())
+      .catch(() => {});
   });
 }
 
