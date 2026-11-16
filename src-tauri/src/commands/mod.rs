@@ -63,10 +63,6 @@ pub use session_state_commands::{
     session_request_interrupt, session_request_start, session_update_metadata,
 };
 
-pub mod history_index;
-#[cfg(feature = "tauri-app")]
-pub use history_index::{history_mark, history_query, history_search};
-
 pub mod terminal;
 pub mod terminal_script;
 pub mod file_watcher;

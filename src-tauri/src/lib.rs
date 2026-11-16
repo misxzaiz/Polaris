@@ -1109,9 +1109,6 @@ pub fn run() {
             commands::session_state_commands::session_index_list_after,
             commands::session_state_commands::session_index_delete,
             // 会话历史索引（统一时间线 / 全文搜索 / 标注）
-            commands::history_index::history_query,
-            commands::history_index::history_search,
-            commands::history_index::history_mark,
             // 模型 Profile 命令
             test_model_profile_connection,
             fetch_models_for_profile,
