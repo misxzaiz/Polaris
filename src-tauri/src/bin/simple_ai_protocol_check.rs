@@ -2,7 +2,7 @@
 //! 与库内 `#[cfg(test)]` 断言保持一致：本二进制仅做运行时验证，不参与交付。
 use serde_json::{json, Value};
 
-#[path = "../ai/engine/simple_ai_protocol.rs"]
+#[path = "../ai/engine/simple_ai_protocol/mod.rs"]
 mod simple_ai_protocol;
 
 use simple_ai_protocol::{StreamState, WireProtocol};

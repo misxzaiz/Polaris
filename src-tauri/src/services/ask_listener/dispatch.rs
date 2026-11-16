@@ -1,12 +1,12 @@
 //! dispatch 任务注册/续聊/事件（K-R3 拆分）
 
+use crate::state::AppState;
 use super::plugin_card::parse_dispatch_depth;
 use crate::state::DispatchedTask;
 use super::types::{MAX_DISPATCH_DEPTH, MAX_ACTIVE_DISPATCHES};
 
 use serde_json::{json, Value};
 use uuid::Uuid;
-use crate::state::AppState;
 
 /// 派发注册参数（MCP dispatch 帧与 dispatch_create_task 命令共用）
 #[derive(Debug, Clone, Default)]
