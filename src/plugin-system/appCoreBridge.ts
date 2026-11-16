@@ -33,6 +33,7 @@ import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useFileExplorerStore } from '@/stores/fileExplorerStore'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useCommandStore } from '@/stores/commandStore'
+import { useNarrowTabStore } from '@/stores/narrowTabStore'
 import {
   dialogStorageService,
   maybeAutoMigrateOpfs,
@@ -100,6 +101,7 @@ export function installAppCoreBridge(): void {
       useFileExplorerStore,
       useDispatchStore,
       useCommandStore,
+      useNarrowTabStore,
     },
     services: {
       dialogStorageService,
