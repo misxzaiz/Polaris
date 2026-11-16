@@ -120,9 +120,11 @@ export const rebuildTransport = rebuildHttpTransport;
 
 // Dev-only: 后端发现文件就绪后重建 HTTP transport。
 // 首次模块初始化时 fetch('/.polaris-dev/server.json') 可能尚未返回，
-// getServerUrl() 会回退到页面 origin(9827)；发现文件到达后需重建以指向真实后端。
-// 仅 dev + VITE_FORCE_HTTP=1 时该事件会被 auth.ts 派发，线上不受影响。
-if (typeof window !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_FORCE_HTTP === '1') {
+// getServerUrl() 会回退到页面 origin(9827)→vite proxy→另一套后端（数据不同）；
+// 发现文件到达后必须重建以指向真实后端（9820）。
+// auth.ts 在非 Tauri 的 dev 页面（含内置浏览器/浏览器访问 9827）都会派发该事件；
+// 这里一律监听重建（线上构建 DEV=false 不注册，行为不变）。
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
   eventBus.on('polaris:dev-discovery-ready', () => {
     rebuildHttpTransport();
     void transport.manualReconnect?.().catch(() => {});
