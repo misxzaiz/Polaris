@@ -74,8 +74,9 @@ describe('pluginDiscoveryService', () => {
   it('view area whitelist bidirectional alignment: schema.ts == Rust VALID_VIEW_AREAS (ai-chat-plugin-extraction-spec P1.2)', () => {
     // Rust 侧常量的镜像基线（src-tauri/src/services/plugin_service.rs::VALID_VIEW_AREAS）；
     // mainSurface 为 chat-desk 对话域接管新增（plans/ai-chat-plugin-extraction-spec.md P1.2）。
+    // settings 为 settings-desk 设置覆盖层席位新增（plans/settings-desk-extraction-spec.md）。
     // 若 Rust 侧增删 area，此基线必须同步，双向 diff 即刻暴露。
-    const RUST_VALID_VIEW_AREAS_MIRROR = ['activityBar', 'mainSurface'] as const
+    const RUST_VALID_VIEW_AREAS_MIRROR = ['activityBar', 'mainSurface', 'settings'] as const
 
     expect([...SCHEMA_VIEW_AREAS]).toEqual([...RUST_VALID_VIEW_AREAS_MIRROR])
   })
