@@ -51,6 +51,7 @@ mod meta_capability;
 mod hook_capability;
 mod ui_render_capability;
 mod session_capability;
+mod storage_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use app_autolaunch_capability::AppAutolaunchCapability;
@@ -91,6 +92,7 @@ pub use meta_capability::MetaCapability;
 pub use hook_capability::HookCapability;
 pub use ui_render_capability::UiRenderCapability;
 pub use session_capability::SessionCapability;
+pub use storage_capability::StorageCapability;
 
 use crate::contracts::*;
 use std::collections::HashMap;

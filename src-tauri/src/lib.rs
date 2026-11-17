@@ -567,6 +567,12 @@ pub fn run() {
                     .register_handle(Box::new(crate::services::router::SessionCapability::with_state(
                         chat_state.clone(),
                     )));
+                // cap.storage —— 存储路由收口（S3 存储插件化脚手架，plans/s3-storage-plugin-spec.md）
+                let _ = state
+                    .router
+                    .register_handle(Box::new(crate::services::router::StorageCapability::with_state(
+                        chat_state.clone(),
+                    )));
                 // ── P2：cap.ui.render 注册（可交互渲染入口）──────────────
                 // 需 Arc<AppState>（复用 pending_plugin_cards / oneshot / 广播），
                 // 与 cap.ai.chat 同装配点（AppState 构造后）。前端零改动：
@@ -1120,6 +1126,12 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let _ = state
         .router
         .register_handle(Box::new(crate::services::router::SessionCapability::with_state(
+            state.clone(),
+        )));
+    // cap.storage —— 存储路由收口（独立 Web 模式；与桌面同装配纪律）
+    let _ = state
+        .router
+        .register_handle(Box::new(crate::services::router::StorageCapability::with_state(
             state.clone(),
         )));
     // P2：cap.ui.render（可交互渲染入口）—— 与 cap.ai.chat 同装配点
