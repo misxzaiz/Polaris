@@ -4,11 +4,7 @@ pub mod config_store;
 pub mod data_root;
 pub mod legacy_storage_migrate;
 pub mod instance;
-pub mod dialog_index;
 pub mod file_watcher;
-pub mod session_db;
-pub mod session_state;
-pub mod turn_persist;
 pub mod logger;
 pub mod mcp_config_service;
 pub mod mcp_server_common;
@@ -19,9 +15,17 @@ pub mod plugin_capability_assembly;
 pub mod plugin_skills;
 pub mod plugin_events;
 pub mod adapter_discovery;
+
+/// S3.3 存储执行体域墙（plans/s3-storage-plugin-spec.md）：五库实现集中于
+/// storage_exec/ 目录，旧路径经 re-export 零 diff；插件接管时整体移出。
+mod storage_exec;
+pub use storage_exec::dialog_index;
+pub use storage_exec::session_db;
+pub use storage_exec::session_state;
+pub use storage_exec::turn_persist;
+pub use storage_exec::base as storage;
 pub mod hook_registry;
 pub mod mcp_tool_gates;
-pub mod storage;
 pub mod ask_listener_meta;
 pub mod ask_mcp_server;
 pub mod ask_listener;
