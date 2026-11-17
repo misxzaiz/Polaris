@@ -50,7 +50,6 @@ import * as chatService from '@/services/tauri/chatService'
 import * as tauriFileService from '@/services/tauri/fileService'
 import * as uiDispatchService from '@/services/uiDispatchService'
 import * as capSlashCommand from '@/services/capSlashCommand'
-import * as conversationPackager from '@/services/conversationPackager'
 import * as fileSearch from '@/services/fileSearch'
 import * as detector from '@/services/transport/detector'
 import * as aiHistoryDispatch from '@/services/aiHistoryDispatch'
@@ -130,7 +129,6 @@ export function installAppCoreBridge(): void {
       chatService,
       uiDispatchService,
       capSlashCommand,
-      conversationPackager,
       fileSearch,
       detector,
       aiHistoryDispatch,
