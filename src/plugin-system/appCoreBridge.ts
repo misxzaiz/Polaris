@@ -25,7 +25,6 @@ import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { useSessionConfig } from '@/stores/sessionConfigStore'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { useCliInfoStore } from '@/stores/cliInfoStore'
-import { useAgentStore } from '@/stores/agentStore'
 import { useCapCatalogStore } from '@/stores/capCatalogStore'
 import { usePluginStore } from '@/stores/pluginStore'
 import { useOverlayStore } from '@/stores/overlayStore'
@@ -104,7 +103,6 @@ export function installAppCoreBridge(): void {
       useSessionConfig,
       useEngineMetadataStore,
       useCliInfoStore,
-      useAgentStore,
       useCapCatalogStore,
       usePluginStore,
       useOverlayStore,

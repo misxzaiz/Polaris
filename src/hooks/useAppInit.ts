@@ -143,18 +143,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     );
 
     setInitPhase('准备就绪');
-    // 专家/专家团数据预加载(全局存储,启动即可加载)
-    if (currentMode === 'tauri' || currentMode === 'http') {
-      void import('@/stores/agentStore')
-        .then(({ useAgentStore }) => {
-          const store = useAgentStore.getState();
-          return Promise.all([
-            store.load(),
-            store.loadRosters(),
-          ]).then(() => undefined);
-        })
-        .catch((err) => log.warn('Agent data load failed', { error: String(err) }));
-    }
+    // 专家/专家团数据预加载已随 chat-desk 自持（W4-7）：面板挂载时自加载
   });
 
   // 初始化配置（只执行一次）
