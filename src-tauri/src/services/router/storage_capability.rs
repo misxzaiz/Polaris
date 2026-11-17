@@ -180,7 +180,75 @@ impl Capability for StorageCapability {
                         .map_err(|e| e.to_message())?;
                         serde_json::to_value(result).map_err(|e| e.to_string())
                     }
-                    // state/turn/index 命名空间在 S3.4 步接入（先走 cap.session/cap.history 既有面）
+                    "state.get" => {
+                        let conversation_id = req_str("conversationId", "state.get")?;
+                        let status = crate::commands::session_state_commands::session_get_status_inner(
+                                conversation_id,
+                            )
+                            .map_err(|e| e.to_message())?;
+                        serde_json::to_value(status).map_err(|e| e.to_string())
+                    }
+                    "state.list" => {
+                        let records = crate::commands::session_state_commands::session_list_inner()
+                            .map_err(|e| e.to_message())?;
+                        serde_json::to_value(records).map_err(|e| e.to_string())
+                    }
+                    "state.reconcile" => {
+                        let conversation_id = req_str("conversationId", "state.reconcile")?;
+                        let client_running = get("clientRunning").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let client_messages: Vec<crate::services::session_db::MessageEntry> =
+                            match get("clientMessages") {
+                                Some(v) => serde_json::from_value(v.clone())
+                                    .map_err(|e| format!("clientMessages 解析失败（MessageEntry[] camelCase）: {e}"))?,
+                                None => Vec::new(),
+                            };
+                        let result = crate::commands::session_state_commands::session_reconcile_inner(
+                                conversation_id,
+                                client_messages,
+                                client_running,
+                            )
+                            .map_err(|e| e.to_message())?;
+                        serde_json::to_value(result).map_err(|e| e.to_string())
+                    }
+                    "turn.recover_pending" => {
+                        let n = crate::services::turn_persist::recover_pending_turns();
+                        Ok(serde_json::json!({ "recovered": n }))
+                    }
+                    "index.query" => {
+                        let params: crate::services::dialog_index::HistoryQueryParams =
+                            match get("query") {
+                                Some(v) => serde_json::from_value(v.clone())
+                                    .map_err(|e| format!("query 解析失败: {e}"))?,
+                                None => return Err("cap.storage index.query 需要参数 query".into()),
+                            };
+                        let result = crate::services::dialog_index::history_query_inner(params)
+                            .map_err(|e| e.to_message())?;
+                        serde_json::to_value(result).map_err(|e| e.to_string())
+                    }
+                    "index.search" => {
+                        let query = req_str("query", "index.search")?;
+                        let limit = get("limit").and_then(|v| v.as_u64()).unwrap_or(50).clamp(1, 100) as u32;
+                        let hits = crate::services::dialog_index::history_search_inner(
+                            &query,
+                            get("workspacePath").and_then(|v| v.as_str()),
+                            limit,
+                            get("strictWorkspace").and_then(|v| v.as_bool()).unwrap_or(false),
+                        )
+                        .map_err(|e| e.to_message())?;
+                        serde_json::to_value(hits).map_err(|e| e.to_string())
+                    }
+                    "index.mark" => {
+                        let id = req_str("id", "index.mark")?;
+                        let marks_value = get("marks").cloned().ok_or_else(|| {
+                            "cap.storage index.mark 需要对象参数 marks（starred/pinned/archived/color/userTags/note）".to_string()
+                        })?;
+                        let marks: crate::services::dialog_index::HistoryMarks =
+                            serde_json::from_value(marks_value)
+                                .map_err(|e| format!("cap.storage index.mark marks 解析失败: {e}"))?;
+                        crate::services::dialog_index::history_mark_inner(&id, marks)
+                            .map_err(|e| e.to_message())?;
+                        Ok(serde_json::json!({ "ok": true }))
+                    }
                     other => Err(unsupported_action(CAP_ID, other, STORAGE_ACTIONS)),
                 }
             })
