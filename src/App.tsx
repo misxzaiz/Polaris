@@ -24,8 +24,8 @@ const PluginPanelHostLazy = lazy(() => import('./components/Plugins/PluginPanelH
 const ChatMainSlot = lazy(() => import('./components/Layout/ChatMainSlot').then(m => ({ default: m.ChatMainSlot })));
 
 // 懒加载大型组件，减少初始 bundle 大小
-const DeveloperPanel = lazy(() => import('./components/Developer/DeveloperPanel').then(m => ({ default: m.DeveloperPanel })));
-const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
+
+const CreateWorkspaceModal = lazy(() => import('./components/Workspace/WorkspaceCreateModalSlot').then(m => ({ default: m.WorkspaceCreateModalSlot })));
 const CreateSessionModal = lazy(() => import('@/plugin-system/appCoreBridge').then(m => ({ default: (m as any).core().components.CreateSessionModal as React.ComponentType<{ onClose: () => void; onCreated?: (sessionId: string) => void }> })));
 
 
@@ -37,9 +37,10 @@ const CreateSessionModal = lazy(() => import('@/plugin-system/appCoreBridge').th
 // 终端面板已插件化（2026-11-14，P5）：内置 TerminalPanel 移出主仓，terminal.panel
 // 席位由 terminal-desk 插件 shadow 接管；未启用插件时渲染席位空态引导卡。
 import { SlotEmpty } from './components/Layout/SlotEmpty';
+import { NotificationCenterSlot } from './components/Notification/NotificationCenterSlot';
 import { TerminalSlotEmpty } from './components/Layout/TerminalSlotEmpty';
 const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel').then(m => ({ default: m.DemoPluginPanel })));
-const NotificationCenterPanel = lazy(() => import('./components/Notification/NotificationCenterPanel').then(m => ({ default: m.NotificationCenterPanel })));
+
 const FocusOverlay = lazy(() => import('./components/FocusMode/FocusOverlay').then(m => ({ default: m.FocusOverlay })));
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
@@ -287,7 +288,15 @@ function App() {
         />
       }
       terminalContent={<TerminalSlotEmpty />}
-      developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
+      // W3：Developer 面板随 dev-desk 插件出仓——LeftPanel shadow 接管
+      // （dev-desk views 声明 slot:'developer.panel' slotMode:'shadow'），插件启用即
+      // 接管 builtin 'developer' 席位；未启用时显示下方占位。
+      developerContent={
+        <PluginSlotPlaceholder
+          title={t('pluginSlotPlaceholder.developerTitle', { defaultValue: '开发者调试面板已迁移为插件' })}
+          hint={t('pluginSlotPlaceholder.developerHint', { defaultValue: '安装并启用 dev-desk 插件后，此席位由插件面板接管（AIEvent 原始流调试器）。插件管理：设置 → 插件。' })}
+        />
+      }
       aiConsoleContent={<SlotEmpty icon="📊" title="AI 执行台" description="集成机器人监控已迁移至 im-bridge 插件；安装启用后在此查看执行状态。" />}
       demoPluginContent={<Suspense fallback={loadingFallback}><DemoPluginPanel /></Suspense>}
       onSendToChat={(msg: string) => { void (window as any).__POLARIS_SEND_TO_CHAT__?.(msg) }}
@@ -479,7 +488,16 @@ function App() {
             onExited={notificationCenterExited}
           >
             <Suspense fallback={null}>
-              <NotificationCenterPanel onClose={closeNotificationCenter} />
+              {(() => {
+                const claim = pluginRegistry.listViewContributions('notificationOverlay').find((v) => v.panelType === 'notification-desk')
+                const enabled = claim ? isPluginUiEnabled(pluginStates, claim.pluginId) : false
+                if (claim && enabled) return <NotificationCenterSlot onClose={closeNotificationCenter} />
+                return (
+                  <div className="flex h-full items-center justify-center text-xs text-text-tertiary">
+                    {t('notificationCenter.pluginDisabled', { defaultValue: '消息中心由 notification-desk 插件提供；当前插件未启用。' })}
+                  </div>
+                )
+              })()}
             </Suspense>
           </RightSlideOver>
         )}

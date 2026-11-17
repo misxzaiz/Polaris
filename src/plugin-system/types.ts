@@ -7,7 +7,7 @@ export type PluginId = string
  * - `activityBar`：左侧活动栏面板席位；
  * - `mainSurface`：主内容区席位（chat-desk 对话域接管，spec P1.2）。
  */
-export type PluginViewArea = 'activityBar' | 'mainSurface' | 'settings'
+export type PluginViewArea = 'activityBar' | 'mainSurface' | 'settings' | 'notificationOverlay'
 
 export type PluginIconId =
   | 'Files'

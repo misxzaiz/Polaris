@@ -13,6 +13,8 @@
  * 同源加载，无越权面扩大（这些能力本就在主窗口 Realm 内）。
  */
 import { useConfigStore } from '@/stores/configStore'
+import { cn } from '@/utils/cn'
+import { createLogger } from '@/utils/logger'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useViewStore } from '@/stores/viewStore'
 import { useToastStore } from '@/stores/toastStore'
@@ -88,11 +90,15 @@ import { OverlayGuard } from '@/components/Common/OverlayGuard'
 import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
 import { Modal } from '@/components/Common/Modal'
 import { DropdownMenu } from '@/components/Common/DropdownMenu'
-import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput'
-import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
 import * as Icons from '@/components/Common/Icons'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import i18n from '@/i18n'
+
+/**
+ * W3：Workspace 域组件桥位。workspace-manager 插件 registerUi 时填充；
+ * 插件未启用时保持空对象（消费方 shim 读到 undefined 自行降级）。
+ */
+export const workspaceBridgeComponents: Record<string, unknown> = {}
 
 /** 惰性挂载（main.tsx import 后立即执行） */
 export function installAppCoreBridge(): void {
@@ -185,13 +191,17 @@ export function installAppCoreBridge(): void {
       ConfirmDialog,
       Modal,
       DropdownMenu,
-      WorkspaceSearchInput,
-      useWorkspaceFilter,
-      CreateWorkspaceModal,
+      // W3：Workspace 域组件随 workspace-manager 插件出仓，由插件 registerUi 注入
+      // （宿主 uiContributions 在插件注册时调用；未启用插件时为 undefined，chat-desk
+      // 的 lazyComponent shim 访问即 undefined，面板相应功能在插件未启用时不可用——
+      // 与「功能路由默认插件化」一致）。
+      ...workspaceBridgeComponents,
       Icons,
       // settings-desk 桥面：外链组件（AppUpdateTab 发布链接）
       ExternalLink,
     },
     tauri: { convertFileSrc },
+    // workspace-manager host/ 桥面：cn/logger（迁入的 Workspace 组件工具依赖）
+    utils: { cn, createLogger },
   }
 }

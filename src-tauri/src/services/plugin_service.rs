@@ -64,7 +64,7 @@ const VALID_TRANSPORTS: &[&str] = &["stdio", "http"];
 /// 面板席位（plans/ai-chat-plugin-extraction-spec.md P1.2）：App.tsx 主内容区
 /// shadow 接管，区别于左侧活动栏 activityBar。`settings` 为设置域插件化
 /// （settings-desk，plans/settings-desk-extraction-spec.md）新增的设置覆盖层席位。
-const VALID_VIEW_AREAS: &[&str] = &["activityBar", "mainSurface", "settings"];
+const VALID_VIEW_AREAS: &[&str] = &["activityBar", "mainSurface", "settings", "notificationOverlay"];
 
 /// 浮层覆盖插槽白名单（contributes.overlays[].slot；与前端
 /// `plugin-system/schema.ts VALID_OVERLAY_SLOTS` 镜像，双侧 diff 测试守护）。

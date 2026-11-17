@@ -24,7 +24,7 @@ import { z } from 'zod'
  *   plans/settings-desk-extraction-spec.md）——App.tsx settingsRendering 层
  *   按 panelType 渲染插件面板，替代内置 SettingsPage。
  */
-export const VALID_VIEW_AREAS = ['activityBar', 'mainSurface', 'settings'] as const
+export const VALID_VIEW_AREAS = ['activityBar', 'mainSurface', 'settings', 'notificationOverlay'] as const
 /**
  * 浮层覆盖插槽白名单（contributes.overlays[].slot；与 Rust
  * `plugin_service::OVERLAY_SLOTS` 镜像，双侧 diff 测试守护）。
