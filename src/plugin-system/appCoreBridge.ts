@@ -59,6 +59,8 @@ import * as detector from '@/services/transport/detector'
 import * as aiHistoryDispatch from '@/services/aiHistoryDispatch'
 import * as schedulerStoreUtils from '@/stores/schedulerStoreUtils'
 import { eventBus } from '@/services/eventBus'
+import { getEventBus as getHostAiEventBus } from '@/services/aiEventBus'
+import { useTransitionState } from '@/hooks/useTransitionState'
 import * as imageSaveService from '@/services/imageSaveService'
 import * as linkExternal from '@/services/linkExternal'
 import { invoke, listen, currentMode, emit } from '@/services/transport'
@@ -123,12 +125,19 @@ export function installAppCoreBridge(): void {
       aiHistoryDispatch,
       schedulerStoreUtils,
       eventBus,
+      // 宿主 AIEvent 总线（services/aiEventBus 单例）：chat-desk sessionStoreManager
+      // 补发 chat-event 时经此桥转发到宿主，pluginToolUsageObserver 的
+      // tool_call_end 观测才能收到（插件内 ai-runtime/event-bus 是另一实例，互不相通）。
+      hostAiEventBus: getHostAiEventBus(),
       imageSaveService,
       linkExternal,
       transport: { invoke, listen, currentMode, emit },
       // K-R5 批B：files-desk deps.tauri 的数据源（readDirectory/fsWatchStart 等全量 fileService）
       tauri: tauriFileService,
     },
+    // hooks 桥：files-desk deps.ts 的 useTransitionState 转发经 core().hooks 取宿主
+    // 同名 hook（宿主 ConfirmDialog/Modal 等共享件内部也用它，保证过渡时序一致）。
+    hooks: { useTransitionState },
     i18n,
     pluginSystem: { pluginRegistry, chatCardRegistry, pluginTabRendererRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses },
     components: {
