@@ -61,7 +61,7 @@
 | 波 | 内容 | 预计净减 | 风险 |
 |---|---|---|---|
 | **W1** | 死代码删除（cache.ts、tokenAnalyticsStore）+ 插件仓修复（files-desk import、useWorkspaceFilter、观测断链）+ 勘探记录入库 | ~1.0k | 低 |
-| **W2** | **Settings 域出仓**（settings-desk 插件）：SettingsPage/Sidebar/12 tabs/EngineExpandDetail/EngineInstallActions + 相关 service；PluginTab 的插件管理面与 marketplace 插件合并 | ~5.3k | 中（tab 路由 + config 保存分域） |
+| **W2** | **Settings 域出仓**（settings-desk 插件）：SettingsPage/Sidebar/12 tabs/EngineExpandDetail/EngineInstallActions + 相关 service；PluginTab 的插件管理面与 marketplace 插件合并 | ~5.3k | 中（tab 路由 + config 保存分域）——**✅ 已完成（2026-11-17，主仓 c43adfca -4.9k 行 + 插件仓 5c4df2d）** |
 | **W3** | **Workspace/Developer/Notification/FocusMode/UiFrame 出仓**：Workspace 4 组件并入 workspace-manager；DeveloperPanel→dev-desk；NotificationCenter→notification 插件（toastStore 留核）；FocusMode 三件套→focus 插件；UiFrame 宿主副本删除（chat-desk 同源） | ~4.5k | 中 |
 | **W4** | **前端桥收敛**：appCoreBridge/stores/services 中纯转发件随插件自持删除（chat-desk 已回挂 sessionRestore/sessionHandoff/aiChatDispatch/dispatchTaskService 等，宿主副本可删）；agentStore/cliInfoStore/skillStore/snippetStore 随 chat-desk 自持化出仓；promptHistory/sessionExport/conversationPackager/newSessionPrefs 删宿主副本 | ~8k | 中高（需插件侧先自持） |
 | **W5** | **K-R2 proxy 出仓**（5.0k）+ **K-R1 simple-ai 进程化**（9.1k）：按 host-kernel-roadmap 既有 spec 方向 | ~14k | 高（重写级，单独立项） |
@@ -69,6 +69,11 @@
 | **W7** | 核内瘦身：router capability describe 精简、models 协议去重、types 去重（chat/context 等 9 文件与插件 host/types 零差异，宿主留单源） | 持续 | 低 |
 
 > 20k 达成路径：W1-W4 后前端预计 ~33k；W5-W6 后 Rust 预计 ~55k。距 20k 仍需 W7 持续滚动 + 存储/总线深度瘦身。**诚实结论：20k 是多阶段长期目标，本总纲先落 W1-W3（确定性高、风险低），W5-W7 按波推进并在每波后复测基线。**
+
+### W2 遗留（跨波次，不阻塞 W2 关闭）
+
+- **Web 模式插件 bundle 读取被 cap.fs 内置 Remote deny 拦截**：K-R5 批F（e3eb8892，2026-11-16）把 `pluginModuleLoader.loadModuleFromFile` 的 bundle 读取链路（`readFileBinaryText`）从桌面 IPC 通道切到 `cap.fs downloadFileBinary`，而 cap.fs 对 `Source::Remote` 是内置 deny（policy_permission.rs「cap.fs 远程禁发」）。桌面主窗口走 Tauri IPC（`resolve_ipc_source("main")=Bootstrap`）不受影响；**Web/移动端模式所有插件面板（含 chat-desk/files-desk/settings-desk）加载失败**（浏览器实测：settings overlay 席位命中、isPluginUiEnabled 通过、面板 ErrorFallback「权限拒绝」；audit/dispatch.jsonl 证实 `cap.fs dispatch.deny:permission action=downloadFileBinary`）。config.json 手工加 `cap.fs remote allow` 规则也无效——规则落盘成功但运行实例的 PolicyPermission 是启动时快照（改盘需重启生效），且重启后内置 deny（同特异性后 push 覆盖 config allow）仍赢。**治理方向（归 W4 桥收敛）**：插件 bundle 读取走 plugin-scoped 专用能力（如 cap.pluginAsset，只允许读各插件 installPath 内文件、维持 Remote deny 边界）；或 cap.fs 动作级 require_auth 放行 `downloadFileBinary`（token=桌面信任级，对齐 install_remote 先例）。修复前 Web 模式是「插件面板全灭」回归。
+- W2 本体验证（桌面 IPC 通道）：tsc 0 错 / vitest 60 文件 815 绿（含迁入的 SettingsSidebar 3 测试）/ cargo check + web-only 门控过；settings-desk dist 与两个数据根副本逐字节一致；浏览器（Web 模式）验证到「席位命中 + 状态门通过 + 走到 PluginPanelHost」为止，面板渲染本体待上述 cap.fs 治理后复验。
 
 ## 四、门禁与纪律（沿用 core-slimdown §7/§9）
 
