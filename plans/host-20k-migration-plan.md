@@ -72,7 +72,7 @@
 
 ## 六、进度实测（2026-11-17 W4 收官后复测）
 
-- 前端非测试：52.5k → **40.9k**（W1 死代码 + W2 Settings 出仓 + W3 三域出仓 + W4 桥收敛 12 项 + utils/hooks/components 死代码清扫：sessionExport/markdown/useThrottle/hooks barrel/commandStore/RadialMenu/InputDialog/MermaidDiagram/reactImportRewrite/ThemeManager/settings·workspace 词典等）
+- 前端非测试：52.5k → **40.9k**（含 reactImportRewrite 死代码 190 行删除）（W1 死代码 + W2 Settings 出仓 + W3 三域出仓 + W4 桥收敛 12 项 + utils/hooks/components 死代码清扫：sessionExport/markdown/useThrottle/hooks barrel/commandStore/RadialMenu/InputDialog/MermaidDiagram/reactImportRewrite/ThemeManager/settings·workspace 词典等）
 - Rust：102.6k → **101.8k**（prompt_store/cli_resolver 死模块 -841；其余按既有 spec 目录化收口，不降行数）
 - 合计 ~142.7k。距 20k 需 S3（存储插件化）/S4（AI 业务插件化）级重构（kernel-5k-all-plugin-architecture.md），属多 PR 长期工程。
 - W7 已落一类：chat-desk host/types 构建期同步脚本（sync-types.mjs，宿主单源 → 插件拷贝防漂移）。
