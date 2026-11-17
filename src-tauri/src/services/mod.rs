@@ -35,6 +35,7 @@ pub use form::flow as form_flow;
 pub use form::template as form_template;
 pub mod form;
 pub mod ai_history_core;
+pub mod anchor_store;
 pub mod router;
 
 pub mod usage_db;
