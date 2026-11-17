@@ -48,11 +48,8 @@ import {
 } from '@/services/dialogStorage'
 import * as chatService from '@/services/tauri/chatService'
 import * as tauriFileService from '@/services/tauri/fileService'
-import * as streamRateTracker from '@/services/streamRateTracker'
 import * as uiDispatchService from '@/services/uiDispatchService'
 import * as capSlashCommand from '@/services/capSlashCommand'
-import * as cliSlashCommands from '@/services/cliSlashCommands'
-import * as agentSlashCommand from '@/services/agentSlashCommand'
 import * as conversationPackager from '@/services/conversationPackager'
 import * as fileSearch from '@/services/fileSearch'
 import * as workspaceReference from '@/services/workspaceReference'
@@ -132,11 +129,8 @@ export function installAppCoreBridge(): void {
       opfsHelpers: { isOpfsMigrated, probeOpfsDialogCount, migrateOpfsToTauri, clearOpfsDialogs },
       maybeAutoMigrateOpfs,
       chatService,
-      streamRateTracker,
       uiDispatchService,
       capSlashCommand,
-      cliSlashCommands,
-      agentSlashCommand,
       conversationPackager,
       fileSearch,
       workspaceReference,
