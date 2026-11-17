@@ -21,7 +21,6 @@ pub mod plugin_events;
 pub mod adapter_discovery;
 pub mod hook_registry;
 pub mod mcp_tool_gates;
-pub mod prompt_store;
 pub mod storage;
 pub mod ask_listener_meta;
 pub mod ask_mcp_server;
@@ -50,7 +49,6 @@ pub mod computer_mcp_server;
 pub mod cli_info_service;
 pub use cli_info_service::CliInfoService;
 
-pub mod cli_resolver;
 
 pub mod mcp_manager_service;
 pub use mcp_manager_service::McpManagerService;
