@@ -43,7 +43,8 @@ storage-sqlite 插件（新建，系统插件）:
 | S3.2 | ✅ 已完成（2026-11-17，8f69ab94）：`services/anchor_store.rs`（key→plugin_id+file_path，jsonl 单写者 tmp+rename 原子替换，roundtrip 单测随文件；本机 cargo test --lib 受 Tauri DLL 限制仅 lib check） | cargo check lib |
 | S3.3a | ✅ 物理域墙完成（2026-11-17，41ec5ab9）：五库集中 `services/storage_exec/`（含 base/sqlite 底座），services/mod.rs 纯 re-export 旧路径零 diff。插件形态定案（plugin-spec-v2）：不做 wasm/独立进程，Rust 能力经 cap register_capability 反向注册——S3.3b 插件接管时把 storage_exec 整体改挂到插件注册的 handler | cargo check + web-only |
 | S3.4 | ✅ 命名空间接入完成（2026-11-17，1ec080d6）：cap.storage 15 动作全部接通宿主现存实现（dialog/state/turn/index），真机冒烟 state.list/index.search 正常。前端切到 cap.storage 的迁移（history_capability/session_capability 改经 bus）待下一批 | 真机 curl |
-| S3.5 | lib.rs 启动恢复（recover_pending_turns/recover_unpaired_running_inner）改为经 cap.storage 调用 | 启动冒烟 |
+| S3.5 | ✅ 前端 dialog 链路已切 cap.storage（2026-11-17，1a25b11b）：dialogBackend 8 动作改走 services/storageDispatch.ts（浏览器实测 72 个 dialog 读取正常）；lib.rs 启动恢复（recover_pending_turns/recover_unpaired_running_inner）仍直调实现体（进程内，无需经总线） | 浏览器实测 + vitest 685 |
+| S3.6 | 删除宿主 5 模块（-6.2k）；storage-sqlite 以系统插件身份热安装 | 真机：会话读写/历史/压缩/恢复全链 |
 | S3.6 | 删除宿主 5 模块（-6.2k）；storage-sqlite 以系统插件身份热安装 | 真机：会话读写/历史/压缩/恢复全链 |
 
 ## 4. 风险与对策
