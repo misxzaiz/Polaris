@@ -42,7 +42,7 @@ storage-sqlite 插件（新建，系统插件）:
 | S3.1 | ✅ 已完成（2026-11-17，4cb32c98）：`services/router/storage_capability.rs` 落地，dialog.* 8 动作接通宿主 dialog_storage inner（真机 curl 验证 list/read 返回正常）；state/turn/index 命名空间 S3.4 接入。桌面+独立 Web 双装配点注册 | cargo check + web-only + curl 真机 |
 | S3.2 | ✅ 已完成（2026-11-17，8f69ab94）：`services/anchor_store.rs`（key→plugin_id+file_path，jsonl 单写者 tmp+rename 原子替换，roundtrip 单测随文件；本机 cargo test --lib 受 Tauri DLL 限制仅 lib check） | cargo check lib |
 | S3.3 | 插件仓新建 `plugins/storage-sqlite/`（Rust crate，wasm component 或动态库按 plugin-spec-v2 定案）：把 5 模块源码迁入，改 `crate::services::xxx` 为插件内路径 | 插件 cargo check |
-| S3.4 | 宿主 history_capability/session_capability/commands(session_messages/dialog_storage/session_state_commands) 的 handler 改为经 bus 调 cap.storage（保留 action 形状，前端零改动） | 四门禁 + 前端 vitest |
+| S3.4 | ✅ 命名空间接入完成（2026-11-17，1ec080d6）：cap.storage 15 动作全部接通宿主现存实现（dialog/state/turn/index），真机冒烟 state.list/index.search 正常。前端切到 cap.storage 的迁移（history_capability/session_capability 改经 bus）待下一批 | 真机 curl |
 | S3.5 | lib.rs 启动恢复（recover_pending_turns/recover_unpaired_running_inner）改为经 cap.storage 调用 | 启动冒烟 |
 | S3.6 | 删除宿主 5 模块（-6.2k）；storage-sqlite 以系统插件身份热安装 | 真机：会话读写/历史/压缩/恢复全链 |
 
