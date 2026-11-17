@@ -672,6 +672,12 @@ export function validateDiscoveredPlugin(raw: unknown): {
         styles: normalizeStyles(contributes.styles, errors),
         uiTemplates: normalizeUiTemplates(contributes.uiTemplates, errors),
         hooks: normalizeHooks(contributes.hooks, errors),
+        // H7 UI 槽位声明（workspace-manager registerUi 注入桥等）：后端
+        // PluginManifestContributes.ui_slots 全量透传，前端原样保留（registry
+        // registerPanel 据此预加载 entry 调 registerUi）。
+        uiSlots: Array.isArray(contributes.uiSlots)
+          ? contributes.uiSlots.filter((s): s is string => typeof s === 'string')
+          : [],
       },
       permissions: normalizePermissions(raw.permissions),
       origin: normalizeOrigin(raw.origin),
