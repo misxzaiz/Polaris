@@ -48,16 +48,13 @@ import {
 } from '@/services/dialogStorage'
 import * as chatService from '@/services/tauri/chatService'
 import * as tauriFileService from '@/services/tauri/fileService'
-import * as promptHistoryService from '@/services/promptHistoryService'
 import * as streamRateTracker from '@/services/streamRateTracker'
 import * as uiDispatchService from '@/services/uiDispatchService'
 import * as capSlashCommand from '@/services/capSlashCommand'
 import * as cliSlashCommands from '@/services/cliSlashCommands'
 import * as agentSlashCommand from '@/services/agentSlashCommand'
 import * as conversationPackager from '@/services/conversationPackager'
-import * as newSessionPrefsService from '@/services/newSessionPrefsService'
 import * as fileSearch from '@/services/fileSearch'
-import * as claudeSettingsService from '@/services/claudeSettingsService'
 import * as workspaceReference from '@/services/workspaceReference'
 import * as detector from '@/services/transport/detector'
 import * as aiHistoryDispatch from '@/services/aiHistoryDispatch'
@@ -66,7 +63,6 @@ import { eventBus } from '@/services/eventBus'
 import { getEventBus as getHostAiEventBus } from '@/services/aiEventBus'
 import { useTransitionState } from '@/hooks/useTransitionState'
 import { useContainerWidth } from '@/hooks/useContainerWidth'
-import * as imageSaveService from '@/services/imageSaveService'
 import * as linkExternal from '@/services/linkExternal'
 import { invoke, listen, currentMode, emit } from '@/services/transport'
 import { pluginRegistry, chatCardRegistry, pluginTabRendererRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses } from '@/plugin-system'
@@ -136,16 +132,13 @@ export function installAppCoreBridge(): void {
       opfsHelpers: { isOpfsMigrated, probeOpfsDialogCount, migrateOpfsToTauri, clearOpfsDialogs },
       maybeAutoMigrateOpfs,
       chatService,
-      promptHistoryService,
       streamRateTracker,
       uiDispatchService,
       capSlashCommand,
       cliSlashCommands,
       agentSlashCommand,
       conversationPackager,
-      newSessionPrefsService,
       fileSearch,
-      claudeSettingsService,
       workspaceReference,
       detector,
       aiHistoryDispatch,
@@ -155,7 +148,6 @@ export function installAppCoreBridge(): void {
       // 补发 chat-event 时经此桥转发到宿主，pluginToolUsageObserver 的
       // tool_call_end 观测才能收到（插件内 ai-runtime/event-bus 是另一实例，互不相通）。
       hostAiEventBus: getHostAiEventBus(),
-      imageSaveService,
       linkExternal,
       transport: { invoke, listen, currentMode, emit },
       // K-R5 批B：files-desk deps.tauri 的数据源（readDirectory/fsWatchStart 等全量 fileService）
