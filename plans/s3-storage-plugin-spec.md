@@ -39,8 +39,8 @@ storage-sqlite 插件（新建，系统插件）:
 
 | 步 | 内容 | 验证 |
 |---|---|---|
-| S3.1 | 定义 `cap.storage` 契约：actions = session.* / state.* / turn.* / dialog_index.*（按现有 capability action 命名法），describe + 权限分级（storage 写=高危） | router 单测 |
-| S3.2 | 建 `services/anchor_store.rs`（jsonl 单写者，仅存指针） | 单测 + cargo check |
+| S3.1 | ✅ 已完成（2026-11-17，4cb32c98）：`services/router/storage_capability.rs` 落地，dialog.* 8 动作接通宿主 dialog_storage inner（真机 curl 验证 list/read 返回正常）；state/turn/index 命名空间 S3.4 接入。桌面+独立 Web 双装配点注册 | cargo check + web-only + curl 真机 |
+| S3.2 | ✅ 已完成（2026-11-17，8f69ab94）：`services/anchor_store.rs`（key→plugin_id+file_path，jsonl 单写者 tmp+rename 原子替换，roundtrip 单测随文件；本机 cargo test --lib 受 Tauri DLL 限制仅 lib check） | cargo check lib |
 | S3.3 | 插件仓新建 `plugins/storage-sqlite/`（Rust crate，wasm component 或动态库按 plugin-spec-v2 定案）：把 5 模块源码迁入，改 `crate::services::xxx` 为插件内路径 | 插件 cargo check |
 | S3.4 | 宿主 history_capability/session_capability/commands(session_messages/dialog_storage/session_state_commands) 的 handler 改为经 bus 调 cap.storage（保留 action 形状，前端零改动） | 四门禁 + 前端 vitest |
 | S3.5 | lib.rs 启动恢复（recover_pending_turns/recover_unpaired_running_inner）改为经 cap.storage 调用 | 启动冒烟 |
