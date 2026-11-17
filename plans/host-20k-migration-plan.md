@@ -62,7 +62,7 @@
 |---|---|---|---|
 | **W1** | 死代码删除（cache.ts、tokenAnalyticsStore）+ 插件仓修复（files-desk import、useWorkspaceFilter、观测断链）+ 勘探记录入库 | ~1.0k | 低 |
 | **W2** | **Settings 域出仓**（settings-desk 插件）：SettingsPage/Sidebar/12 tabs/EngineExpandDetail/EngineInstallActions + 相关 service；PluginTab 的插件管理面与 marketplace 插件合并 | ~5.3k | 中（tab 路由 + config 保存分域）——**✅ 已完成（2026-11-17，主仓 c43adfca -4.9k 行 + 插件仓 5c4df2d）** |
-| **W3** | **Workspace/Developer/Notification/FocusMode/UiFrame 出仓**：Workspace 4 组件并入 workspace-manager；DeveloperPanel→dev-desk；NotificationCenter→notification 插件（toastStore 留核）；FocusMode 三件套→focus 插件；UiFrame 宿主副本删除（chat-desk 同源） | ~4.5k | 中 |
+| **W3** | Workspace/Developer/Notification 出仓（FocusMode/UiFrame 缓办）| ~1.6k | 中 |——**✅ 已完成（2026-11-17，主仓 8a915c3d + 插件仓 c750880a）**
 | **W4** | **前端桥收敛**：appCoreBridge/stores/services 中纯转发件随插件自持删除（chat-desk 已回挂 sessionRestore/sessionHandoff/aiChatDispatch/dispatchTaskService 等，宿主副本可删）；agentStore/cliInfoStore/skillStore/snippetStore 随 chat-desk 自持化出仓；promptHistory/sessionExport/conversationPackager/newSessionPrefs 删宿主副本 | ~8k | 中高（需插件侧先自持） |
 | **W5** | **K-R2 proxy 出仓**（5.0k）+ **K-R1 simple-ai 进程化**（9.1k）：按 host-kernel-roadmap 既有 spec 方向 | ~14k | 高（重写级，单独立项） |
 | **W6** | **Rust commands/web ipc 继续清退** + ask/nexus/form 域终裁（ask-stove 承接面评估）+ ai_chat_core 编排下沉 | ~8k | 中高 |
