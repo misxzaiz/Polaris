@@ -70,6 +70,14 @@
 
 > 20k 达成路径：W1-W4 后前端预计 ~33k；W5-W6 后 Rust 预计 ~55k。距 20k 仍需 W7 持续滚动 + 存储/总线深度瘦身。**诚实结论：20k 是多阶段长期目标，本总纲先落 W1-W3（确定性高、风险低），W5-W7 按波推进并在每波后复测基线。**
 
+## 六、进度实测（2026-11-17 W4 收官后复测）
+
+- 前端非测试：52.5k → **42.2k**（W1 死代码 + W2 Settings 出仓 + W3 三域出仓 + W4 桥收敛 12 项 + utils/hooks 死代码清扫）
+- Rust：102.6k → **101.8k**（prompt_store/cli_resolver 死模块 -841；其余按既有 spec 目录化收口，不降行数）
+- 合计 ~144k。距 20k 需 S3（存储插件化）/S4（AI 业务插件化）级重构（kernel-5k-all-plugin-architecture.md），属多 PR 长期工程。
+- W7 已落一类：chat-desk host/types 构建期同步脚本（sync-types.mjs，宿主单源 → 插件拷贝防漂移）。
+- Rust 死代码扫尾结论：services/ models/ ai/ commands/ 均无更多零符号模块；capabilities/ 454 行为 Phase2 未接线 trait seam（架构预留，按死代码纪律保留）。
+
 ### W2 遗留（跨波次，不阻塞 W2 关闭）
 
 - **Web 模式插件 bundle 读取被 cap.fs 内置 Remote deny 拦截**：K-R5 批F（e3eb8892，2026-11-16）把 `pluginModuleLoader.loadModuleFromFile` 的 bundle 读取链路（`readFileBinaryText`）从桌面 IPC 通道切到 `cap.fs downloadFileBinary`，而 cap.fs 对 `Source::Remote` 是内置 deny（policy_permission.rs「cap.fs 远程禁发」）。桌面主窗口走 Tauri IPC（`resolve_ipc_source("main")=Bootstrap`）不受影响；**Web/移动端模式所有插件面板（含 chat-desk/files-desk/settings-desk）加载失败**（浏览器实测：settings overlay 席位命中、isPluginUiEnabled 通过、面板 ErrorFallback「权限拒绝」；audit/dispatch.jsonl 证实 `cap.fs dispatch.deny:permission action=downloadFileBinary`）。config.json 手工加 `cap.fs remote allow` 规则也无效——规则落盘成功但运行实例的 PolicyPermission 是启动时快照（改盘需重启生效），且重启后内置 deny（同特异性后 push 覆盖 config allow）仍赢。**治理方向（归 W4 桥收敛）**：插件 bundle 读取走 plugin-scoped 专用能力（如 cap.pluginAsset，只允许读各插件 installPath 内文件、维持 Remote deny 边界）；或 cap.fs 动作级 require_auth 放行 `downloadFileBinary`（token=桌面信任级，对齐 install_remote 先例）。修复前 Web 模式是「插件面板全灭」回归。
