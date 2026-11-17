@@ -31,7 +31,6 @@ import { useOverlayStore } from '@/stores/overlayStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useFileExplorerStore } from '@/stores/fileExplorerStore'
 import { useDispatchStore } from '@/stores/dispatchStore'
-import { useCommandStore } from '@/stores/commandStore'
 import { useNarrowTabStore } from '@/stores/narrowTabStore'
 import { usePluginServiceStore } from '@/stores/pluginServiceStore'
 import { useFocusModeStore } from '@/stores/focusModeStore'
@@ -109,7 +108,6 @@ export function installAppCoreBridge(): void {
       useFileEditorStore,
       useFileExplorerStore,
       useDispatchStore,
-      useCommandStore,
       useNarrowTabStore,
       usePluginServiceStore,
       useFocusModeStore,
