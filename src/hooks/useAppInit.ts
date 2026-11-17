@@ -13,7 +13,6 @@ import { useEffect, useRef } from 'react';
 import { useConfigStore, initPerformanceHotSwitch } from '@/stores/configStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useThemeStore } from '@/stores/themeStore';
-import { useSnippetStore } from '@/stores/snippetStore';
 import { useSkillStore } from '@/stores/skillStore';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { usePluginStore } from '@/stores/pluginStore';
@@ -137,10 +136,8 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 // 预加载设置相关数据
     try {
       setInitPhase('正在预加载语言包...');
-      await Promise.all([
-        useSnippetStore.getState().loadSnippets(),
-        useSkillStore.getState().loadSkills(),
-      ]);
+      // snippetStore 已随 chat-desk 自持（W4-5）：面板挂载时自加载
+      await useSkillStore.getState().loadSkills();
     } catch (error) {
       log.warn('设置数据预加载部分失败', { error: String(error) });
     }

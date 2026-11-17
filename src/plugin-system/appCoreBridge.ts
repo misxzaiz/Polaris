@@ -29,7 +29,6 @@ import { useAgentStore } from '@/stores/agentStore'
 import { useCapCatalogStore } from '@/stores/capCatalogStore'
 import { usePluginStore } from '@/stores/pluginStore'
 import { useOverlayStore } from '@/stores/overlayStore'
-import { useSnippetStore } from '@/stores/snippetStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useFileExplorerStore } from '@/stores/fileExplorerStore'
@@ -110,7 +109,6 @@ export function installAppCoreBridge(): void {
       useCapCatalogStore,
       usePluginStore,
       useOverlayStore,
-      useSnippetStore,
       useSkillStore,
       useFileEditorStore,
       useFileExplorerStore,
