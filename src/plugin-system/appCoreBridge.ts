@@ -52,7 +52,6 @@ import * as uiDispatchService from '@/services/uiDispatchService'
 import * as capSlashCommand from '@/services/capSlashCommand'
 import * as conversationPackager from '@/services/conversationPackager'
 import * as fileSearch from '@/services/fileSearch'
-import * as workspaceReference from '@/services/workspaceReference'
 import * as detector from '@/services/transport/detector'
 import * as aiHistoryDispatch from '@/services/aiHistoryDispatch'
 import * as schedulerStoreUtils from '@/stores/schedulerStoreUtils'
@@ -133,7 +132,6 @@ export function installAppCoreBridge(): void {
       capSlashCommand,
       conversationPackager,
       fileSearch,
-      workspaceReference,
       detector,
       aiHistoryDispatch,
       schedulerStoreUtils,
