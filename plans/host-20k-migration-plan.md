@@ -74,7 +74,8 @@
 
 - 前端非测试：52.5k → **40.9k**（含 reactImportRewrite 死代码 190 行删除）（W1 死代码 + W2 Settings 出仓 + W3 三域出仓 + W4 桥收敛 12 项 + utils/hooks/components 死代码清扫：sessionExport/markdown/useThrottle/hooks barrel/commandStore/RadialMenu/InputDialog/MermaidDiagram/reactImportRewrite/ThemeManager/settings·workspace 词典等）
 - Rust：102.6k → **102.2k**（prompt_store/cli_resolver 死模块 -841；S3 存储插件化动工新增 cap.storage/anchor_store 约 +1.4k，为后续 -6.2k 铺路）
-- 合计 ~142.7k。距 20k 需 S3（存储插件化）/S4（AI 业务插件化）级重构（kernel-5k-all-plugin-architecture.md），属多 PR 长期工程。
+- 合计 ~142.7k。
+- **S3 存储插件化已动工**（详见 plans/s3-storage-plugin-spec.md）：S3.1 cap.storage 路由（15 动作）✅、S3.2 anchor_store ✅、S3.3a 五库物理域墙 storage_exec/ ✅、S3.4 命名空间全接通 ✅、S3.5 前端 dialog 链路切 cap.storage（浏览器实测 72 dialog）✅。剩余 S3.6：storage-sqlite 插件接管实现体（宿主 Rust -6.2k）。距 20k 需 S3（存储插件化）/S4（AI 业务插件化）级重构（kernel-5k-all-plugin-architecture.md），属多 PR 长期工程。
 - W7 已落一类：chat-desk host/types 构建期同步脚本（sync-types.mjs，宿主单源 → 插件拷贝防漂移）。
 - Rust 死代码扫尾结论：services/ models/ ai/ commands/ 均无更多零符号模块；capabilities/ 454 行为 Phase2 未接线 trait seam（架构预留，按死代码纪律保留）。
 
