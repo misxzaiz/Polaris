@@ -55,6 +55,7 @@ const VALID_PLUGIN_ICONS: &[&str] = &[
     "Activity",
     "Users",
     "Beaker",
+    "Settings",
 ];
 const VALID_TRANSPORTS: &[&str] = &["stdio", "http"];
 

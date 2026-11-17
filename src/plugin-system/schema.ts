@@ -59,6 +59,7 @@ export const VALID_PLUGIN_ICONS = [
   'Activity',
   'Users',
   'Beaker',
+  'Settings',
 ] as const
 
 /** 自定义图标资源允许的扩展名（与 Rust PLUGIN_ICON_IMAGE_EXTENSIONS 对齐） */

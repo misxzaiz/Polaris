@@ -61,6 +61,7 @@ describe('pluginDiscoveryService', () => {
       'Activity',
       'Users',
       'Beaker',
+      'Settings',
     ] as const
 
     const schemaIcons = [...SCHEMA_ICONS]

@@ -13,7 +13,7 @@ import { PluginPanelHost } from './components/Plugins/PluginPanelHost';
 // 它仅 isCompact && narrowTabId 时渲染，改 React.lazy 移出首载；overlay 场景
 // fallback 用 null，对齐本文件 FileSearchModal 等既有 Suspense 范式。
 
-import type { SettingsTabId } from './components/Settings/SettingsSidebar';
+// W2 settings-desk 插件化：SettingsTabId 类型随域出仓（open-settings 事件 tab 透传 string）
 import { RightSlideOver } from './components/Common/RightSlideOver';
 import { PluginSlotPlaceholder } from './components/PluginSlotPlaceholder';
 // 主面板席位接管（ai-chat-plugin-extraction-spec P1.2）：chat 域插件化后，
@@ -24,7 +24,6 @@ const PluginPanelHostLazy = lazy(() => import('./components/Plugins/PluginPanelH
 const ChatMainSlot = lazy(() => import('./components/Layout/ChatMainSlot').then(m => ({ default: m.ChatMainSlot })));
 
 // 懒加载大型组件，减少初始 bundle 大小
-const SettingsPage = lazy(() => import('./components/Settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const DeveloperPanel = lazy(() => import('./components/Developer/DeveloperPanel').then(m => ({ default: m.DeveloperPanel })));
 const CreateWorkspaceModal = lazy(() => import('./components/Workspace/CreateWorkspaceModal').then(m => ({ default: m.CreateWorkspaceModal })));
 const CreateSessionModal = lazy(() => import('@/plugin-system/appCoreBridge').then(m => ({ default: (m as any).core().components.CreateSessionModal as React.ComponentType<{ onClose: () => void; onCreated?: (sessionId: string) => void }> })));
@@ -70,7 +69,6 @@ function App() {
   }, []);
 
   // UI 状态
-  const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   // 设置页关闭退场：showSettings 置 false 后保留渲染 200ms 播退出动画
   const [settingsKept, setSettingsKept] = useState(false);
@@ -116,7 +114,7 @@ function App() {
     setSettingsKept(true);
     window.setTimeout(() => {
       setSettingsKept(false);
-      setSettingsInitialTab(undefined);
+      (window as unknown as { __POLARIS_SETTINGS_INITIAL_TAB__?: string }).__POLARIS_SETTINGS_INITIAL_TAB__ = undefined;
     }, 200);
   }, []);
 
@@ -159,10 +157,11 @@ function App() {
 
   useWorkspaceSync(true);
 
-  // 监听 polaris:open-settings 事件（从 ContextMeter 等组件触发）
+  // 监听 polaris:open-settings 事件（从 ContextMeter 等组件触发）。
+  // W2 settings-desk：tab 透传经全局桥（插件面板 props 由 settingsRendering 渲染期读取）。
   useEffect(() => {
     return eventBus.on('polaris:open-settings', ({ tab }) => {
-      setSettingsInitialTab(tab)
+      ;(window as unknown as { __POLARIS_SETTINGS_INITIAL_TAB__?: string }).__POLARIS_SETTINGS_INITIAL_TAB__ = tab
       useOverlayStore.getState().setSettingsOpen(true)
     })
   }, [])
@@ -378,7 +377,9 @@ function App() {
           </div>
 
           {/* 设置页层叠覆盖（absolute inset-0，z-modal），主布局在下方常驻保活。
-              退场动画期间 inert + aria-hidden，避免退场中的 SettingsPage 仍捕获交互。 */}
+              退场动画期间 inert + aria-hidden，避免退场中的 SettingsPage 仍捕获交互。
+              W2 settings-desk 插件化：内容 = settings 席位插件面板（shadow 语义）；
+              插件未启用 → 引导占位（重新启用插件即可恢复，设置数据在宿主 config 不丢）。 */}
           {settingsRendering && (
             <div
               className={`absolute inset-0 z-modal flex flex-col ${showSettings ? 'animate-panel-in-fast' : 'animate-panel-out'}`}
@@ -387,12 +388,25 @@ function App() {
               inert={!showSettings}
               aria-hidden={!showSettings}
             >
-              <Suspense fallback={loadingFallback}>
-                <SettingsPage
-                  initialTab={settingsInitialTab as SettingsTabId | undefined}
-                  onClose={handleCloseSettings}
-                />
-              </Suspense>
+              {(() => {
+                const claim = pluginRegistry
+                  .listViewContributions('settings')
+                  .find((v) => v.panelType === 'settings-desk')
+                const enabled = claim ? isPluginUiEnabled(pluginStates, claim.pluginId) : false
+                return claim && enabled ? (
+                  <Suspense fallback={loadingFallback}>
+                    <PluginPanelHost
+                      panelType={claim.panelType}
+                      onClose={handleCloseSettings}
+                    />
+                  </Suspense>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
+                    <p className="text-sm text-text-secondary">设置管理台由 settings-desk 插件提供</p>
+                    <p className="text-xs text-text-tertiary">当前插件未启用。启用后此处恢复设置面板；配置数据不受影响。</p>
+                  </div>
+                )
+              })()}
             </div>
           )}
         </div>

@@ -65,7 +65,21 @@ import * as imageSaveService from '@/services/imageSaveService'
 import * as linkExternal from '@/services/linkExternal'
 import { invoke, listen, currentMode, emit } from '@/services/transport'
 import { pluginRegistry, chatCardRegistry, pluginTabRendererRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses } from '@/plugin-system'
+import { getPluginIconComponent } from '@/plugin-system/iconResolver'
+import * as pluginConfigApi from '@/plugin-system/pluginConfig'
+import * as pluginDiscoveryService from '@/services/pluginDiscoveryService'
+import * as pluginToolService from '@/services/pluginToolService'
+import * as mcpHealthService from '@/services/mcpHealthService'
+import { pluginServiceManager } from '@/services/pluginServiceManager'
+import * as dataRootService from '@/services/dataRootService'
+import * as autolaunchService from '@/services/autolaunchService'
+import * as appUpdateService from '@/services/appUpdateService'
+import * as updateService from '@/services/updateService'
+import { useSystemPromptStore, getSystemPromptConfigDirect } from '@/services/systemPromptStore'
+import * as windowService from '@/services/tauri/windowService'
+import * as configService from '@/services/tauri/configService'
 import { Button } from '@/components/Common/Button'
+import { ExternalLink } from '@/components/Common/ExternalLink'
 import { JsonTreeView } from '@/components/Common/JsonTreeView'
 import { OverlayGuard } from '@/components/Common/OverlayGuard'
 import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
@@ -134,12 +148,28 @@ export function installAppCoreBridge(): void {
       transport: { invoke, listen, currentMode, emit },
       // K-R5 批B：files-desk deps.tauri 的数据源（readDirectory/fsWatchStart 等全量 fileService）
       tauri: tauriFileService,
+      // settings-desk 桥面（plans/settings-desk-extraction-spec.md）：插件管理/健康/
+      // 数据根/自启/更新/系统提示词等服务，全部走总线或既有 service 单例
+      pluginDiscoveryService,
+      pluginToolService,
+      mcpHealthService,
+      pluginServiceManager,
+      dataRootService,
+      autolaunchService,
+      appUpdateService,
+      updateService,
+      systemPromptStore: { useSystemPromptStore, getSystemPromptConfigDirect },
+      windowService,
+      configService,
     },
     // hooks 桥：files-desk deps.ts 的 useTransitionState 转发经 core().hooks 取宿主
     // 同名 hook（宿主 ConfirmDialog/Modal 等共享件内部也用它，保证过渡时序一致）。
     hooks: { useTransitionState },
     i18n,
     pluginSystem: { pluginRegistry, chatCardRegistry, pluginTabRendererRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses },
+    // settings-desk 桥面：图标解析 + 插件配置读写（PluginTab/PluginConfigForm 消费）
+    getPluginIconComponent,
+    pluginConfig: pluginConfigApi,
     components: {
       Button,
       JsonTreeView,
@@ -151,6 +181,8 @@ export function installAppCoreBridge(): void {
       useWorkspaceFilter,
       CreateWorkspaceModal,
       Icons,
+      // settings-desk 桥面：外链组件（AppUpdateTab 发布链接）
+      ExternalLink,
     },
     tauri: { convertFileSrc },
   }
