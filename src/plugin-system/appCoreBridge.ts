@@ -34,6 +34,8 @@ import { useFileExplorerStore } from '@/stores/fileExplorerStore'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useCommandStore } from '@/stores/commandStore'
 import { useNarrowTabStore } from '@/stores/narrowTabStore'
+import { usePluginServiceStore } from '@/stores/pluginServiceStore'
+import { useFocusModeStore } from '@/stores/focusModeStore'
 import {
   dialogStorageService,
   maybeAutoMigrateOpfs,
@@ -61,6 +63,7 @@ import * as schedulerStoreUtils from '@/stores/schedulerStoreUtils'
 import { eventBus } from '@/services/eventBus'
 import { getEventBus as getHostAiEventBus } from '@/services/aiEventBus'
 import { useTransitionState } from '@/hooks/useTransitionState'
+import { useContainerWidth } from '@/hooks/useContainerWidth'
 import * as imageSaveService from '@/services/imageSaveService'
 import * as linkExternal from '@/services/linkExternal'
 import { invoke, listen, currentMode, emit } from '@/services/transport'
@@ -117,6 +120,9 @@ export function installAppCoreBridge(): void {
       useDispatchStore,
       useCommandStore,
       useNarrowTabStore,
+      usePluginServiceStore,
+      useFocusModeStore,
+      useSystemPromptStore,
       sessionDirectoryStore: (window as any).__POLARIS_APP_CORE__?.stores?.sessionDirectoryStore,
     },
     services: {
@@ -152,6 +158,8 @@ export function installAppCoreBridge(): void {
       // 数据根/自启/更新/系统提示词等服务，全部走总线或既有 service 单例
       pluginDiscoveryService,
       pluginToolService,
+      // settings-desk PluginTab 的插件视图图标解析（deps.ts 走 services 命名空间取）
+      getPluginIconComponent,
       mcpHealthService,
       pluginServiceManager,
       dataRootService,
@@ -164,7 +172,7 @@ export function installAppCoreBridge(): void {
     },
     // hooks 桥：files-desk deps.ts 的 useTransitionState 转发经 core().hooks 取宿主
     // 同名 hook（宿主 ConfirmDialog/Modal 等共享件内部也用它，保证过渡时序一致）。
-    hooks: { useTransitionState },
+    hooks: { useTransitionState, useContainerWidth },
     i18n,
     pluginSystem: { pluginRegistry, chatCardRegistry, pluginTabRendererRegistry, listEnabledPluginMcpServers, listPluginMcpServerStatuses },
     // settings-desk 桥面：图标解析 + 插件配置读写（PluginTab/PluginConfigForm 消费）
